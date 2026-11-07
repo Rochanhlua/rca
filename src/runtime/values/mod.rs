@@ -17,6 +17,10 @@ pub enum Value {
         shape: Vec<usize>,
         data: Vec<f64>,
     },
+    Enum {
+        name: String,
+        variant: String,
+    },
     Struct {
         name: String,
         fields: Vec<(String, Value)>,
@@ -64,6 +68,7 @@ impl fmt::Display for Value {
                 fmt_tensor(f, shape, data)?;
                 write!(f, ")")
             }
+            Value::Enum { name, variant } => write!(f, "{}.{}", name, variant),
             Value::Struct { name, fields } => {
                 write!(f, "{}(", name)?;
                 for (i, (n, v)) in fields.iter().enumerate() {
@@ -845,5 +850,25 @@ mod tensor_numeric_tests {
         assert!(tensor_reduce(&t(vec![0], vec![]), 'x').is_err());
         assert!(tensor_reduce(&Value::Int(1), 's').is_err());
         assert!(tensor_transpose(&t(vec![1, 1, 1], vec![0.0])).is_err());
+    }
+}
+
+#[cfg(test)]
+mod enum_value_tests {
+    use super::*;
+
+    #[test]
+    fn enum_prints_and_compares() {
+        let a = Value::Enum {
+            name: "Color".to_string(),
+            variant: "Green".to_string(),
+        };
+        let b = Value::Enum {
+            name: "Color".to_string(),
+            variant: "Red".to_string(),
+        };
+        assert_eq!(format!("{}", a), "Color.Green");
+        assert_eq!(a, a.clone());
+        assert_ne!(a, b);
     }
 }

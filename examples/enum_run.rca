@@ -1,0 +1,14 @@
+enum Color:
+    Red
+    Green
+
+fn is_red(c: Color) -> Bool:
+    return c == Color.Red
+
+let a = Color.Red
+print(a)
+print(Color.Green)
+print(a == Color.Red)
+print(a != Color.Green)
+print(a == Color.Green)
+print(is_red(Color.Green))

@@ -555,6 +555,12 @@ impl Compiler {
                 self.emit(Instruction::Index, span);
             }
             ExprKind::Field { object, name } => {
+                if let ExprKind::Ident(en) = &object.kind {
+                    if self.resolve(en).is_none() && !self.module_aliases.contains_key(en) {
+                        self.emit(Instruction::PushEnum(en.clone(), name.clone()), span);
+                        return Ok(());
+                    }
+                }
                 self.compile_expr(object)?;
                 self.emit(Instruction::GetField(name.clone()), span);
             }

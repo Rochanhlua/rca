@@ -132,6 +132,10 @@ impl<'a> Vm<'a> {
                 Instruction::PushInt(n) => self.stack.push(Value::Int(*n)),
                 Instruction::PushFloat(x) => self.stack.push(Value::Float(*x)),
                 Instruction::PushBool(b) => self.stack.push(Value::Bool(*b)),
+                Instruction::PushEnum(n, v) => self.stack.push(Value::Enum {
+                    name: n.clone(),
+                    variant: v.clone(),
+                }),
                 Instruction::PushStr(s) => self.stack.push(Value::Str(s.clone())),
                 Instruction::PushNone => self.stack.push(Value::None),
 

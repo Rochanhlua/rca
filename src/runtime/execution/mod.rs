@@ -401,6 +401,17 @@ impl Interpreter {
                     _ => Err(err("invalid index operation", &expr.span)),
                 }
             }
+            ExprKind::Field { object, name } if matches!(&object.kind, ExprKind::Ident(n) if self.lookup(n).is_none()) =>
+            {
+                let en = match &object.kind {
+                    ExprKind::Ident(n) => n.clone(),
+                    _ => String::new(),
+                };
+                Ok(Value::Enum {
+                    name: en,
+                    variant: name.clone(),
+                })
+            }
             ExprKind::Field { object, name } => match self.eval_expr(object)? {
                 Value::Struct { fields, .. } => fields
                     .into_iter()

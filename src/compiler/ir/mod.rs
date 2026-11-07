@@ -19,6 +19,8 @@ pub enum Instruction {
     PushFloat(f64),
     PushBool(bool),
     PushStr(String),
+    /// Pushes an enum value (enum name, variant name).
+    PushEnum(String, String),
     PushNone,
 
     // variables (slot numbers resolved at compile time)
