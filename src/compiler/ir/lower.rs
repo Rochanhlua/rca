@@ -62,6 +62,7 @@ struct Compiler {
     structs: Vec<StructInfo>,
     prefix: String,
     aliases: HashMap<String, String>,
+    module_aliases: HashMap<String, String>,
 }
 
 fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
@@ -94,6 +95,7 @@ impl Compiler {
             structs: Vec::new(),
             prefix: String::new(),
             aliases: HashMap::new(),
+            module_aliases: HashMap::new(),
         }
     }
 
@@ -536,6 +538,29 @@ impl Compiler {
     }
 
     fn compile_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Result<(), Diagnostic> {
+        if let ExprKind::Field { object, name: item } = &callee.kind {
+            if let ExprKind::Ident(m) = &object.kind {
+                if let Some(module) = self.module_aliases.get(m).cloned() {
+                    if self.resolve(m).is_none() {
+                        let key = format!("{}::{}", module, item);
+                        if let Some(&id) = self.func_ids.get(&key) {
+                            let sig = self.func_sigs[id].clone();
+                            self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;
+                            self.emit(Instruction::Call(id), span);
+                            return Ok(());
+                        }
+                        if let Some(&id) = self.struct_ids.get(&key) {
+                            let fields = self.structs[id].fields.clone();
+                            let no_defaults: Vec<Option<Expr>> = vec![None; fields.len()];
+                            self.emit_bound_args(&fields, &no_defaults, args, span)?;
+                            self.emit(Instruction::MakeStruct(id), span);
+                            return Ok(());
+                        }
+                        return Err(err(format!("module '{}' has no item '{}'", module, item), &callee.span));
+                    }
+                }
+            }
+        }
         let name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
             _ => return Err(err("this value cannot be called", &callee.span)),
@@ -876,6 +901,7 @@ pub fn compile_modules(modules: &[crate::compiler::modules::Module]) -> Result<I
     for (i, m) in modules.iter().enumerate() {
         c.prefix = if i == last { String::new() } else { m.name.clone() };
         c.aliases = import_aliases(&m.program);
+        c.module_aliases = module_aliases_of(&m.program);
         for stmt in &m.program.statements {
             match &stmt.kind {
                 StmtKind::Function(f) => c.compile_function(f, &stmt.span)?,
@@ -919,4 +945,14 @@ mod module_tests {
         assert!(ir.main.chunk.code.contains(&Instruction::Call(2)));
         assert!(ir.main.chunk.code.contains(&Instruction::Call(1)));
     }
+}
+
+fn module_aliases_of(program: &Program) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for stmt in &program.statements {
+        if let StmtKind::Import { module, alias } = &stmt.kind {
+            map.insert(alias.clone().unwrap_or_else(|| module.clone()), module.clone());
+        }
+    }
+    map
 }

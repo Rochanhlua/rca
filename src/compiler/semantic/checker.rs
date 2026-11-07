@@ -26,6 +26,7 @@ pub struct Checker {
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
     imports: HashMap<String, ModuleExports>,
+    module_aliases: HashMap<String, String>,
 }
 
 impl Checker {
@@ -38,6 +39,7 @@ impl Checker {
             functions: HashMap::new(),
             current_return: None,
             imports: HashMap::new(),
+            module_aliases: HashMap::new(),
         }
     }
 
@@ -541,6 +543,15 @@ impl Checker {
     }
 
     fn check_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Type {
+        if let ExprKind::Field { object, name: item } = &callee.kind {
+            if let ExprKind::Ident(m) = &object.kind {
+                if self.scopes.lookup(m).is_none() {
+                    if let Some(module) = self.module_aliases.get(m).cloned() {
+                        return self.check_module_call(&module, item, args, span, &callee.span);
+                    }
+                }
+            }
+        }
         let name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
             _ => {
@@ -1074,7 +1085,8 @@ impl Checker {
     fn apply_imports(&mut self, program: &Program) {
         for stmt in &program.statements {
             match &stmt.kind {
-                StmtKind::Import { module, .. } => {
+                StmtKind::Import { module, alias } => {
+                    self.module_aliases.insert(alias.clone().unwrap_or_else(|| module.clone()), module.clone());
                     if !self.imports.contains_key(module) {
                         self.error(format!("cannot find module '{}'", module), &stmt.span);
                     }
@@ -1205,5 +1217,103 @@ impl Checker {
         } else {
             Err(errors)
         }
+    }
+}
+
+impl Checker {
+    /// Checks a call written as `module.item(...)`.
+    fn check_module_call(
+        &mut self,
+        module: &str,
+        item: &str,
+        args: &[Argument],
+        span: &Span,
+        callee_span: &Span,
+    ) -> Type {
+        let exports = match self.imports.get(module).cloned() {
+            Some(e) => e,
+            None => {
+                self.check_arg_exprs(args);
+                return Type::Unknown;
+            }
+        };
+        if let Some(sig) = exports.functions.get(item).cloned() {
+            return self.check_function_call(&item.to_string(), &sig, args, span);
+        }
+        if let Some(fields) = exports.structs.get(item).cloned() {
+            let sig = FuncSig {
+                params: fields
+                    .into_iter()
+                    .map(|(n, t)| ParamSig { name: n, ty: t, has_default: false })
+                    .collect(),
+                ret: Type::Struct(item.to_string()),
+            };
+            return self.check_function_call(&item.to_string(), &sig, args, span);
+        }
+        if exports.private.contains(item) {
+            self.error(format!("'{}' is private in module '{}'", item, module), callee_span);
+        } else {
+            self.error(format!("module '{}' has no public item '{}'", module, item), callee_span);
+        }
+        self.check_arg_exprs(args);
+        Type::Unknown
+    }
+}
+
+#[cfg(test)]
+mod qualified_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn parse(src: &str) -> Program {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program().unwrap()
+    }
+
+    fn errors_of(lib: &str, main: &str) -> Vec<String> {
+        let exports = Checker::collect_exports(&parse(lib), &HashMap::new());
+        let mut imports = HashMap::new();
+        imports.insert("utils".to_string(), exports);
+        match Checker::new().with_imports(imports).check_program(&parse(main)) {
+            Ok(()) => Vec::new(),
+            Err(v) => v.iter().map(|e| e.to_string()).collect(),
+        }
+    }
+
+    const LIB: &str = "pub fn add(a: Int, b: Int) -> Int:\n    return a + b\nfn secret() -> Int:\n    return 1\npub struct Point:\n    x: Int\n    y: Int\n";
+
+    #[test]
+    fn qualified_call_works() {
+        assert!(errors_of(LIB, "import utils\nlet r: Int = utils.add(1, 2)\n").is_empty());
+    }
+
+    #[test]
+    fn qualified_call_with_alias_works() {
+        assert!(errors_of(LIB, "import utils as u\nlet r: Int = u.add(1, 2)\n").is_empty());
+    }
+
+    #[test]
+    fn qualified_private_is_error() {
+        let errs = errors_of(LIB, "import utils\nlet r = utils.secret()\n");
+        assert!(errs.iter().any(|e| e.contains("private")), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn qualified_missing_is_error() {
+        let errs = errors_of(LIB, "import utils\nlet r = utils.nothing()\n");
+        assert!(errs.iter().any(|e| e.contains("no public item 'nothing'")), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn qualified_call_is_type_checked() {
+        let errs = errors_of(LIB, "import utils\nlet r = utils.add(1, \"x\")\n");
+        assert!(!errs.is_empty());
+    }
+
+    #[test]
+    fn qualified_struct_constructor_works() {
+        let errs = errors_of(LIB, "import utils\nlet p = utils.Point(x = 1, y = 2)\n");
+        assert!(errs.is_empty(), "got: {:?}", errs);
     }
 }

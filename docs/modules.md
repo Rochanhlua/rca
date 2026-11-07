@@ -44,9 +44,9 @@ Implemented:
 - rca check and rca run work across files (from-import form)
 - Same names in different modules do not clash (functions, structs, globals)
 - Imported module top-level code runs once, before the entry module
+- Module-qualified calls: utils.add(1, 2), u.add(1, 2) after import utils as u, utils.Point(x = 1)
 
 Not implemented yet:
-- `import utils` followed by `utils.add(1, 2)` (module-qualified access)
 - pub on let / const
 - run-tree (tree-walking interpreter) with imports
 - Subdirectory packages

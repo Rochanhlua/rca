@@ -1,0 +1,4 @@
+import utils
+import utils as u
+print(utils.add(1, 2))
+print(u.add(10, 20))
