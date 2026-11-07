@@ -143,6 +143,10 @@ pub enum StmtKind {
     Function(FunctionDecl),
     Struct(StructDecl),
     Enum(EnumDecl),
+    Match {
+        subject: Expr,
+        arms: Vec<MatchArm>,
+    },
     Try {
         body: Vec<Stmt>,
         catch_var: String,
@@ -182,4 +186,19 @@ pub struct EnumDecl {
     pub name: String,
     pub variants: Vec<EnumVariant>,
     pub public: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// `_` matches anything.
+    Wildcard,
+    /// A literal or an enum variant such as `0`, `"a"`, `true`, `Color.Red`.
+    Value(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Vec<Stmt>,
+    pub span: Span,
 }

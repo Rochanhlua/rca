@@ -501,6 +501,9 @@ impl Checker {
                     &stmt.span,
                 );
             }
+            StmtKind::Match { .. } => {
+                self.error("match is not supported yet", &stmt.span);
+            }
             StmtKind::Enum(_) => {
                 self.error(
                     "enums can only be declared at the top level for now",

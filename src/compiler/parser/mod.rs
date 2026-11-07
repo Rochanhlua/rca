@@ -127,6 +127,7 @@ impl Parser {
             TokenKind::Fn => StmtKind::Function(self.parse_function()?),
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
             TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
+            TokenKind::Match => self.parse_match()?,
             TokenKind::Pub => {
                 self.advance(); // pub
                 match self.peek().clone() {
@@ -278,6 +279,41 @@ impl Parser {
             then_block,
             else_block,
         })
+    }
+
+    fn parse_match(&mut self) -> Result<StmtKind, Diagnostic> {
+        self.advance(); // match
+        let subject = self.parse_expr()?;
+        self.expect(&TokenKind::Colon, "':'")?;
+        self.expect(&TokenKind::Newline, "a new line after ':'")?;
+        self.expect(&TokenKind::Indent, "an indented block")?;
+        let mut arms = Vec::new();
+        self.skip_newlines();
+        while !self.check(&TokenKind::Dedent) && !self.check(&TokenKind::Eof) {
+            let span = self.span();
+            let pattern = if matches!(self.peek(), TokenKind::Identifier(n) if n == "_") {
+                self.advance();
+                Pattern::Wildcard
+            } else {
+                Pattern::Value(self.parse_expr()?)
+            };
+            let body = self.parse_block()?;
+            arms.push(MatchArm {
+                pattern,
+                body,
+                span,
+            });
+            self.skip_newlines();
+        }
+        let end_span = self.span();
+        self.expect(&TokenKind::Dedent, "end of match")?;
+        if arms.is_empty() {
+            return Err(Diagnostic::new(
+                "a match must have at least one arm",
+                end_span,
+            ));
+        }
+        Ok(StmtKind::Match { subject, arms })
     }
 
     fn parse_while(&mut self) -> Result<StmtKind, Diagnostic> {
@@ -969,5 +1005,51 @@ mod enum_parse_tests {
     #[test]
     fn enum_needs_a_variant_name() {
         assert!(parse_result("enum Color:\n    1\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod match_parse_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn parse_result(src: &str) -> Result<Program, Diagnostic> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program()
+    }
+
+    #[test]
+    fn match_with_variants_and_wildcard() {
+        let src = "match c:\n    Color.Red:\n        print(1)\n    Color.Green:\n        print(2)\n    _:\n        print(3)\n";
+        let p = parse_result(src).unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Match { arms, .. } => {
+                assert_eq!(arms.len(), 3);
+                assert!(matches!(arms[0].pattern, Pattern::Value(_)));
+                assert!(matches!(arms[2].pattern, Pattern::Wildcard));
+                assert_eq!(arms[1].body.len(), 1);
+            }
+            other => panic!("expected Match, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn match_on_int_literals() {
+        let p =
+            parse_result("match n:\n    0:\n        print(0)\n    1:\n        print(1)\n").unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Match { arms, .. } => assert_eq!(arms.len(), 2),
+            other => panic!("expected Match, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn match_needs_an_arm() {
+        assert!(parse_result("match n:\n").is_err());
+    }
+
+    #[test]
+    fn match_arm_needs_a_colon() {
+        assert!(parse_result("match n:\n    0\n").is_err());
     }
 }
