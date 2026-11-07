@@ -830,6 +830,27 @@ impl Checker {
         if *left == Type::Unknown || *right == Type::Unknown {
             return Type::Unknown;
         }
+        if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul)
+            && (*left == Type::Tensor || *right == Type::Tensor)
+        {
+            let ok = matches!(
+                (left, right),
+                (Type::Tensor, Type::Tensor)
+                    | (Type::Tensor, Type::Float)
+                    | (Type::Float, Type::Tensor)
+            );
+            if ok {
+                return Type::Tensor;
+            }
+            self.error(
+                format!(
+                    "tensor arithmetic needs a Tensor with a Tensor or a Float, found {} and {}",
+                    left, right
+                ),
+                span,
+            );
+            return Type::Unknown;
+        }
         let numeric = |t: &Type| matches!(t, Type::Int | Type::Float);
         match op {
             BinaryOp::Add => {

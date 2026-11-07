@@ -431,6 +431,15 @@ impl Interpreter {
             BinaryOp::NotEq => return Ok(Value::Bool(l != r)),
             _ => {}
         }
+        if matches!(l, Value::Tensor { .. }) || matches!(r, Value::Tensor { .. }) {
+            let sym = match op {
+                BinaryOp::Add => '+',
+                BinaryOp::Sub => '-',
+                BinaryOp::Mul => '*',
+                _ => return Err(err("this operator is not supported for Tensor", span)),
+            };
+            return crate::runtime::values::tensor_arith(sym, &l, &r).map_err(|m| err(m, span));
+        }
         let overflow = || err("integer overflow", span);
         match (op, l, r) {
             (BinaryOp::Add, Value::Int(a), Value::Int(b)) => {

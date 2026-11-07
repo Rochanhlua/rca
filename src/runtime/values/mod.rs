@@ -344,3 +344,82 @@ mod tensor_fill_tests {
         assert!(tensor_shape(&Value::Int(1)).is_err());
     }
 }
+
+/// Elementwise `+`, `-`, `*` (op is '+', '-' or '*').
+/// Tensor op Tensor needs equal shapes (no broadcasting yet).
+/// Tensor op Float and Float op Tensor apply the scalar to every element.
+pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
+    let f = |a: f64, b: f64| match op {
+        '+' => a + b,
+        '-' => a - b,
+        _ => a * b,
+    };
+    match (l, r) {
+        (
+            Value::Tensor {
+                shape: s1,
+                data: d1,
+            },
+            Value::Tensor {
+                shape: s2,
+                data: d2,
+            },
+        ) => {
+            if s1 != s2 {
+                return Err(format!("tensor shapes do not match: {:?} and {:?}", s1, s2));
+            }
+            Ok(Value::Tensor {
+                shape: s1.clone(),
+                data: d1.iter().zip(d2.iter()).map(|(a, b)| f(*a, *b)).collect(),
+            })
+        }
+        (Value::Tensor { shape, data }, Value::Float(x)) => Ok(Value::Tensor {
+            shape: shape.clone(),
+            data: data.iter().map(|a| f(*a, *x)).collect(),
+        }),
+        (Value::Float(x), Value::Tensor { shape, data }) => Ok(Value::Tensor {
+            shape: shape.clone(),
+            data: data.iter().map(|a| f(*x, *a)).collect(),
+        }),
+        _ => Err("tensor arithmetic needs a Tensor with a Tensor or a Float".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tensor_arith_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor { shape, data }
+    }
+
+    #[test]
+    fn tensor_with_tensor() {
+        let a = t(vec![2], vec![1.0, 2.0]);
+        let b = t(vec![2], vec![10.0, 20.0]);
+        assert_eq!(tensor_arith('+', &a, &b), Ok(t(vec![2], vec![11.0, 22.0])));
+        assert_eq!(tensor_arith('-', &b, &a), Ok(t(vec![2], vec![9.0, 18.0])));
+        assert_eq!(tensor_arith('*', &a, &b), Ok(t(vec![2], vec![10.0, 40.0])));
+    }
+
+    #[test]
+    fn tensor_with_scalar_both_sides() {
+        let a = t(vec![2], vec![1.0, 2.0]);
+        assert_eq!(
+            tensor_arith('*', &a, &Value::Float(3.0)),
+            Ok(t(vec![2], vec![3.0, 6.0]))
+        );
+        assert_eq!(
+            tensor_arith('-', &Value::Float(10.0), &a),
+            Ok(t(vec![2], vec![9.0, 8.0]))
+        );
+    }
+
+    #[test]
+    fn shape_mismatch_is_error() {
+        let a = t(vec![2], vec![1.0, 2.0]);
+        let b = t(vec![3], vec![1.0, 2.0, 3.0]);
+        assert!(tensor_arith('+', &a, &b).is_err());
+        assert!(tensor_arith('+', &a, &Value::Int(1)).is_err());
+    }
+}
