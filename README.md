@@ -34,6 +34,13 @@ Creator: TH Lalrochanhlua
     let result = add(10, 20)
     print(result)
 
+Tensor example:
+
+    let a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    let b = Tensor([[5.0, 6.0], [7.0, 8.0]])
+    print(matmul(a, b))
+    print(a + Tensor([10.0, 20.0]))
+
 More programs are in `examples/`.
 
 ## What works today
@@ -47,20 +54,26 @@ More programs are in `examples/`.
 - Modules: import, import as, from-import, pub, module-qualified calls
 - Bytecode compiler, optimizer, validator and VM
 - Runtime checks: list bounds, integer overflow, division by zero, call depth
+- Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
+  broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
+  See `docs/tensor.md`.
 
 ## Not implemented yet
 
 - Native code generation
 - Borrowing and references
-- Tensors, automatic differentiation, GPU support
+- enum, match, Map, Tuple, const, generics
+- Automatic differentiation, tensor method syntax, GPU support
 - Standard library modules
 - Package manager
+- Benchmarks (no performance claims are made)
 
 ## Documentation
 
 - `docs/SYNTAX.md` syntax
 - `docs/memory-model.md` memory model
 - `docs/modules.md` modules
+- `docs/tensor.md` tensors
 
 ## Development
 

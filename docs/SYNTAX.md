@@ -54,3 +54,13 @@ Still not implemented (per the lists above):
 - enum, match, const, private, type aliases, generics
 - List type annotations (lists are inferred from literals only)
 - pub on let / const
+
+## Current status (v0.9) - tensors
+Implemented since v0.5 (details in tensor.md):
+- Type `Tensor` (Float only)
+- Built-ins: Tensor, zeros, ones, shape, matmul, sum, mean, max, min, transpose, reshape
+- Tensor indexing `a[i]`, and `+ - * /` with broadcasting and Float scalars
+
+Still not implemented:
+- Method syntax on tensors (`a.matmul(b)`), `a[i, j]`, `a[i] = x`
+- Automatic differentiation
