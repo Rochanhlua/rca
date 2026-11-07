@@ -332,6 +332,15 @@ impl<'a> Vm<'a> {
                     return Err(err(v.to_string(), span));
                 }
 
+                Instruction::Len => {
+                    let v = self.pop();
+                    match v {
+                        Value::Str(s) => self.stack.push(Value::Int(s.chars().count() as i64)),
+                        Value::List(items) => self.stack.push(Value::Int(items.len() as i64)),
+                        _ => return Err(err("len() needs a String or List", span)),
+                    }
+                }
+
                 // built-in
                 Instruction::Print(n) => {
                     let start = self.stack.len() - *n;
@@ -590,5 +599,10 @@ mod tests {
     fn continue_inside_try_pops_handler() {
         let src = "for i in 0..3:\n    try:\n        if i == 1:\n            continue\n        print(i)\n    catch e:\n        print(\"caught\")\ntry:\n    throw \"x\"\ncatch e:\n    print(e)\n";
         assert_eq!(run_vm(src), "0\n2\nx\n");
+    }
+
+    #[test]
+    fn len_of_list_and_string() {
+        assert_eq!(run_vm("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
     }
 }

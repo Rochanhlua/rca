@@ -527,6 +527,15 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "len" {
+            if args.len() != 1 {
+                return Err(err("len() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::Len, span);
+            return Ok(());
+        }
+
         if let Some(&id) = self.func_ids.get(&name) {
             let sig = self.func_sigs[id].clone();
             self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;

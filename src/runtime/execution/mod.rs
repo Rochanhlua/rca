@@ -467,6 +467,18 @@ impl Interpreter {
             return Ok(Value::None);
         }
 
+        if name == "len" {
+            let first = match args.first() {
+                Some(a) => a,
+                None => return Err(err("len() takes exactly 1 argument", span)),
+            };
+            return match self.eval_expr(&first.value)? {
+                Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
+                Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                _ => Err(err("len() needs a String or List", span)),
+            };
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }
@@ -690,5 +702,10 @@ mod tests {
     fn continue_inside_try_pops_handler() {
         let src = "for i in 0..3:\n    try:\n        if i == 1:\n            continue\n        print(i)\n    catch e:\n        print(\"caught\")\ntry:\n    throw \"x\"\ncatch e:\n    print(e)\n";
         assert_eq!(run(src), "0\n2\nx\n");
+    }
+
+    #[test]
+    fn len_of_list_and_string() {
+        assert_eq!(run("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
     }
 }

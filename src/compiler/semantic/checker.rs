@@ -110,7 +110,7 @@ impl Checker {
         // pass 3: function signatures
         for stmt in &program.statements {
             if let StmtKind::Function(f) = &stmt.kind {
-                if f.name == "print"
+                if f.name == "print" || f.name == "len"
                     || self.functions.contains_key(&f.name)
                     || self.structs.contains_key(&f.name)
                 {
@@ -516,6 +516,23 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "len" {
+            if args.len() != 1 {
+                self.error("len() takes exactly 1 argument", span);
+                self.check_arg_exprs(args);
+                return Type::Int;
+            }
+            let t = self.check_expr(&args[0].value);
+            match t {
+                Type::String | Type::List(_) | Type::Unknown => {}
+                other => self.error(
+                    format!("len() needs a String or List, found {}", other),
+                    &args[0].value.span,
+                ),
+            }
+            return Type::Int;
+        }
+
         if let Some(sig) = self.functions.get(&name).cloned() {
             return self.check_function_call(&name, &sig, args, span);
         }
@@ -912,5 +929,12 @@ mod tests {
     fn catch_variable_is_scoped() {
         let src = "try:\n    print(1)\ncatch e:\n    print(e)\nprint(e)\n";
         assert!(first_error(src).contains("undefined variable"));
+    }
+
+    #[test]
+    fn len_checks_argument() {
+        assert!(check("print(len([1, 2]))\nprint(len(\"abc\"))\n").is_ok());
+        assert!(first_error("print(len(5))\n").contains("len() needs a String or List"));
+        assert!(first_error("print(len())\n").contains("exactly 1 argument"));
     }
 }

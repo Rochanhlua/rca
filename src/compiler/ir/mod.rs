@@ -75,6 +75,10 @@ pub enum Instruction {
     PopHandler,
     /// Pops a String and raises it as an error.
     Throw,
+
+    // built-in
+    /// Pops a String or List, pushes its length.
+    Len,
 }
 
 #[derive(Debug, Clone, Default)]
