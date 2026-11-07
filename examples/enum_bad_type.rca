@@ -1,0 +1,3 @@
+enum Color:
+    Red
+let a: Color = 1

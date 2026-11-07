@@ -1,0 +1,7 @@
+enum Color:
+    Red
+    Green
+
+let a = Color.Red
+let b: Color = Color.Green
+let same = a == b

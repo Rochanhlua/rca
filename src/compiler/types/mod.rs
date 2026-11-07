@@ -13,6 +13,8 @@ pub enum Type {
     Tensor,
     /// A user-defined struct, identified by name.
     Struct(String),
+    /// A user-defined enum, identified by name.
+    Enum(String),
     /// Used after an error, or when a type is not yet known.
     /// It never causes further errors (prevents cascades).
     Unknown,
@@ -50,6 +52,7 @@ impl fmt::Display for Type {
             Type::Range => write!(f, "Range"),
             Type::Tensor => write!(f, "Tensor"),
             Type::Struct(name) => write!(f, "{}", name),
+            Type::Enum(name) => write!(f, "{}", name),
             Type::Unknown => write!(f, "<unknown>"),
         }
     }

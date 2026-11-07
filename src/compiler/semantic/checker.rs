@@ -23,6 +23,7 @@ pub struct Checker {
     errors: Vec<Diagnostic>,
     loop_depth: usize,
     structs: HashMap<String, Vec<(String, Type)>>,
+    enums: HashMap<String, Vec<String>>,
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
     imports: HashMap<String, ModuleExports>,
@@ -36,6 +37,7 @@ impl Checker {
             errors: Vec::new(),
             loop_depth: 0,
             structs: HashMap::new(),
+            enums: HashMap::new(),
             functions: HashMap::new(),
             current_return: None,
             imports: HashMap::new(),
@@ -71,6 +73,9 @@ impl Checker {
         if let Some(ty) = Type::from_name(&t.name) {
             return ty;
         }
+        if self.enums.contains_key(&t.name) {
+            return Type::Enum(t.name.clone());
+        }
         if self.structs.contains_key(&t.name) {
             return Type::Struct(t.name.clone());
         }
@@ -81,10 +86,31 @@ impl Checker {
     }
 
     fn collect_declarations(&mut self, program: &Program) {
+        // pass 0: enums
+        for stmt in &program.statements {
+            if let StmtKind::Enum(e) = &stmt.kind {
+                if self.enums.contains_key(&e.name) {
+                    self.error(format!("'{}' is already defined", e.name), &stmt.span);
+                    continue;
+                }
+                let mut names: Vec<String> = Vec::new();
+                for v in &e.variants {
+                    if names.contains(&v.name) {
+                        self.error(
+                            format!("duplicate variant '{}' in enum '{}'", v.name, e.name),
+                            &v.span,
+                        );
+                    } else {
+                        names.push(v.name.clone());
+                    }
+                }
+                self.enums.insert(e.name.clone(), names);
+            }
+        }
         // pass 1: struct names
         for stmt in &program.statements {
             if let StmtKind::Struct(s) = &stmt.kind {
-                if self.structs.contains_key(&s.name) {
+                if self.structs.contains_key(&s.name) || self.enums.contains_key(&s.name) {
                     self.error(format!("'{}' is already defined", s.name), &stmt.span);
                 } else {
                     self.structs.insert(s.name.clone(), Vec::new());
@@ -574,6 +600,19 @@ impl Checker {
             }
             ExprKind::Call { callee, args } => self.check_call(callee, args, &expr.span),
             ExprKind::Field { object, name } => {
+                if let ExprKind::Ident(en) = &object.kind {
+                    if self.scopes.lookup(en).is_none() && self.enums.contains_key(en) {
+                        let found = self.enums[en].iter().any(|v| v == name);
+                        if found {
+                            return Type::Enum(en.clone());
+                        }
+                        self.error(
+                            format!("enum '{}' has no variant '{}'", en, name),
+                            &expr.span,
+                        );
+                        return Type::Unknown;
+                    }
+                }
                 let obj = self.check_expr(object);
                 match obj {
                     Type::Struct(sname) => {

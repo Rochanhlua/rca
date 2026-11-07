@@ -1,0 +1,4 @@
+enum Color:
+    Red
+struct Color:
+    x: Int
