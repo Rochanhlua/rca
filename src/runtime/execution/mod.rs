@@ -679,4 +679,16 @@ mod tests {
         let src = "fn f() -> Int:\n    try:\n        return 5\n    catch e:\n        return 0\n    return 1\nprint(f())\n";
         assert_eq!(run(src), "5\n");
     }
+
+    #[test]
+    fn break_inside_try_pops_handler() {
+        let src = "for i in 0..3:\n    try:\n        if i == 1:\n            break\n    catch e:\n        print(\"caught\")\ntry:\n    throw \"late\"\ncatch e:\n    print(e)\nprint(\"done\")\n";
+        assert_eq!(run(src), "late\ndone\n");
+    }
+
+    #[test]
+    fn continue_inside_try_pops_handler() {
+        let src = "for i in 0..3:\n    try:\n        if i == 1:\n            continue\n        print(i)\n    catch e:\n        print(\"caught\")\ntry:\n    throw \"x\"\ncatch e:\n    print(e)\n";
+        assert_eq!(run(src), "0\n2\nx\n");
+    }
 }
