@@ -1,0 +1,30 @@
+# RCA run demo
+struct User:
+    name: String
+    age: Int
+
+fn fact(n: Int) -> Int:
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+
+fn greet(user: User, times: Int = 2) -> None:
+    for i in 0..times:
+        print("Hello,", user.name)
+
+let user = User(name = "RCA Developer", age = 20)
+greet(user)
+print("fact(10) =", fact(10))
+
+mut total = 0
+for n in [1, 2, 3, 4, 5]:
+    total = total + n
+print("sum =", total)
+
+mut i = 0
+while i < 3:
+    print("i is", i)
+    i = i + 1
+
+if user.age >= 18 and not false:
+    print("Adult")
