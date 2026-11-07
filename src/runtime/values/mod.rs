@@ -423,3 +423,69 @@ mod tensor_arith_tests {
         assert!(tensor_arith('+', &a, &Value::Int(1)).is_err());
     }
 }
+
+/// t[i]: rank 1 gives a Float, rank 2+ gives the i-th sub-tensor (row).
+pub fn tensor_index(v: &Value, i: i64) -> Result<Value, String> {
+    let (shape, data) = match v {
+        Value::Tensor { shape, data } => (shape, data),
+        _ => return Err("cannot index into this value".to_string()),
+    };
+    if shape.is_empty() {
+        return Err("cannot index a tensor with no dimensions".to_string());
+    }
+    if i < 0 || (i as usize) >= shape[0] {
+        return Err(format!(
+            "index {} out of bounds for tensor of length {}",
+            i, shape[0]
+        ));
+    }
+    let i = i as usize;
+    if shape.len() == 1 {
+        return Ok(Value::Float(data[i]));
+    }
+    let stride: usize = shape[1..].iter().product();
+    Ok(Value::Tensor {
+        shape: shape[1..].to_vec(),
+        data: data[i * stride..(i + 1) * stride].to_vec(),
+    })
+}
+
+#[cfg(test)]
+mod tensor_index_tests {
+    use super::*;
+
+    #[test]
+    fn rank1_gives_float() {
+        let t = Value::Tensor {
+            shape: vec![3],
+            data: vec![1.0, 2.0, 3.0],
+        };
+        assert_eq!(tensor_index(&t, 1), Ok(Value::Float(2.0)));
+    }
+
+    #[test]
+    fn rank2_gives_row() {
+        let t = Value::Tensor {
+            shape: vec![2, 3],
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        };
+        assert_eq!(
+            tensor_index(&t, 1),
+            Ok(Value::Tensor {
+                shape: vec![3],
+                data: vec![4.0, 5.0, 6.0]
+            })
+        );
+    }
+
+    #[test]
+    fn bad_index_is_error() {
+        let t = Value::Tensor {
+            shape: vec![2, 3],
+            data: vec![0.0; 6],
+        };
+        assert!(tensor_index(&t, 2).is_err());
+        assert!(tensor_index(&t, -1).is_err());
+        assert!(tensor_index(&Value::Int(1), 0).is_err());
+    }
+}

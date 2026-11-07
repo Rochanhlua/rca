@@ -278,6 +278,12 @@ impl<'a> Vm<'a> {
                             }
                             self.stack.push(items[i as usize].clone());
                         }
+                        (t @ Value::Tensor { .. }, Value::Int(i)) => {
+                            match crate::runtime::values::tensor_index(&t, i) {
+                                Ok(v) => self.stack.push(v),
+                                Err(m) => return Err(err(m, span)),
+                            }
+                        }
                         _ => return Err(err("invalid index operation", span)),
                     }
                 }

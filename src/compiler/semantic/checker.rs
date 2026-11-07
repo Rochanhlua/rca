@@ -557,6 +557,7 @@ impl Checker {
                 }
                 match obj {
                     Type::List(inner) => *inner,
+                    Type::Tensor => Type::Unknown,
                     Type::Unknown => Type::Unknown,
                     other => {
                         self.error(format!("cannot index into {}", other), &object.span);

@@ -1,0 +1,7 @@
+let a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+print(a[0])
+print(a[1])
+print(a[1][2])
+let v = Tensor([10.0, 20.0])
+print(v[1])
+print(a[0][1] + 1.0)

@@ -395,6 +395,9 @@ impl Interpreter {
                             Ok(items[i as usize].clone())
                         }
                     }
+                    (t @ Value::Tensor { .. }, Value::Int(i)) => {
+                        crate::runtime::values::tensor_index(&t, i).map_err(|m| err(m, &expr.span))
+                    }
                     _ => Err(err("invalid index operation", &expr.span)),
                 }
             }
