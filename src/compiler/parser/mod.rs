@@ -130,6 +130,8 @@ impl Parser {
             TokenKind::While => self.parse_while()?,
             TokenKind::For => self.parse_for()?,
             TokenKind::Try => self.parse_try()?,
+            TokenKind::Import => self.parse_import()?,
+            TokenKind::From => self.parse_from_import()?,
             TokenKind::Throw => {
                 self.advance();
                 let value = self.parse_expr()?;
@@ -169,6 +171,39 @@ impl Parser {
             }
         };
         Ok(Stmt { kind, span })
+    }
+
+    fn parse_import(&mut self) -> Result<StmtKind, Diagnostic> {
+        self.advance(); // import
+        let (module, _) = self.expect_ident("a module name")?;
+        let alias = if self.eat(&TokenKind::As) {
+            Some(self.expect_ident("an alias name")?.0)
+        } else {
+            None
+        };
+        self.end_simple()?;
+        Ok(StmtKind::Import { module, alias })
+    }
+
+    fn parse_from_import(&mut self) -> Result<StmtKind, Diagnostic> {
+        self.advance(); // from
+        let (module, _) = self.expect_ident("a module name")?;
+        self.expect(&TokenKind::Import, "'import'")?;
+        let mut names = Vec::new();
+        loop {
+            let (name, span) = self.expect_ident("a name to import")?;
+            let alias = if self.eat(&TokenKind::As) {
+                Some(self.expect_ident("an alias name")?.0)
+            } else {
+                None
+            };
+            names.push(ImportName { name, alias, span });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.end_simple()?;
+        Ok(StmtKind::FromImport { module, names })
     }
 
     fn parse_type(&mut self) -> Result<TypeExpr, Diagnostic> {
@@ -539,6 +574,50 @@ mod tests {
         parse_result(src).unwrap()
     }
 
+
+    #[test]
+    fn import_simple() {
+        let p = parse("import utils\n");
+        assert_eq!(
+            p.statements[0].kind,
+            StmtKind::Import { module: "utils".to_string(), alias: None }
+        );
+    }
+
+    #[test]
+    fn import_with_alias() {
+        let p = parse("import utils as u\n");
+        assert_eq!(
+            p.statements[0].kind,
+            StmtKind::Import { module: "utils".to_string(), alias: Some("u".to_string()) }
+        );
+    }
+
+    #[test]
+    fn from_import_names() {
+        let p = parse("from utils import add, sub as minus\n");
+        match &p.statements[0].kind {
+            StmtKind::FromImport { module, names } => {
+                assert_eq!(module, "utils");
+                assert_eq!(names.len(), 2);
+                assert_eq!(names[0].name, "add");
+                assert_eq!(names[0].alias, None);
+                assert_eq!(names[1].name, "sub");
+                assert_eq!(names[1].alias, Some("minus".to_string()));
+            }
+            other => panic!("expected FromImport, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn import_missing_module_name_is_error() {
+        assert!(parse_result("import\n").is_err());
+    }
+
+    #[test]
+    fn from_import_missing_import_keyword_is_error() {
+        assert!(parse_result("from utils add\n").is_err());
+    }
     #[test]
     fn let_statement() {
         let p = parse("let x: Int = 5\n");
