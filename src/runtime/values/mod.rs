@@ -349,6 +349,21 @@ mod tensor_fill_tests {
 /// Tensor op Tensor needs equal shapes (no broadcasting yet).
 /// Tensor op Float and Float op Tensor apply the scalar to every element.
 pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
+    if let (
+        Value::Tensor {
+            shape: s1,
+            data: d1,
+        },
+        Value::Tensor {
+            shape: s2,
+            data: d2,
+        },
+    ) = (l, r)
+    {
+        if s1 != s2 {
+            return tensor_broadcast(op, s1, d1, s2, d2);
+        }
+    }
     let f = |a: f64, b: f64| match op {
         '+' => a + b,
         '-' => a - b,
@@ -570,5 +585,126 @@ mod tensor_matmul_tests {
         let v = t(vec![3], vec![0.0; 3]);
         assert!(tensor_matmul(&v, &a).is_err());
         assert!(tensor_matmul(&Value::Int(1), &a).is_err());
+    }
+}
+
+/// Strides for reading an input of shape `s` as if it had `rank` dimensions.
+/// Missing leading dims and dims of size 1 get stride 0 (the value is reused).
+fn broadcast_strides(s: &[usize], rank: usize) -> Vec<usize> {
+    let mut st = vec![0usize; rank];
+    let mut acc = 1usize;
+    for i in (0..s.len()).rev() {
+        let pos = i + rank - s.len();
+        st[pos] = if s[i] == 1 { 0 } else { acc };
+        acc *= s[i];
+    }
+    st
+}
+
+/// NumPy-style broadcasting: shapes are right-aligned; each pair of dims
+/// must be equal or one of them must be 1.
+fn tensor_broadcast(
+    op: char,
+    s1: &[usize],
+    d1: &[f64],
+    s2: &[usize],
+    d2: &[f64],
+) -> Result<Value, String> {
+    let rank = s1.len().max(s2.len());
+    let mut out_shape = vec![0usize; rank];
+    for i in 0..rank {
+        let a = if i + s1.len() >= rank {
+            s1[i + s1.len() - rank]
+        } else {
+            1
+        };
+        let b = if i + s2.len() >= rank {
+            s2[i + s2.len() - rank]
+        } else {
+            1
+        };
+        out_shape[i] = if a == b || b == 1 {
+            a
+        } else if a == 1 {
+            b
+        } else {
+            return Err(format!("cannot broadcast shapes {:?} and {:?}", s1, s2));
+        };
+    }
+    let mut total: usize = 1;
+    for d in &out_shape {
+        total = total.checked_mul(*d).ok_or("tensor is too large")?;
+    }
+    if total > MAX_TENSOR_ELEMENTS {
+        return Err("tensor is too large".to_string());
+    }
+    let st1 = broadcast_strides(s1, rank);
+    let st2 = broadcast_strides(s2, rank);
+    let mut data = Vec::with_capacity(total);
+    for flat in 0..total {
+        let mut rem = flat;
+        let (mut ia, mut ib) = (0usize, 0usize);
+        for d in (0..rank).rev() {
+            let idx = rem % out_shape[d];
+            rem /= out_shape[d];
+            ia += idx * st1[d];
+            ib += idx * st2[d];
+        }
+        let (a, b) = (d1[ia], d2[ib]);
+        data.push(match op {
+            '+' => a + b,
+            '-' => a - b,
+            _ => a * b,
+        });
+    }
+    Ok(Value::Tensor {
+        shape: out_shape,
+        data,
+    })
+}
+
+#[cfg(test)]
+mod tensor_broadcast_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor { shape, data }
+    }
+
+    #[test]
+    fn row_vector_over_matrix() {
+        let a = t(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let row = t(vec![3], vec![10.0, 20.0, 30.0]);
+        assert_eq!(
+            tensor_arith('+', &a, &row),
+            Ok(t(vec![2, 3], vec![11.0, 22.0, 33.0, 14.0, 25.0, 36.0]))
+        );
+        assert_eq!(
+            tensor_arith('+', &row, &a),
+            Ok(t(vec![2, 3], vec![11.0, 22.0, 33.0, 14.0, 25.0, 36.0]))
+        );
+    }
+
+    #[test]
+    fn column_and_row_make_matrix() {
+        let col = t(vec![2, 1], vec![100.0, 200.0]);
+        let row = t(vec![3], vec![1.0, 2.0, 3.0]);
+        assert_eq!(
+            tensor_arith('+', &col, &row),
+            Ok(t(
+                vec![2, 3],
+                vec![101.0, 102.0, 103.0, 201.0, 202.0, 203.0]
+            ))
+        );
+    }
+
+    #[test]
+    fn incompatible_shapes_are_errors() {
+        let a = t(vec![2, 3], vec![0.0; 6]);
+        let b = t(vec![2], vec![0.0; 2]);
+        assert!(tensor_arith('+', &a, &b).is_err());
+        let c = t(vec![3], vec![0.0; 3]);
+        let d = t(vec![4], vec![0.0; 4]);
+        assert!(tensor_arith('*', &c, &d).is_err());
     }
 }

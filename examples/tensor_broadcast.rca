@@ -1,0 +1,8 @@
+let a = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+let row = Tensor([10.0, 20.0, 30.0])
+let col = Tensor([[100.0], [200.0]])
+print(a + row)
+print(a * row)
+print(a + col)
+print(col + row)
+print(shape(col + row))
