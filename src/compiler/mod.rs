@@ -6,3 +6,4 @@ pub mod optimizer;
 pub mod parser;
 pub mod semantic;
 pub mod types;
+pub mod modules;
