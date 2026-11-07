@@ -1,3 +1,4 @@
+use rca::compiler::ir::lower;
 use rca::compiler::lexer::Lexer;
 use rca::compiler::parser::Parser;
 use rca::compiler::semantic::Checker;
@@ -46,6 +47,19 @@ fn run_command(command: &str, source: &str) -> i32 {
         return 0;
     }
 
+    if command == "ir" {
+        return match lower::compile(&program) {
+            Ok(ir) => {
+                println!("{}", ir);
+                0
+            }
+            Err(d) => {
+                eprintln!("compile error: {}", d);
+                1
+            }
+        };
+    }
+
     let mut interpreter = Interpreter::new();
     match interpreter.run(&program) {
         Ok(()) => 0,
@@ -58,13 +72,14 @@ fn run_command(command: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let commands = ["lex", "parse", "check", "run"];
+    let commands = ["lex", "parse", "check", "ir", "run"];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
         println!("Usage:");
         println!("  rca lex <file.rca>");
         println!("  rca parse <file.rca>");
         println!("  rca check <file.rca>");
+        println!("  rca ir <file.rca>");
         println!("  rca run <file.rca>");
         return;
     }

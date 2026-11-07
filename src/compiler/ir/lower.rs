@@ -1,0 +1,746 @@
+use super::{Chunk, Function, Instruction, IrProgram, StructInfo};
+use crate::compiler::ast::*;
+use crate::compiler::diagnostics::Diagnostic;
+use crate::compiler::lexer::token::Span;
+use std::collections::HashMap;
+
+#[derive(Clone, Copy)]
+enum VarRef {
+    Local(usize),
+    Global(usize),
+}
+
+struct LocalVar {
+    name: String,
+    slot: usize,
+    depth: usize,
+}
+
+struct LoopCtx {
+    start: usize,
+    break_jumps: Vec<usize>,
+}
+
+struct FnState {
+    chunk: Chunk,
+    locals: Vec<LocalVar>,
+    scope_depth: usize,
+    next_slot: usize,
+    loops: Vec<LoopCtx>,
+    is_main: bool,
+}
+
+impl FnState {
+    fn new(is_main: bool) -> Self {
+        FnState {
+            chunk: Chunk::default(),
+            locals: Vec::new(),
+            scope_depth: 0,
+            next_slot: 0,
+            loops: Vec::new(),
+            is_main,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct FuncSig {
+    params: Vec<String>,
+    defaults: Vec<Option<Expr>>,
+}
+
+struct Compiler {
+    state: FnState,
+    globals: HashMap<String, usize>,
+    functions: Vec<Function>,
+    func_ids: HashMap<String, usize>,
+    func_sigs: Vec<FuncSig>,
+    struct_ids: HashMap<String, usize>,
+    structs: Vec<StructInfo>,
+}
+
+fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
+    Diagnostic::new(message, span.clone())
+}
+
+/// Compiles a type-checked program to IR.
+pub fn compile(program: &Program) -> Result<IrProgram, Diagnostic> {
+    let mut c = Compiler::new();
+    c.declare_items(program);
+    for stmt in &program.statements {
+        match &stmt.kind {
+            StmtKind::Function(f) => c.compile_function(f, &stmt.span)?,
+            StmtKind::Struct(_) => {}
+            _ => c.compile_stmt(stmt)?,
+        }
+    }
+    Ok(c.finish())
+}
+
+impl Compiler {
+    fn new() -> Self {
+        Compiler {
+            state: FnState::new(true),
+            globals: HashMap::new(),
+            functions: Vec::new(),
+            func_ids: HashMap::new(),
+            func_sigs: Vec::new(),
+            struct_ids: HashMap::new(),
+            structs: Vec::new(),
+        }
+    }
+
+    fn finish(mut self) -> IrProgram {
+        let span = Span { line: 1, column: 1 };
+        self.emit(Instruction::PushNone, &span);
+        self.emit(Instruction::Return, &span);
+        IrProgram {
+            main: Function {
+                name: "<main>".to_string(),
+                arity: 0,
+                num_locals: self.state.next_slot,
+                chunk: self.state.chunk,
+            },
+            functions: self.functions,
+            structs: self.structs,
+            num_globals: self.globals.len(),
+        }
+    }
+
+    /// Gives every struct and function an id before any code is compiled,
+    /// so functions can be called before they are defined.
+    fn declare_items(&mut self, program: &Program) {
+        for stmt in &program.statements {
+            match &stmt.kind {
+                StmtKind::Struct(s) => {
+                    let id = self.structs.len();
+                    self.struct_ids.insert(s.name.clone(), id);
+                    self.structs.push(StructInfo {
+                        name: s.name.clone(),
+                        fields: s.fields.iter().map(|f| f.name.clone()).collect(),
+                    });
+                }
+                StmtKind::Function(f) => {
+                    let id = self.functions.len();
+                    self.func_ids.insert(f.name.clone(), id);
+                    self.func_sigs.push(FuncSig {
+                        params: f.params.iter().map(|p| p.name.clone()).collect(),
+                        defaults: f.params.iter().map(|p| p.default.clone()).collect(),
+                    });
+                    self.functions.push(Function {
+                        name: f.name.clone(),
+                        arity: f.params.len(),
+                        num_locals: 0,
+                        chunk: Chunk::default(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // ---------- emit helpers ----------
+
+    fn emit(&mut self, ins: Instruction, span: &Span) {
+        self.state.chunk.code.push(ins);
+        self.state.chunk.spans.push(span.clone());
+    }
+
+    fn emit_jump(&mut self, ins: Instruction, span: &Span) -> usize {
+        self.emit(ins, span);
+        self.state.chunk.code.len() - 1
+    }
+
+    fn here(&self) -> usize {
+        self.state.chunk.code.len()
+    }
+
+    /// Makes the jump at `index` land on the next instruction to be emitted.
+    fn patch(&mut self, index: usize) {
+        let target = self.here();
+        match &mut self.state.chunk.code[index] {
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) => *t = target,
+            Instruction::ForNext { exit, .. } => *exit = target,
+            _ => {}
+        }
+    }
+
+    // ---------- scopes and variables ----------
+
+    fn begin_scope(&mut self) {
+        self.state.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.state.scope_depth -= 1;
+        let depth = self.state.scope_depth;
+        while let Some(l) = self.state.locals.last() {
+            if l.depth > depth {
+                self.state.locals.pop();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn declare_local(&mut self, name: &str) -> usize {
+        let slot = self.state.next_slot;
+        self.state.next_slot += 1;
+        self.state.locals.push(LocalVar {
+            name: name.to_string(),
+            slot,
+            depth: self.state.scope_depth,
+        });
+        slot
+    }
+
+    /// Top-level variables (outside any block) are globals; everything else is a local.
+    fn declare_var(&mut self, name: &str) -> VarRef {
+        if self.state.is_main && self.state.scope_depth == 0 {
+            let slot = match self.globals.get(name) {
+                Some(&s) => s,
+                None => {
+                    let s = self.globals.len();
+                    self.globals.insert(name.to_string(), s);
+                    s
+                }
+            };
+            VarRef::Global(slot)
+        } else {
+            VarRef::Local(self.declare_local(name))
+        }
+    }
+
+    fn resolve(&self, name: &str) -> Option<VarRef> {
+        for l in self.state.locals.iter().rev() {
+            if l.name == name {
+                return Some(VarRef::Local(l.slot));
+            }
+        }
+        self.globals.get(name).map(|&s| VarRef::Global(s))
+    }
+
+    fn emit_store(&mut self, var: VarRef, span: &Span) {
+        match var {
+            VarRef::Local(s) => self.emit(Instruction::StoreLocal(s), span),
+            VarRef::Global(s) => self.emit(Instruction::StoreGlobal(s), span),
+        }
+    }
+
+    // ---------- functions ----------
+
+    fn compile_function(&mut self, f: &FunctionDecl, span: &Span) -> Result<(), Diagnostic> {
+        let id = match self.func_ids.get(&f.name) {
+            Some(&id) => id,
+            None => return Err(err(format!("unknown function '{}'", f.name), span)),
+        };
+        let saved = std::mem::replace(&mut self.state, FnState::new(false));
+        for p in &f.params {
+            self.declare_local(&p.name);
+        }
+        let result = self.compile_stmts(&f.body);
+        if result.is_ok() {
+            self.emit(Instruction::PushNone, span);
+            self.emit(Instruction::Return, span);
+        }
+        let state = std::mem::replace(&mut self.state, saved);
+        result?;
+        self.functions[id] = Function {
+            name: f.name.clone(),
+            arity: f.params.len(),
+            num_locals: state.next_slot,
+            chunk: state.chunk,
+        };
+        Ok(())
+    }
+
+    // ---------- statements ----------
+
+    fn compile_stmts(&mut self, stmts: &[Stmt]) -> Result<(), Diagnostic> {
+        for s in stmts {
+            self.compile_stmt(s)?;
+        }
+        Ok(())
+    }
+
+    fn compile_block(&mut self, stmts: &[Stmt]) -> Result<(), Diagnostic> {
+        self.begin_scope();
+        let result = self.compile_stmts(stmts);
+        self.end_scope();
+        result
+    }
+
+    fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), Diagnostic> {
+        let span = &stmt.span;
+        match &stmt.kind {
+            StmtKind::Let { name, value, .. } => {
+                self.compile_expr(value)?;
+                let var = self.declare_var(name);
+                self.emit_store(var, span);
+            }
+            StmtKind::Assign { target, value } => {
+                self.compile_expr(value)?;
+                self.emit_store_to(target)?;
+            }
+            StmtKind::Expr(e) => {
+                self.compile_expr(e)?;
+                self.emit(Instruction::Pop, span);
+            }
+            StmtKind::Return(value) => {
+                match value {
+                    Some(e) => self.compile_expr(e)?,
+                    None => self.emit(Instruction::PushNone, span),
+                }
+                self.emit(Instruction::Return, span);
+            }
+            StmtKind::Break => {
+                let jump = self.emit_jump(Instruction::Jump(0), span);
+                match self.state.loops.last_mut() {
+                    Some(ctx) => ctx.break_jumps.push(jump),
+                    None => return Err(err("'break' outside of a loop", span)),
+                }
+            }
+            StmtKind::Continue => {
+                let start = match self.state.loops.last() {
+                    Some(ctx) => ctx.start,
+                    None => return Err(err("'continue' outside of a loop", span)),
+                };
+                self.emit(Instruction::Jump(start), span);
+            }
+            StmtKind::If { condition, then_block, else_block } => {
+                self.compile_expr(condition)?;
+                let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                self.compile_block(then_block)?;
+                match else_block {
+                    Some(block) => {
+                        let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                        self.patch(jump_false);
+                        self.compile_block(block)?;
+                        self.patch(jump_end);
+                    }
+                    None => self.patch(jump_false),
+                }
+            }
+            StmtKind::While { condition, body } => {
+                let start = self.here();
+                self.compile_expr(condition)?;
+                let exit = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new() });
+                let result = self.compile_block(body);
+                let ctx = self.state.loops.pop().unwrap();
+                result?;
+                self.emit(Instruction::Jump(start), span);
+                self.patch(exit);
+                for j in ctx.break_jumps {
+                    self.patch(j);
+                }
+            }
+            StmtKind::For { var, iter, body } => {
+                self.compile_expr(iter)?;
+                self.begin_scope();
+                let iter_slot = self.declare_local("$iter");
+                self.emit(Instruction::StoreLocal(iter_slot), span);
+                self.emit(Instruction::PushInt(0), span);
+                let idx_slot = self.declare_local("$idx");
+                self.emit(Instruction::StoreLocal(idx_slot), span);
+                let var_slot = self.declare_local(var);
+
+                let start = self.here();
+                let next = self.emit_jump(
+                    Instruction::ForNext { iter: iter_slot, idx: idx_slot, var: var_slot, exit: 0 },
+                    span,
+                );
+                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new() });
+                let result = self.compile_block(body);
+                let ctx = self.state.loops.pop().unwrap();
+                result?;
+                self.emit(Instruction::Jump(start), span);
+                self.patch(next);
+                for j in ctx.break_jumps {
+                    self.patch(j);
+                }
+                self.end_scope();
+            }
+            // Already handled when the program was scanned.
+            StmtKind::Function(_) | StmtKind::Struct(_) => {}
+        }
+        Ok(())
+    }
+
+    /// Stores the value on top of the stack into an assignment target.
+    fn emit_store_to(&mut self, target: &Expr) -> Result<(), Diagnostic> {
+        let span = &target.span;
+        match &target.kind {
+            ExprKind::Ident(name) => {
+                let var = self
+                    .resolve(name)
+                    .ok_or_else(|| err(format!("undefined variable '{}'", name), span))?;
+                self.emit_store(var, span);
+            }
+            ExprKind::Index { object, index } => {
+                self.compile_expr(object)?;
+                self.compile_expr(index)?;
+                self.emit(Instruction::StoreIndex, span);
+                self.emit_store_to(object)?;
+            }
+            ExprKind::Field { object, name } => {
+                self.compile_expr(object)?;
+                self.emit(Instruction::SetField(name.clone()), span);
+                self.emit_store_to(object)?;
+            }
+            _ => return Err(err("invalid assignment target", span)),
+        }
+        Ok(())
+    }
+
+    // ---------- expressions ----------
+
+    fn compile_expr(&mut self, expr: &Expr) -> Result<(), Diagnostic> {
+        let span = &expr.span;
+        match &expr.kind {
+            ExprKind::Int(n) => self.emit(Instruction::PushInt(*n), span),
+            ExprKind::Float(x) => self.emit(Instruction::PushFloat(*x), span),
+            ExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
+            ExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
+            ExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            ExprKind::Ident(name) => match self.resolve(name) {
+                Some(VarRef::Local(s)) => self.emit(Instruction::LoadLocal(s), span),
+                Some(VarRef::Global(s)) => self.emit(Instruction::LoadGlobal(s), span),
+                None => return Err(err(format!("undefined variable '{}'", name), span)),
+            },
+            ExprKind::Unary { op, operand } => {
+                self.compile_expr(operand)?;
+                match op {
+                    UnaryOp::Neg => self.emit(Instruction::Neg, span),
+                    UnaryOp::Not => self.emit(Instruction::Not, span),
+                }
+            }
+            ExprKind::Binary { op, left, right } => match op {
+                BinaryOp::And => {
+                    self.compile_expr(left)?;
+                    let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                    self.compile_expr(right)?;
+                    let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                    self.patch(jump_false);
+                    self.emit(Instruction::PushBool(false), span);
+                    self.patch(jump_end);
+                }
+                BinaryOp::Or => {
+                    self.compile_expr(left)?;
+                    let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                    self.emit(Instruction::PushBool(true), span);
+                    let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                    self.patch(jump_false);
+                    self.compile_expr(right)?;
+                    self.patch(jump_end);
+                }
+                _ => {
+                    self.compile_expr(left)?;
+                    self.compile_expr(right)?;
+                    let ins = match op {
+                        BinaryOp::Add => Instruction::Add,
+                        BinaryOp::Sub => Instruction::Sub,
+                        BinaryOp::Mul => Instruction::Mul,
+                        BinaryOp::Div => Instruction::Div,
+                        BinaryOp::Mod => Instruction::Mod,
+                        BinaryOp::Eq => Instruction::Eq,
+                        BinaryOp::NotEq => Instruction::NotEq,
+                        BinaryOp::Lt => Instruction::Lt,
+                        BinaryOp::LtEq => Instruction::LtEq,
+                        BinaryOp::Gt => Instruction::Gt,
+                        BinaryOp::GtEq => Instruction::GtEq,
+                        BinaryOp::Range => Instruction::MakeRange,
+                        BinaryOp::And | BinaryOp::Or => unreachable!(),
+                    };
+                    self.emit(ins, span);
+                }
+            },
+            ExprKind::List(items) => {
+                for item in items {
+                    self.compile_expr(item)?;
+                }
+                self.emit(Instruction::MakeList(items.len()), span);
+            }
+            ExprKind::Index { object, index } => {
+                self.compile_expr(object)?;
+                self.compile_expr(index)?;
+                self.emit(Instruction::Index, span);
+            }
+            ExprKind::Field { object, name } => {
+                self.compile_expr(object)?;
+                self.emit(Instruction::GetField(name.clone()), span);
+            }
+            ExprKind::Call { callee, args } => self.compile_call(callee, args, span)?,
+        }
+        Ok(())
+    }
+
+    fn compile_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Result<(), Diagnostic> {
+        let name = match &callee.kind {
+            ExprKind::Ident(n) => n.clone(),
+            _ => return Err(err("this value cannot be called", &callee.span)),
+        };
+
+        if name == "print" {
+            for a in args {
+                self.compile_expr(&a.value)?;
+            }
+            self.emit(Instruction::Print(args.len()), span);
+            return Ok(());
+        }
+
+        if let Some(&id) = self.func_ids.get(&name) {
+            let sig = self.func_sigs[id].clone();
+            self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;
+            self.emit(Instruction::Call(id), span);
+            return Ok(());
+        }
+
+        if let Some(&id) = self.struct_ids.get(&name) {
+            let fields = self.structs[id].fields.clone();
+            let no_defaults: Vec<Option<Expr>> = vec![None; fields.len()];
+            self.emit_bound_args(&fields, &no_defaults, args, span)?;
+            self.emit(Instruction::MakeStruct(id), span);
+            return Ok(());
+        }
+
+        Err(err(format!("undefined function '{}'", name), &callee.span))
+    }
+
+    /// Emits arguments in parameter order: positional and named arguments
+    /// are matched to parameters, missing ones use the default value.
+    fn emit_bound_args(
+        &mut self,
+        names: &[String],
+        defaults: &[Option<Expr>],
+        args: &[Argument],
+        span: &Span,
+    ) -> Result<(), Diagnostic> {
+        let mut slots: Vec<Option<&Expr>> = vec![None; names.len()];
+        for (i, arg) in args.iter().enumerate() {
+            let idx = match &arg.name {
+                None => i,
+                Some(n) => names
+                    .iter()
+                    .position(|x| x == n)
+                    .ok_or_else(|| err(format!("no parameter named '{}'", n), span))?,
+            };
+            if idx >= slots.len() {
+                return Err(err("too many arguments", span));
+            }
+            slots[idx] = Some(&arg.value);
+        }
+
+        for i in 0..names.len() {
+            match slots[i] {
+                Some(e) => self.compile_expr(e)?,
+                None => match &defaults[i] {
+                    Some(d) => {
+                        // Default values can only see globals, never the caller's locals.
+                        let saved = std::mem::take(&mut self.state.locals);
+                        let result = self.compile_expr(d);
+                        self.state.locals = saved;
+                        result?;
+                    }
+                    None => {
+                        return Err(err(format!("missing argument '{}'", names[i]), span));
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+    use Instruction as I;
+
+    fn ir(src: &str) -> IrProgram {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        compile(&program).unwrap()
+    }
+
+    fn main_code(src: &str) -> Vec<Instruction> {
+        ir(src).main.chunk.code
+    }
+
+    #[test]
+    fn let_and_arithmetic() {
+        assert_eq!(
+            main_code("let x = 1 + 2\n"),
+            vec![I::PushInt(1), I::PushInt(2), I::Add, I::StoreGlobal(0), I::PushNone, I::Return]
+        );
+    }
+
+    #[test]
+    fn globals_and_locals() {
+        let code = main_code("let a = 1\nif true:\n    let b = 2\n    print(b)\nprint(a)\n");
+        assert!(code.contains(&I::LoadLocal(0)));
+        assert!(code.contains(&I::LoadGlobal(0)));
+        assert!(code.contains(&I::StoreLocal(0)));
+    }
+
+    #[test]
+    fn if_else_jumps() {
+        assert_eq!(
+            main_code("mut x = 1\nif true:\n    x = 2\nelse:\n    x = 3\n"),
+            vec![
+                I::PushInt(1),
+                I::StoreGlobal(0),
+                I::PushBool(true),
+                I::JumpIfFalse(7),
+                I::PushInt(2),
+                I::StoreGlobal(0),
+                I::Jump(9),
+                I::PushInt(3),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn while_loop_jumps() {
+        assert_eq!(
+            main_code("mut i = 0\nwhile i < 3:\n    i = i + 1\n"),
+            vec![
+                I::PushInt(0),
+                I::StoreGlobal(0),
+                I::LoadGlobal(0),
+                I::PushInt(3),
+                I::Lt,
+                I::JumpIfFalse(11),
+                I::LoadGlobal(0),
+                I::PushInt(1),
+                I::Add,
+                I::StoreGlobal(0),
+                I::Jump(2),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn function_and_call() {
+        let p = ir("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(1, 2))\n");
+        assert_eq!(p.functions[0].name, "add");
+        assert_eq!(p.functions[0].arity, 2);
+        assert_eq!(
+            p.functions[0].chunk.code,
+            vec![I::LoadLocal(0), I::LoadLocal(1), I::Add, I::Return, I::PushNone, I::Return]
+        );
+        assert_eq!(
+            p.main.chunk.code,
+            vec![I::PushInt(1), I::PushInt(2), I::Call(0), I::Print(1), I::Pop, I::PushNone, I::Return]
+        );
+    }
+
+    #[test]
+    fn named_and_default_arguments() {
+        let src = "fn f(a: Int, b: Int = 5) -> Int:\n    return a + b\nlet r = f(b = 1, a = 2)\nlet s = f(7)\n";
+        assert_eq!(
+            main_code(src),
+            vec![
+                I::PushInt(2),
+                I::PushInt(1),
+                I::Call(0),
+                I::StoreGlobal(0),
+                I::PushInt(7),
+                I::PushInt(5),
+                I::Call(0),
+                I::StoreGlobal(1),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn struct_constructor_uses_field_order() {
+        let p = ir("struct P:\n    x: Int\n    y: Int\nlet p = P(y = 2, x = 1)\n");
+        assert_eq!(p.structs[0].fields, vec!["x".to_string(), "y".to_string()]);
+        assert_eq!(
+            p.main.chunk.code,
+            vec![I::PushInt(1), I::PushInt(2), I::MakeStruct(0), I::StoreGlobal(0), I::PushNone, I::Return]
+        );
+    }
+
+    #[test]
+    fn for_loop_shape() {
+        let p = ir("for i in 0..3:\n    print(i)\n");
+        let code = &p.main.chunk.code;
+        assert_eq!(p.main.num_locals, 3);
+        assert_eq!(code[2], I::MakeRange);
+        assert_eq!(code[6], I::ForNext { iter: 0, idx: 1, var: 2, exit: 11 });
+        assert_eq!(code[10], I::Jump(6));
+    }
+
+    #[test]
+    fn short_circuit_and() {
+        assert_eq!(
+            main_code("let a = true and false\n"),
+            vec![
+                I::PushBool(true),
+                I::JumpIfFalse(4),
+                I::PushBool(false),
+                I::Jump(5),
+                I::PushBool(false),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn index_assignment() {
+        assert_eq!(
+            main_code("mut xs = [1, 2]\nxs[0] = 5\n"),
+            vec![
+                I::PushInt(1),
+                I::PushInt(2),
+                I::MakeList(2),
+                I::StoreGlobal(0),
+                I::PushInt(5),
+                I::LoadGlobal(0),
+                I::PushInt(0),
+                I::StoreIndex,
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn field_assignment() {
+        assert_eq!(
+            main_code("struct P:\n    x: Int\nmut p = P(x = 1)\np.x = 2\n"),
+            vec![
+                I::PushInt(1),
+                I::MakeStruct(0),
+                I::StoreGlobal(0),
+                I::PushInt(2),
+                I::LoadGlobal(0),
+                I::SetField("x".to_string()),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return,
+            ]
+        );
+    }
+
+    #[test]
+    fn disassembly_lists_functions() {
+        let text = ir("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(1, 2))\n").to_string();
+        assert!(text.contains("== main"));
+        assert!(text.contains("== fn add"));
+    }
+}
