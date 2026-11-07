@@ -19,6 +19,7 @@ struct LocalVar {
 struct LoopCtx {
     start: usize,
     break_jumps: Vec<usize>,
+    try_depth: usize,
 }
 
 struct FnState {
@@ -27,6 +28,7 @@ struct FnState {
     scope_depth: usize,
     next_slot: usize,
     loops: Vec<LoopCtx>,
+    try_depth: usize,
     is_main: bool,
 }
 
@@ -38,6 +40,7 @@ impl FnState {
             scope_depth: 0,
             next_slot: 0,
             loops: Vec::new(),
+            try_depth: 0,
             is_main,
         }
     }
@@ -294,6 +297,13 @@ impl Compiler {
                 self.emit(Instruction::Return, span);
             }
             StmtKind::Break => {
+                let pops = match self.state.loops.last() {
+                    Some(ctx) => self.state.try_depth - ctx.try_depth,
+                    None => 0,
+                };
+                for _ in 0..pops {
+                    self.emit(Instruction::PopHandler, span);
+                }
                 let jump = self.emit_jump(Instruction::Jump(0), span);
                 match self.state.loops.last_mut() {
                     Some(ctx) => ctx.break_jumps.push(jump),
@@ -301,6 +311,13 @@ impl Compiler {
                 }
             }
             StmtKind::Continue => {
+                let pops = match self.state.loops.last() {
+                    Some(ctx) => self.state.try_depth - ctx.try_depth,
+                    None => 0,
+                };
+                for _ in 0..pops {
+                    self.emit(Instruction::PopHandler, span);
+                }
                 let start = match self.state.loops.last() {
                     Some(ctx) => ctx.start,
                     None => return Err(err("'continue' outside of a loop", span)),
@@ -323,7 +340,10 @@ impl Compiler {
             }
             StmtKind::Try { body, catch_var, catch_block } => {
                 let handler = self.emit_jump(Instruction::PushHandler(0), span);
-                self.compile_block(body)?;
+                self.state.try_depth += 1;
+                let body_result = self.compile_block(body);
+                self.state.try_depth -= 1;
+                body_result?;
                 self.emit(Instruction::PopHandler, span);
                 let jump_end = self.emit_jump(Instruction::Jump(0), span);
                 self.patch(handler);
@@ -343,7 +363,7 @@ impl Compiler {
                 let start = self.here();
                 self.compile_expr(condition)?;
                 let exit = self.emit_jump(Instruction::JumpIfFalse(0), span);
-                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new() });
+                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new(), try_depth: self.state.try_depth });
                 let result = self.compile_block(body);
                 let ctx = self.state.loops.pop().unwrap();
                 result?;
@@ -368,7 +388,7 @@ impl Compiler {
                     Instruction::ForNext { iter: iter_slot, idx: idx_slot, var: var_slot, exit: 0 },
                     span,
                 );
-                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new() });
+                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new(), try_depth: self.state.try_depth });
                 let result = self.compile_block(body);
                 let ctx = self.state.loops.pop().unwrap();
                 result?;

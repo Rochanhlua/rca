@@ -1,0 +1,11 @@
+for i in 0..3:
+    try:
+        if i == 1:
+            break
+    catch e:
+        print("caught")
+try:
+    throw "late"
+catch e:
+    print(e)
+print("done")

@@ -1,0 +1,8 @@
+for i in 0..3:
+    try:
+        if i == 1:
+            break
+    catch e:
+        print("caught")
+print("after loop")
+throw "outside"
