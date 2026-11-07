@@ -50,6 +50,7 @@ impl Checker {
             match &stmt.kind {
                 StmtKind::Function(f) => self.check_function(f, &stmt.span),
                 StmtKind::Struct(_) => {}
+                StmtKind::Enum(_) => {}
                 _ => self.check_stmt(stmt),
             }
         }
@@ -471,6 +472,12 @@ impl Checker {
             StmtKind::Struct(_) => {
                 self.error(
                     "structs can only be declared at the top level for now",
+                    &stmt.span,
+                );
+            }
+            StmtKind::Enum(_) => {
+                self.error(
+                    "enums can only be declared at the top level for now",
                     &stmt.span,
                 );
             }

@@ -449,7 +449,7 @@ impl Compiler {
                 self.end_scope();
             }
             // Already handled when the program was scanned.
-            StmtKind::Function(_) | StmtKind::Struct(_) => {}
+            StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => {}
             StmtKind::Import { .. } | StmtKind::FromImport { .. } => {}
         }
         Ok(())

@@ -126,6 +126,7 @@ impl Parser {
             TokenKind::Mut => self.parse_let(true)?,
             TokenKind::Fn => StmtKind::Function(self.parse_function()?),
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
+            TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
             TokenKind::Pub => {
                 self.advance(); // pub
                 match self.peek().clone() {
@@ -138,6 +139,11 @@ impl Parser {
                         let mut s = self.parse_struct()?;
                         s.public = true;
                         StmtKind::Struct(s)
+                    }
+                    TokenKind::Enum => {
+                        let mut e = self.parse_enum()?;
+                        e.public = true;
+                        StmtKind::Enum(e)
                     }
                     other => {
                         return Err(Diagnostic::new(
@@ -372,6 +378,35 @@ impl Parser {
         Ok(StructDecl {
             name,
             fields,
+            public: false,
+        })
+    }
+
+    fn parse_enum(&mut self) -> Result<EnumDecl, Diagnostic> {
+        self.advance(); // enum
+        let (name, _) = self.expect_ident("an enum name")?;
+        self.expect(&TokenKind::Colon, "':'")?;
+        self.expect(&TokenKind::Newline, "a new line after ':'")?;
+        self.expect(&TokenKind::Indent, "an indented block")?;
+        let mut variants = Vec::new();
+        self.skip_newlines();
+        while !self.check(&TokenKind::Dedent) && !self.check(&TokenKind::Eof) {
+            let (vname, span) = self.expect_ident("a variant name")?;
+            self.end_simple()?;
+            variants.push(EnumVariant { name: vname, span });
+            self.skip_newlines();
+        }
+        let end_span = self.span();
+        self.expect(&TokenKind::Dedent, "end of enum")?;
+        if variants.is_empty() {
+            return Err(Diagnostic::new(
+                "an enum must have at least one variant",
+                end_span,
+            ));
+        }
+        Ok(EnumDecl {
+            name,
+            variants,
             public: false,
         })
     }
@@ -890,5 +925,49 @@ mod tests {
     #[test]
     fn error_try_without_catch() {
         assert!(parse_result("try:\n    print(1)\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod enum_parse_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn parse_result(src: &str) -> Result<Program, Diagnostic> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program()
+    }
+
+    #[test]
+    fn enum_with_three_variants() {
+        let p = parse_result("enum Color:\n    Red\n    Green\n    Blue\n").unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Enum(e) => {
+                assert_eq!(e.name, "Color");
+                assert!(!e.public);
+                let names: Vec<&str> = e.variants.iter().map(|v| v.name.as_str()).collect();
+                assert_eq!(names, vec!["Red", "Green", "Blue"]);
+            }
+            other => panic!("expected Enum, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pub_enum() {
+        let p = parse_result("pub enum Mode:\n    On\n    Off\n").unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Enum(e) => assert!(e.public),
+            other => panic!("expected Enum, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn enum_needs_a_name() {
+        assert!(parse_result("enum:\n    Red\n").is_err());
+    }
+
+    #[test]
+    fn enum_needs_a_variant_name() {
+        assert!(parse_result("enum Color:\n    1\n").is_err());
     }
 }

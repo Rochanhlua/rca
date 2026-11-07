@@ -322,7 +322,7 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            StmtKind::Function(_) | StmtKind::Struct(_) => Ok(Flow::Normal),
+            StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => Ok(Flow::Normal),
         }
     }
 

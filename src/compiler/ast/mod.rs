@@ -142,6 +142,7 @@ pub enum StmtKind {
     },
     Function(FunctionDecl),
     Struct(StructDecl),
+    Enum(EnumDecl),
     Try {
         body: Vec<Stmt>,
         catch_var: String,
@@ -168,4 +169,17 @@ pub struct ImportName {
     pub name: String,
     pub alias: Option<String>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+    pub public: bool,
 }
