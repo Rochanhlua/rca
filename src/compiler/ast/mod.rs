@@ -61,6 +61,7 @@ pub struct FunctionDecl {
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
     pub body: Vec<Stmt>,
+    pub public: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +75,7 @@ pub struct FieldDecl {
 pub struct StructDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
+    pub public: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

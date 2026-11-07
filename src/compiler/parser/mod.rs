@@ -126,6 +126,27 @@ impl Parser {
             TokenKind::Mut => self.parse_let(true)?,
             TokenKind::Fn => StmtKind::Function(self.parse_function()?),
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
+            TokenKind::Pub => {
+                self.advance(); // pub
+                match self.peek().clone() {
+                    TokenKind::Fn => {
+                        let mut f = self.parse_function()?;
+                        f.public = true;
+                        StmtKind::Function(f)
+                    }
+                    TokenKind::Struct => {
+                        let mut s = self.parse_struct()?;
+                        s.public = true;
+                        StmtKind::Struct(s)
+                    }
+                    other => {
+                        return Err(Diagnostic::new(
+                            format!("expected 'fn' or 'struct' after 'pub', found {:?}", other),
+                            self.span(),
+                        ))
+                    }
+                }
+            }
             TokenKind::If => self.parse_if()?,
             TokenKind::While => self.parse_while()?,
             TokenKind::For => self.parse_for()?,
@@ -298,7 +319,7 @@ impl Parser {
             None
         };
         let body = self.parse_block()?;
-        Ok(FunctionDecl { name, params, return_type, body })
+        Ok(FunctionDecl { name, params, return_type, body, public: false })
     }
 
     fn parse_struct(&mut self) -> Result<StructDecl, Diagnostic> {
@@ -318,7 +339,7 @@ impl Parser {
             self.skip_newlines();
         }
         self.expect(&TokenKind::Dedent, "end of struct")?;
-        Ok(StructDecl { name, fields })
+        Ok(StructDecl { name, fields, public: false })
     }
 
     // ---------- expressions (low to high precedence) ----------
@@ -617,6 +638,38 @@ mod tests {
     #[test]
     fn from_import_missing_import_keyword_is_error() {
         assert!(parse_result("from utils add\n").is_err());
+    }
+
+    #[test]
+    fn pub_fn_is_public() {
+        let p = parse("pub fn add(a: Int, b: Int) -> Int:\n    return a + b\n");
+        match &p.statements[0].kind {
+            StmtKind::Function(f) => assert!(f.public),
+            other => panic!("expected Function, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn plain_fn_is_not_public() {
+        let p = parse("fn add(a: Int, b: Int) -> Int:\n    return a + b\n");
+        match &p.statements[0].kind {
+            StmtKind::Function(f) => assert!(!f.public),
+            other => panic!("expected Function, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pub_struct_is_public() {
+        let p = parse("pub struct Point:\n    x: Int\n    y: Int\n");
+        match &p.statements[0].kind {
+            StmtKind::Struct(s) => assert!(s.public),
+            other => panic!("expected Struct, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pub_let_is_error() {
+        assert!(parse_result("pub let x = 1\n").is_err());
     }
     #[test]
     fn let_statement() {
