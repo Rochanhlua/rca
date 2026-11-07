@@ -25,6 +25,7 @@ pub struct Checker {
     structs: HashMap<String, Vec<(String, Type)>>,
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
+    imports: HashMap<String, ModuleExports>,
 }
 
 impl Checker {
@@ -36,10 +37,12 @@ impl Checker {
             structs: HashMap::new(),
             functions: HashMap::new(),
             current_return: None,
+            imports: HashMap::new(),
         }
     }
 
     pub fn check_program(mut self, program: &Program) -> Result<(), Vec<Diagnostic>> {
+        self.apply_imports(program);
         self.collect_declarations(program);
         for stmt in &program.statements {
             match &stmt.kind {
@@ -408,7 +411,7 @@ impl Checker {
                 self.scopes.pop();
             }
             StmtKind::Import { .. } | StmtKind::FromImport { .. } => {
-                self.error("import is not supported yet", &stmt.span);
+                // imports are resolved by apply_imports before checking
             }
             StmtKind::Throw(e) => {
                 let t = self.check_expr(e);
@@ -1014,5 +1017,164 @@ mod tests {
         assert!(first_error("let xs = [1]\nxs.push(2)\n").contains("immutable"));
         assert!(first_error("mut xs = [1]\nxs.push(\"a\")\n").contains("type mismatch"));
         assert!(first_error("mut n = 5\nn.push(1)\n").contains("push() needs a List"));
+    }
+}
+
+/// What a module makes available to other modules.
+/// Only `pub` items are importable; private names are remembered
+/// so the error message can say "private" instead of "not found".
+#[derive(Clone, Default)]
+pub struct ModuleExports {
+    functions: HashMap<String, FuncSig>,
+    structs: HashMap<String, Vec<(String, Type)>>,
+    private: HashSet<String>,
+}
+
+impl Checker {
+    pub fn with_imports(mut self, imports: HashMap<String, ModuleExports>) -> Self {
+        self.imports = imports;
+        self
+    }
+
+    /// Computes the public interface of a module (declarations only, bodies are not checked).
+    pub fn collect_exports(
+        program: &Program,
+        imports: &HashMap<String, ModuleExports>,
+    ) -> ModuleExports {
+        let mut c = Checker::new().with_imports(imports.clone());
+        c.apply_imports(program);
+        c.collect_declarations(program);
+        let mut out = ModuleExports::default();
+        for stmt in &program.statements {
+            match &stmt.kind {
+                StmtKind::Function(f) => {
+                    if f.public {
+                        if let Some(sig) = c.functions.get(&f.name) {
+                            out.functions.insert(f.name.clone(), sig.clone());
+                        }
+                    } else {
+                        out.private.insert(f.name.clone());
+                    }
+                }
+                StmtKind::Struct(s) => {
+                    if s.public {
+                        if let Some(fields) = c.structs.get(&s.name) {
+                            out.structs.insert(s.name.clone(), fields.clone());
+                        }
+                    } else {
+                        out.private.insert(s.name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn apply_imports(&mut self, program: &Program) {
+        for stmt in &program.statements {
+            match &stmt.kind {
+                StmtKind::Import { module, .. } => {
+                    if !self.imports.contains_key(module) {
+                        self.error(format!("cannot find module '{}'", module), &stmt.span);
+                    }
+                }
+                StmtKind::FromImport { module, names } => {
+                    let exports = match self.imports.get(module).cloned() {
+                        Some(e) => e,
+                        None => {
+                            self.error(format!("cannot find module '{}'", module), &stmt.span);
+                            continue;
+                        }
+                    };
+                    for item in names {
+                        let local = item.alias.clone().unwrap_or_else(|| item.name.clone());
+                        if let Some(sig) = exports.functions.get(&item.name) {
+                            self.functions.insert(local, sig.clone());
+                        } else if let Some(fields) = exports.structs.get(&item.name) {
+                            self.structs.insert(local, fields.clone());
+                        } else if exports.private.contains(&item.name) {
+                            self.error(
+                                format!("'{}' is private in module '{}'", item.name, module),
+                                &item.span,
+                            );
+                        } else {
+                            self.error(
+                                format!("module '{}' has no public item '{}'", module, item.name),
+                                &item.span,
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn parse(src: &str) -> Program {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program().unwrap()
+    }
+
+    fn errors_of(lib: &str, main: &str) -> Vec<String> {
+        let exports = Checker::collect_exports(&parse(lib), &HashMap::new());
+        let mut imports = HashMap::new();
+        imports.insert("utils".to_string(), exports);
+        match Checker::new().with_imports(imports).check_program(&parse(main)) {
+            Ok(()) => Vec::new(),
+            Err(v) => v.iter().map(|e| e.to_string()).collect(),
+        }
+    }
+
+    const ADD: &str = "pub fn add(a: Int, b: Int) -> Int:\n    return a + b\n";
+
+    #[test]
+    fn from_import_function_call_works() {
+        assert!(errors_of(ADD, "from utils import add\nlet r: Int = add(1, 2)\n").is_empty());
+    }
+
+    #[test]
+    fn from_import_alias_works() {
+        assert!(errors_of(ADD, "from utils import add as plus\nlet r: Int = plus(1, 2)\n").is_empty());
+    }
+
+    #[test]
+    fn importing_private_function_is_error() {
+        let lib = "fn secret() -> Int:\n    return 1\n";
+        let errs = errors_of(lib, "from utils import secret\n");
+        assert!(errs.iter().any(|e| e.contains("private")), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn importing_missing_name_is_error() {
+        let errs = errors_of(ADD, "from utils import nothing\n");
+        assert!(errs.iter().any(|e| e.contains("no public item 'nothing'")), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn unknown_module_is_error() {
+        let result = Checker::new().check_program(&parse("import other\n"));
+        let errs: Vec<String> = result.unwrap_err().iter().map(|e| e.to_string()).collect();
+        assert!(errs.iter().any(|e| e.contains("cannot find module 'other'")), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn imported_function_arguments_are_type_checked() {
+        let errs = errors_of(ADD, "from utils import add\nlet r = add(1, \"x\")\n");
+        assert!(!errs.is_empty());
+    }
+
+    #[test]
+    fn imported_struct_can_be_constructed() {
+        let lib = "pub struct Point:\n    x: Int\n    y: Int\n";
+        let errs = errors_of(lib, "from utils import Point\nlet p = Point(x = 1, y = 2)\n");
+        assert!(errs.is_empty(), "got: {:?}", errs);
     }
 }
