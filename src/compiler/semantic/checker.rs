@@ -224,6 +224,105 @@ impl Checker {
 
     // ---------- statements ----------
 
+    fn check_match(
+        &mut self,
+        subject: &Expr,
+        arms: &[crate::compiler::ast::MatchArm],
+        span: &Span,
+    ) {
+        use crate::compiler::ast::Pattern;
+        let st = self.check_expr(subject);
+        let valid = matches!(
+            st,
+            Type::Int | Type::String | Type::Bool | Type::Enum(_) | Type::Unknown
+        );
+        if !valid {
+            self.error(format!("cannot match on {}", st), &subject.span);
+        }
+        let mut seen: Vec<String> = Vec::new();
+        let mut has_wildcard = false;
+        for arm in arms {
+            if has_wildcard {
+                self.error("unreachable match arm after '_'", &arm.span);
+            }
+            match &arm.pattern {
+                Pattern::Wildcard => has_wildcard = true,
+                Pattern::Value(e) => {
+                    let key = match &e.kind {
+                        ExprKind::Int(n) => Some(format!("{}", n)),
+                        ExprKind::Str(s) => Some(format!("\"{}\"", s)),
+                        ExprKind::Bool(b) => Some(format!("{}", b)),
+                        ExprKind::Field { object, name } => match &object.kind {
+                            ExprKind::Ident(en)
+                                if self.enums.contains_key(en)
+                                    && self.scopes.lookup(en).is_none() =>
+                            {
+                                Some(format!("{}.{}", en, name))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match key {
+                        None => self.error(
+                            "a match pattern must be a literal, an enum variant or '_'",
+                            &e.span,
+                        ),
+                        Some(k) => {
+                            let pt = self.check_expr(e);
+                            if st != Type::Unknown
+                                && pt != Type::Unknown
+                                && !Type::compatible(&st, &pt)
+                            {
+                                self.error(
+                                    format!(
+                                        "match pattern type mismatch: expected {}, found {}",
+                                        st, pt
+                                    ),
+                                    &e.span,
+                                );
+                            }
+                            if seen.contains(&k) {
+                                self.error(format!("duplicate match pattern {}", k), &e.span);
+                            } else {
+                                seen.push(k);
+                            }
+                        }
+                    }
+                }
+            }
+            self.check_block(&arm.body);
+        }
+        if has_wildcard || !valid || st == Type::Unknown {
+            return;
+        }
+        match &st {
+            Type::Enum(name) => {
+                let missing: Vec<String> = self.enums[name]
+                    .iter()
+                    .filter(|v| !seen.contains(&format!("{}.{}", name, v)))
+                    .cloned()
+                    .collect();
+                if !missing.is_empty() {
+                    self.error(
+                        format!(
+                            "match on enum '{}' is not exhaustive, missing: {}",
+                            name,
+                            missing.join(", ")
+                        ),
+                        span,
+                    );
+                }
+            }
+            Type::Bool => {
+                if !(seen.contains(&"true".to_string()) && seen.contains(&"false".to_string())) {
+                    self.error("match on Bool must cover true and false, or use '_'", span);
+                }
+            }
+            _ => self.error(format!("match on {} needs a '_' arm", st), span),
+        }
+    }
+
     fn check_block(&mut self, stmts: &[Stmt]) {
         self.scopes.push();
         for s in stmts {
@@ -501,8 +600,8 @@ impl Checker {
                     &stmt.span,
                 );
             }
-            StmtKind::Match { .. } => {
-                self.error("match is not supported yet", &stmt.span);
+            StmtKind::Match { subject, arms } => {
+                self.check_match(subject, arms, &stmt.span);
             }
             StmtKind::Enum(_) => {
                 self.error(

@@ -1,0 +1,7 @@
+enum C:
+    A
+    B
+    D
+match C.A:
+    C.A:
+        print(1)

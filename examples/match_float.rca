@@ -1,0 +1,4 @@
+let f = 1.5
+match f:
+    _:
+        print(1)

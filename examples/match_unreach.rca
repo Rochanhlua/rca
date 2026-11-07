@@ -1,0 +1,6 @@
+let n = 1
+match n:
+    _:
+        print(1)
+    2:
+        print(2)
