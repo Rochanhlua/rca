@@ -1,3 +1,6 @@
+use rca::compiler::ast::StmtKind;
+use rca::compiler::modules::load_program;
+use std::path::Path;
 use rca::compiler::ir::lower;
 use rca::compiler::ir::validate::validate;
 use rca::compiler::lexer::Lexer;
@@ -11,7 +14,7 @@ use std::fs;
 use std::process;
 use std::thread;
 
-fn run_command(command: &str, source: &str) -> i32 {
+fn run_command(command: &str, path: &str, source: &str) -> i32 {
     let tokens = match Lexer::new(source).tokenize() {
         Ok(t) => t,
         Err(d) => {
@@ -36,6 +39,14 @@ fn run_command(command: &str, source: &str) -> i32 {
     if command == "parse" {
         println!("{:#?}", program);
         return 0;
+    }
+
+    if program
+        .statements
+        .iter()
+        .any(|s| matches!(s.kind, StmtKind::Import { .. } | StmtKind::FromImport { .. }))
+    {
+        return run_with_imports(command, path, source);
     }
 
     if let Err(errors) = Checker::new().check_program(&program) {
@@ -124,10 +135,34 @@ fn main() {
     };
 
     let command = args[1].clone();
+    let path = args[2].clone();
     let handle = thread::Builder::new()
         .stack_size(128 * 1024 * 1024)
-        .spawn(move || run_command(&command, &source))
+        .spawn(move || run_command(&command, &path, &source))
         .expect("failed to start interpreter thread");
     let code = handle.join().unwrap_or(1);
     process::exit(code);
+}
+
+fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
+    let modules = match load_program(Path::new(path), source) {
+        Ok(m) => m,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    if let Err(errors) = Checker::check_modules(&modules) {
+        for (name, e) in &errors {
+            eprintln!("error in module '{}': {}", name, e);
+        }
+        eprintln!("{} error(s) found", errors.len());
+        return 1;
+    }
+    if command == "check" {
+        println!("OK: no errors found ({} modules)", modules.len());
+        return 0;
+    }
+    eprintln!("error: running programs that use import is not supported yet");
+    1
 }

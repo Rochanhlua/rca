@@ -1,0 +1,5 @@
+pub fn add(a: Int, b: Int) -> Int:
+    return a + b
+
+fn secret() -> Int:
+    return 42

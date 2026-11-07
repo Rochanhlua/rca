@@ -1178,3 +1178,32 @@ mod import_tests {
         assert!(errs.is_empty(), "got: {:?}", errs);
     }
 }
+
+impl Checker {
+    /// Checks modules in dependency order (as returned by the module loader).
+    /// Each module sees the public items of the modules before it.
+    /// Errors are returned together with the name of the module they belong to.
+    pub fn check_modules(
+        modules: &[crate::compiler::modules::Module],
+    ) -> Result<(), Vec<(String, Diagnostic)>> {
+        let mut exports: HashMap<String, ModuleExports> = HashMap::new();
+        let mut errors: Vec<(String, Diagnostic)> = Vec::new();
+        for m in modules {
+            if let Err(errs) = Checker::new()
+                .with_imports(exports.clone())
+                .check_program(&m.program)
+            {
+                for e in errs {
+                    errors.push((m.name.clone(), e));
+                }
+            }
+            let ex = Checker::collect_exports(&m.program, &exports);
+            exports.insert(m.name.clone(), ex);
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}

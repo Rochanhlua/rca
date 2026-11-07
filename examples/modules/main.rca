@@ -1,0 +1,3 @@
+from utils import add
+let r: Int = add(1, 2)
+print(r)
