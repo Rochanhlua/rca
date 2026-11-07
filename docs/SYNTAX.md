@@ -36,3 +36,9 @@
 - Modules (import / from / as): after execution engine and stdlib exist
 - enum, match, try / catch / throw, const, pub / private, generics
 - List type annotations (e.g. List[Int]); lists are inferred from literals only
+
+## Execution (v0.3, Phase 3)
+- `rca run file.rca` type-checks, then runs the program (tree-walking interpreter)
+- Ranges are end-exclusive: `0..3` yields 0, 1, 2
+- Values are copied on assignment (value semantics)
+- Runtime errors: division by zero, index out of bounds, integer overflow, stack overflow
