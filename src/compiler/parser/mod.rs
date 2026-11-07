@@ -129,6 +129,13 @@ impl Parser {
             TokenKind::If => self.parse_if()?,
             TokenKind::While => self.parse_while()?,
             TokenKind::For => self.parse_for()?,
+            TokenKind::Try => self.parse_try()?,
+            TokenKind::Throw => {
+                self.advance();
+                let value = self.parse_expr()?;
+                self.end_simple()?;
+                StmtKind::Throw(value)
+            }
             TokenKind::Return => {
                 self.advance();
                 let value = if self.check(&TokenKind::Newline) || self.check(&TokenKind::Eof) {
@@ -204,6 +211,16 @@ impl Parser {
         let condition = self.parse_expr()?;
         let body = self.parse_block()?;
         Ok(StmtKind::While { condition, body })
+    }
+
+    fn parse_try(&mut self) -> Result<StmtKind, Diagnostic> {
+        self.advance(); // try
+        let body = self.parse_block()?;
+        self.skip_newlines();
+        self.expect(&TokenKind::Catch, "'catch' after try block")?;
+        let (catch_var, _) = self.expect_ident("a name for the caught error")?;
+        let catch_block = self.parse_block()?;
+        Ok(StmtKind::Try { body, catch_var, catch_block })
     }
 
     fn parse_for(&mut self) -> Result<StmtKind, Diagnostic> {
@@ -625,5 +642,29 @@ mod tests {
     #[test]
     fn error_parameter_without_type() {
         assert!(parse_result("fn f(a):\n    return 1\n").is_err());
+    }
+
+    #[test]
+    fn try_catch_statement() {
+        let p = parse("try:\n    print(1)\ncatch e:\n    print(e)\n");
+        match &p.statements[0].kind {
+            StmtKind::Try { body, catch_var, catch_block } => {
+                assert_eq!(body.len(), 1);
+                assert_eq!(catch_var, "e");
+                assert_eq!(catch_block.len(), 1);
+            }
+            other => panic!("expected try, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn throw_statement() {
+        let p = parse("throw \"boom\"\n");
+        assert!(matches!(p.statements[0].kind, StmtKind::Throw(_)));
+    }
+
+    #[test]
+    fn error_try_without_catch() {
+        assert!(parse_result("try:\n    print(1)\n").is_err());
     }
 }

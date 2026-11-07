@@ -95,6 +95,8 @@ pub enum StmtKind {
     For { var: String, iter: Expr, body: Vec<Stmt> },
     Function(FunctionDecl),
     Struct(StructDecl),
+    Try { body: Vec<Stmt>, catch_var: String, catch_block: Vec<Stmt> },
+    Throw(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]

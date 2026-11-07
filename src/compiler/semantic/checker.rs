@@ -362,6 +362,21 @@ impl Checker {
                 self.loop_depth -= 1;
                 self.scopes.pop();
             }
+            StmtKind::Try { body, catch_var, catch_block } => {
+                self.check_block(body);
+                self.scopes.push();
+                self.scopes.declare(catch_var, Symbol { ty: Type::String, mutable: false });
+                for s in catch_block {
+                    self.check_stmt(s);
+                }
+                self.scopes.pop();
+            }
+            StmtKind::Throw(e) => {
+                let t = self.check_expr(e);
+                if t != Type::String && t != Type::Unknown {
+                    self.error(format!("can only throw a String, found {}", t), &e.span);
+                }
+            }
             StmtKind::Function(_) => {
                 self.error("functions can only be declared at the top level for now", &stmt.span);
             }
@@ -879,5 +894,23 @@ mod tests {
     #[test]
     fn index_assignment() {
         assert!(check("mut xs = [1, 2]\nxs[0] = 5\n").is_ok());
+    }
+
+    #[test]
+    fn try_catch_valid() {
+        let src = "try:\n    print(1)\ncatch e:\n    print(e)\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn throw_requires_string() {
+        assert!(first_error("throw 5\n").contains("can only throw a String"));
+        assert!(check("throw \"boom\"\n").is_ok());
+    }
+
+    #[test]
+    fn catch_variable_is_scoped() {
+        let src = "try:\n    print(1)\ncatch e:\n    print(e)\nprint(e)\n";
+        assert!(first_error(src).contains("undefined variable"));
     }
 }
