@@ -1,0 +1,13 @@
+struct User:
+    name: String
+    age: Int
+
+fn add(a: Int, b: Int) -> Int:
+    return a + b
+
+let r = add(1, "two")
+let u = User(name = "A")
+print(u.email)
+let w = add(1)
+fn bad() -> Int:
+    print(1)

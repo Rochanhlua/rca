@@ -3,11 +3,28 @@ use crate::compiler::ast::*;
 use crate::compiler::diagnostics::Diagnostic;
 use crate::compiler::lexer::token::Span;
 use crate::compiler::types::Type;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Clone)]
+struct ParamSig {
+    name: String,
+    ty: Type,
+    has_default: bool,
+}
+
+#[derive(Clone)]
+struct FuncSig {
+    params: Vec<ParamSig>,
+    ret: Type,
+}
 
 pub struct Checker {
     scopes: ScopeStack,
     errors: Vec<Diagnostic>,
     loop_depth: usize,
+    structs: HashMap<String, Vec<(String, Type)>>,
+    functions: HashMap<String, FuncSig>,
+    current_return: Option<Type>,
 }
 
 impl Checker {
@@ -16,12 +33,20 @@ impl Checker {
             scopes: ScopeStack::new(),
             errors: Vec::new(),
             loop_depth: 0,
+            structs: HashMap::new(),
+            functions: HashMap::new(),
+            current_return: None,
         }
     }
 
     pub fn check_program(mut self, program: &Program) -> Result<(), Vec<Diagnostic>> {
+        self.collect_declarations(program);
         for stmt in &program.statements {
-            self.check_stmt(stmt);
+            match &stmt.kind {
+                StmtKind::Function(f) => self.check_function(f, &stmt.span),
+                StmtKind::Struct(_) => {}
+                _ => self.check_stmt(stmt),
+            }
         }
         if self.errors.is_empty() {
             Ok(())
@@ -33,6 +58,136 @@ impl Checker {
     fn error(&mut self, message: impl Into<String>, span: &Span) {
         self.errors.push(Diagnostic::new(message, span.clone()));
     }
+
+    // ---------- declarations (structs and functions) ----------
+
+    fn resolve_type(&mut self, t: &TypeExpr, report: bool) -> Type {
+        if let Some(ty) = Type::from_name(&t.name) {
+            return ty;
+        }
+        if self.structs.contains_key(&t.name) {
+            return Type::Struct(t.name.clone());
+        }
+        if report {
+            self.error(format!("unknown type '{}'", t.name), &t.span);
+        }
+        Type::Unknown
+    }
+
+    fn collect_declarations(&mut self, program: &Program) {
+        // pass 1: struct names
+        for stmt in &program.statements {
+            if let StmtKind::Struct(s) = &stmt.kind {
+                if self.structs.contains_key(&s.name) {
+                    self.error(format!("'{}' is already defined", s.name), &stmt.span);
+                } else {
+                    self.structs.insert(s.name.clone(), Vec::new());
+                }
+            }
+        }
+        // pass 2: struct fields
+        let mut seen = HashSet::new();
+        for stmt in &program.statements {
+            if let StmtKind::Struct(s) = &stmt.kind {
+                if !seen.insert(s.name.clone()) {
+                    continue;
+                }
+                let mut fields: Vec<(String, Type)> = Vec::new();
+                for f in &s.fields {
+                    let ty = self.resolve_type(&f.ty, true);
+                    if fields.iter().any(|(n, _)| *n == f.name) {
+                        self.error(
+                            format!("duplicate field '{}' in struct '{}'", f.name, s.name),
+                            &f.span,
+                        );
+                    } else {
+                        fields.push((f.name.clone(), ty));
+                    }
+                }
+                self.structs.insert(s.name.clone(), fields);
+            }
+        }
+        // pass 3: function signatures
+        for stmt in &program.statements {
+            if let StmtKind::Function(f) = &stmt.kind {
+                if f.name == "print"
+                    || self.functions.contains_key(&f.name)
+                    || self.structs.contains_key(&f.name)
+                {
+                    self.error(format!("'{}' is already defined", f.name), &stmt.span);
+                    continue;
+                }
+                let mut params = Vec::new();
+                for p in &f.params {
+                    let ty = self.resolve_type(&p.ty, true);
+                    params.push(ParamSig {
+                        name: p.name.clone(),
+                        ty,
+                        has_default: p.default.is_some(),
+                    });
+                }
+                let ret = match &f.return_type {
+                    Some(t) => self.resolve_type(t, true),
+                    None => Type::None,
+                };
+                self.functions.insert(f.name.clone(), FuncSig { params, ret });
+            }
+        }
+    }
+
+    fn always_returns(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| match &s.kind {
+            StmtKind::Return(_) => true,
+            StmtKind::If { then_block, else_block: Some(else_b), .. } => {
+                Self::always_returns(then_block) && Self::always_returns(else_b)
+            }
+            _ => false,
+        })
+    }
+
+    fn check_function(&mut self, f: &FunctionDecl, span: &Span) {
+        let ret = match &f.return_type {
+            Some(t) => self.resolve_type(t, false),
+            None => Type::None,
+        };
+        self.scopes.push();
+        for p in &f.params {
+            let ty = self.resolve_type(&p.ty, false);
+            if let Some(def) = &p.default {
+                let dt = self.check_expr(def);
+                if !Type::compatible(&ty, &dt) {
+                    self.error(
+                        format!("default value mismatch: expected {}, found {}", ty, dt),
+                        &def.span,
+                    );
+                }
+            }
+            if !self.scopes.declare(&p.name, Symbol { ty, mutable: false }) {
+                self.error(format!("duplicate parameter '{}'", p.name), &p.ty.span);
+            }
+        }
+        let saved_return = self.current_return.take();
+        self.current_return = Some(ret.clone());
+        let saved_loop = self.loop_depth;
+        self.loop_depth = 0;
+        for s in &f.body {
+            self.check_stmt(s);
+        }
+        self.loop_depth = saved_loop;
+        self.current_return = saved_return;
+        if ret != Type::None && ret != Type::Unknown && !Self::always_returns(&f.body) {
+            self.error(
+                format!(
+                    "function '{}' must return a value of type {} on all paths",
+                    f.name, ret
+                ),
+                span,
+            );
+        }
+        self.scopes.pop();
+    }
+
+    // ---------- statements ----------
 
     fn check_block(&mut self, stmts: &[Stmt]) {
         self.scopes.push();
@@ -49,31 +204,31 @@ impl Checker {
         }
     }
 
-    // ---------- statements ----------
+    fn root_ident(expr: &Expr) -> Option<&str> {
+        match &expr.kind {
+            ExprKind::Ident(n) => Some(n.as_str()),
+            ExprKind::Field { object, .. } | ExprKind::Index { object, .. } => {
+                Self::root_ident(object)
+            }
+            _ => None,
+        }
+    }
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Let { name, mutable, ty, value } => {
                 let value_ty = self.check_expr(value);
                 let var_ty = match ty {
-                    Some(annotation) => match Type::from_name(&annotation.name) {
-                        Some(declared) => {
-                            if !Type::compatible(&declared, &value_ty) {
-                                self.error(
-                                    format!("type mismatch: expected {}, found {}", declared, value_ty),
-                                    &value.span,
-                                );
-                            }
-                            declared
-                        }
-                        None => {
+                    Some(annotation) => {
+                        let declared = self.resolve_type(annotation, true);
+                        if !Type::compatible(&declared, &value_ty) {
                             self.error(
-                                format!("unknown type '{}'", annotation.name),
-                                &annotation.span,
+                                format!("type mismatch: expected {}, found {}", declared, value_ty),
+                                &value.span,
                             );
-                            Type::Unknown
                         }
-                    },
+                        declared
+                    }
                     None => value_ty,
                 };
                 let symbol = Symbol { ty: var_ty, mutable: *mutable };
@@ -111,17 +266,59 @@ impl Checker {
                             }
                         }
                     }
+                    ExprKind::Field { .. } | ExprKind::Index { .. } => {
+                        let target_ty = self.check_expr(target);
+                        if let Some(root) = Self::root_ident(target).map(|n| n.to_string()) {
+                            let mutable = self.scopes.lookup(&root).map(|s| s.mutable);
+                            if mutable == Some(false) {
+                                self.error(
+                                    format!(
+                                        "cannot assign through immutable variable '{}' (declare it with 'mut')",
+                                        root
+                                    ),
+                                    &target.span,
+                                );
+                            }
+                        }
+                        if !Type::compatible(&target_ty, &value_ty) {
+                            self.error(
+                                format!("type mismatch: expected {}, found {}", target_ty, value_ty),
+                                &value.span,
+                            );
+                        }
+                    }
                     _ => {
-                        self.error("only assignment to a variable is supported for now", &target.span);
+                        self.error("invalid assignment target", &target.span);
                     }
                 }
             }
             StmtKind::Expr(e) => {
                 self.check_expr(e);
             }
-            StmtKind::Return(_) => {
-                self.error("'return' outside of a function", &stmt.span);
-            }
+            StmtKind::Return(value) => match self.current_return.clone() {
+                None => {
+                    self.error("'return' outside of a function", &stmt.span);
+                }
+                Some(expected) => match value {
+                    Some(e) => {
+                        let t = self.check_expr(e);
+                        if !Type::compatible(&expected, &t) {
+                            self.error(
+                                format!("return type mismatch: expected {}, found {}", expected, t),
+                                &e.span,
+                            );
+                        }
+                    }
+                    None => {
+                        if expected != Type::None && expected != Type::Unknown {
+                            self.error(
+                                format!("'return' needs a value of type {}", expected),
+                                &stmt.span,
+                            );
+                        }
+                    }
+                },
+            },
             StmtKind::Break => {
                 if self.loop_depth == 0 {
                     self.error("'break' outside of a loop", &stmt.span);
@@ -166,15 +363,21 @@ impl Checker {
                 self.scopes.pop();
             }
             StmtKind::Function(_) => {
-                self.error("function declarations are not supported by the type checker yet", &stmt.span);
+                self.error("functions can only be declared at the top level for now", &stmt.span);
             }
             StmtKind::Struct(_) => {
-                self.error("struct declarations are not supported by the type checker yet", &stmt.span);
+                self.error("structs can only be declared at the top level for now", &stmt.span);
             }
         }
     }
 
     // ---------- expressions ----------
+
+    fn check_arg_exprs(&mut self, args: &[Argument]) {
+        for a in args {
+            self.check_expr(&a.value);
+        }
+    }
 
     fn check_expr(&mut self, expr: &Expr) -> Type {
         match &expr.kind {
@@ -249,27 +452,155 @@ impl Checker {
                     }
                 }
             }
-            ExprKind::Call { callee, args } => {
-                if let ExprKind::Ident(name) = &callee.kind {
-                    if name.as_str() == "print" {
-                        for a in args {
-                            self.check_expr(&a.value);
+            ExprKind::Call { callee, args } => self.check_call(callee, args, &expr.span),
+            ExprKind::Field { object, name } => {
+                let obj = self.check_expr(object);
+                match obj {
+                    Type::Struct(sname) => {
+                        let field_ty = self
+                            .structs
+                            .get(&sname)
+                            .and_then(|fs| fs.iter().find(|f| &f.0 == name))
+                            .map(|f| f.1.clone());
+                        match field_ty {
+                            Some(t) => t,
+                            None => {
+                                self.error(
+                                    format!("struct '{}' has no field '{}'", sname, name),
+                                    &expr.span,
+                                );
+                                Type::Unknown
+                            }
                         }
-                        return Type::None;
+                    }
+                    Type::Unknown => Type::Unknown,
+                    other => {
+                        self.error(format!("{} has no fields", other), &expr.span);
+                        Type::Unknown
                     }
                 }
-                self.error("only the built-in 'print' can be called for now", &expr.span);
-                for a in args {
-                    self.check_expr(&a.value);
-                }
-                Type::Unknown
-            }
-            ExprKind::Field { object, .. } => {
-                self.check_expr(object);
-                self.error("field access is not supported by the type checker yet", &expr.span);
-                Type::Unknown
             }
         }
+    }
+
+    fn check_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Type {
+        let name = match &callee.kind {
+            ExprKind::Ident(n) => n.clone(),
+            _ => {
+                self.error(
+                    "only functions and struct constructors can be called for now",
+                    &callee.span,
+                );
+                self.check_arg_exprs(args);
+                return Type::Unknown;
+            }
+        };
+
+        if name == "print" {
+            self.check_arg_exprs(args);
+            return Type::None;
+        }
+
+        if let Some(sig) = self.functions.get(&name).cloned() {
+            return self.check_function_call(&name, &sig, args, span);
+        }
+
+        if let Some(fields) = self.structs.get(&name).cloned() {
+            let sig = FuncSig {
+                params: fields
+                    .into_iter()
+                    .map(|(n, t)| ParamSig { name: n, ty: t, has_default: false })
+                    .collect(),
+                ret: Type::Struct(name.clone()),
+            };
+            return self.check_function_call(&name, &sig, args, span);
+        }
+
+        self.error(format!("undefined function '{}'", name), &callee.span);
+        self.check_arg_exprs(args);
+        Type::Unknown
+    }
+
+    fn check_function_call(
+        &mut self,
+        name: &str,
+        sig: &FuncSig,
+        args: &[Argument],
+        span: &Span,
+    ) -> Type {
+        let mut provided = vec![false; sig.params.len()];
+        let mut seen_named = false;
+
+        for (i, arg) in args.iter().enumerate() {
+            let arg_ty = self.check_expr(&arg.value);
+            let index = match &arg.name {
+                None => {
+                    if seen_named {
+                        self.error(
+                            "positional argument cannot follow a named argument",
+                            &arg.value.span,
+                        );
+                        continue;
+                    }
+                    if i >= sig.params.len() {
+                        self.error(
+                            format!(
+                                "'{}' takes {} argument(s) but more were given",
+                                name,
+                                sig.params.len()
+                            ),
+                            &arg.value.span,
+                        );
+                        continue;
+                    }
+                    i
+                }
+                Some(n) => {
+                    seen_named = true;
+                    match sig.params.iter().position(|p| &p.name == n) {
+                        Some(idx) => idx,
+                        None => {
+                            self.error(
+                                format!("'{}' has no parameter named '{}'", name, n),
+                                &arg.value.span,
+                            );
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            if provided[index] {
+                self.error(
+                    format!("parameter '{}' given more than once", sig.params[index].name),
+                    &arg.value.span,
+                );
+                continue;
+            }
+            provided[index] = true;
+
+            let expected = &sig.params[index].ty;
+            if !Type::compatible(expected, &arg_ty) {
+                self.error(
+                    format!(
+                        "argument '{}' of '{}': expected {}, found {}",
+                        sig.params[index].name, name, expected, arg_ty
+                    ),
+                    &arg.value.span,
+                );
+            }
+        }
+
+        for (i, p) in sig.params.iter().enumerate() {
+            if !provided[i] && !p.has_default {
+                self.error(
+                    format!("missing argument '{}' in call to '{}'", p.name, name),
+                    span,
+                );
+            }
+        }
+
+        sig.ret.clone()
     }
 
     fn check_binary(&mut self, op: &BinaryOp, left: &Type, right: &Type, span: &Span) -> Type {
@@ -352,6 +683,8 @@ mod tests {
         check(src).unwrap_err()[0].message.clone()
     }
 
+    // ----- variables, expressions, control flow -----
+
     #[test]
     fn valid_program() {
         assert!(check("let x = 1\nlet y: Float = 2.5\nmut c: Int = 0\nc = c + 1\nprint(x)\n").is_ok());
@@ -424,5 +757,127 @@ mod tests {
     #[test]
     fn while_loop_ok() {
         assert!(check("mut i: Int = 0\nwhile i < 3:\n    i = i + 1\n").is_ok());
+    }
+
+    // ----- functions -----
+
+    #[test]
+    fn function_call_ok() {
+        assert!(check("fn add(a: Int, b: Int) -> Int:\n    return a + b\nlet r = add(1, 2)\nprint(r)\n").is_ok());
+    }
+
+    #[test]
+    fn wrong_argument_type() {
+        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(\"x\")\n")
+            .contains("expected Int, found String"));
+    }
+
+    #[test]
+    fn too_many_arguments() {
+        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(1, 2)\n")
+            .contains("takes 1 argument"));
+    }
+
+    #[test]
+    fn missing_argument() {
+        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f()\n")
+            .contains("missing argument 'a'"));
+    }
+
+    #[test]
+    fn default_and_named_arguments() {
+        let src = "fn greet(name: String, times: Int = 1) -> None:\n    print(name)\ngreet(\"a\")\ngreet(\"a\", times = 3)\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn return_type_mismatch() {
+        assert!(first_error("fn f() -> Int:\n    return \"x\"\n").contains("return type mismatch"));
+    }
+
+    #[test]
+    fn missing_return() {
+        assert!(first_error("fn f(a: Int) -> Int:\n    print(a)\n").contains("must return"));
+    }
+
+    #[test]
+    fn return_in_if_else() {
+        let src = "fn f(a: Int) -> Int:\n    if a > 0:\n        return 1\n    else:\n        return 2\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn return_outside_function() {
+        assert!(first_error("return 1\n").contains("outside of a function"));
+    }
+
+    #[test]
+    fn forward_call() {
+        let src = "let r = add(1, 2)\nfn add(a: Int, b: Int) -> Int:\n    return a + b\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn recursion() {
+        let src = "fn fact(n: Int) -> Int:\n    if n <= 1:\n        return 1\n    return n * fact(n - 1)\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn undefined_function() {
+        assert!(first_error("foo(1)\n").contains("undefined function 'foo'"));
+    }
+
+    #[test]
+    fn duplicate_function() {
+        let src = "fn f() -> None:\n    print(1)\nfn f() -> None:\n    print(2)\n";
+        assert!(first_error(src).contains("already defined"));
+    }
+
+    #[test]
+    fn unknown_named_argument() {
+        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(b = 1)\n")
+            .contains("no parameter named 'b'"));
+    }
+
+    // ----- structs -----
+
+    const USER: &str = "struct User:\n    name: String\n    age: Int\n";
+
+    #[test]
+    fn struct_ok() {
+        let src = format!("{}let u = User(name = \"A\", age = 20)\nprint(u.name)\nlet n: Int = u.age\n", USER);
+        assert!(check(&src).is_ok());
+    }
+
+    #[test]
+    fn unknown_field() {
+        let src = format!("{}let u = User(name = \"A\", age = 20)\nprint(u.email)\n", USER);
+        assert!(first_error(&src).contains("has no field 'email'"));
+    }
+
+    #[test]
+    fn constructor_wrong_type() {
+        let src = format!("{}let u = User(name = 5, age = 1)\n", USER);
+        assert!(first_error(&src).contains("expected String, found Int"));
+    }
+
+    #[test]
+    fn field_assignment() {
+        let bad = "struct P:\n    x: Int\nlet p = P(x = 1)\np.x = 2\n";
+        assert!(first_error(bad).contains("immutable"));
+        let good = "struct P:\n    x: Int\nmut p = P(x = 1)\np.x = 2\n";
+        assert!(check(good).is_ok());
+    }
+
+    #[test]
+    fn struct_as_parameter() {
+        let src = "struct P:\n    x: Int\nfn get(p: P) -> Int:\n    return p.x\nlet q = P(x = 3)\nlet v = get(q)\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn index_assignment() {
+        assert!(check("mut xs = [1, 2]\nxs[0] = 5\n").is_ok());
     }
 }

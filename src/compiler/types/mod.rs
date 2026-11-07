@@ -10,6 +10,8 @@ pub enum Type {
     None,
     List(Box<Type>),
     Range,
+    /// A user-defined struct, identified by name.
+    Struct(String),
     /// Used after an error, or when a type is not yet known.
     /// It never causes further errors (prevents cascades).
     Unknown,
@@ -44,6 +46,7 @@ impl fmt::Display for Type {
             Type::None => write!(f, "None"),
             Type::List(inner) => write!(f, "List[{}]", inner),
             Type::Range => write!(f, "Range"),
+            Type::Struct(name) => write!(f, "{}", name),
             Type::Unknown => write!(f, "<unknown>"),
         }
     }
