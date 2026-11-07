@@ -285,6 +285,19 @@ impl Compiler {
                 self.compile_expr(value)?;
                 self.emit_store_to(target)?;
             }
+            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
+                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
+            {
+                if args.len() != 1 {
+                    return Err(err("push() takes exactly 1 argument", span));
+                }
+                if let ExprKind::Field { object, .. } = &callee.kind {
+                    self.compile_expr(&args[0].value)?;
+                    self.compile_expr(object)?;
+                    self.emit(Instruction::ListPush, span);
+                    self.emit_store_to(object)?;
+                }
+            }
             StmtKind::Expr(e) => {
                 self.compile_expr(e)?;
                 self.emit(Instruction::Pop, span);

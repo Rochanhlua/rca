@@ -37,7 +37,8 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::GtEq
         | I::MakeRange
         | I::Index
-        | I::SetField(_) => (2, 1),
+        | I::SetField(_)
+        | I::ListPush => (2, 1),
         I::Neg | I::Not | I::GetField(_) | I::Len | I::Convert(_) => (1, 1),
         I::Jump(_) | I::ForNext { .. } | I::PushHandler(_) | I::PopHandler => (0, 0),
         I::Return | I::Throw => (1, 0),

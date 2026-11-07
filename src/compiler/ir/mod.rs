@@ -89,6 +89,8 @@ pub enum Instruction {
     Len,
     /// Pops a value, converts it, pushes the result.
     Convert(ConvKind),
+    /// Stack: [value, list] -> new list with value appended.
+    ListPush,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -292,6 +292,42 @@ impl Checker {
                     }
                 }
             }
+            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
+                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
+            {
+                if let ExprKind::Field { object, .. } = &callee.kind {
+                    if args.len() != 1 {
+                        self.error("push() takes exactly 1 argument", &stmt.span);
+                        self.check_arg_exprs(args);
+                    } else {
+                        let list_ty = self.check_expr(object);
+                        let val_ty = self.check_expr(&args[0].value);
+                        match list_ty {
+                            Type::List(inner) => {
+                                if !Type::compatible(&inner, &val_ty) {
+                                    self.error(
+                                        format!("type mismatch: expected {}, found {}", inner, val_ty),
+                                        &args[0].value.span,
+                                    );
+                                }
+                            }
+                            Type::Unknown => {}
+                            other => self.error(
+                                format!("push() needs a List, found {}", other),
+                                &object.span,
+                            ),
+                        }
+                        if let Some(root) = Self::root_ident(object).map(|n| n.to_string()) {
+                            if self.scopes.lookup(&root).map(|s| s.mutable) == Some(false) {
+                                self.error(
+                                    format!("cannot push to immutable variable '{}' (declare it with 'mut')", root),
+                                    &object.span,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             StmtKind::Expr(e) => {
                 self.check_expr(e);
             }
@@ -967,5 +1003,13 @@ mod tests {
         assert!(first_error("print(str())\n").contains("exactly 1 argument"));
         let r = check("let x: Int = str(5)\n");
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn push_checks() {
+        assert!(check("mut xs = [1]\nxs.push(2)\n").is_ok());
+        assert!(first_error("let xs = [1]\nxs.push(2)\n").contains("immutable"));
+        assert!(first_error("mut xs = [1]\nxs.push(\"a\")\n").contains("type mismatch"));
+        assert!(first_error("mut n = 5\nn.push(1)\n").contains("push() needs a List"));
     }
 }

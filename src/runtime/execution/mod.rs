@@ -216,6 +216,21 @@ impl Interpreter {
                 *slot = v;
                 Ok(Flow::Normal)
             }
+            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
+                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
+            {
+                if args.len() != 1 {
+                    return Err(err("push() takes exactly 1 argument", &stmt.span));
+                }
+                if let ExprKind::Field { object, .. } = &callee.kind {
+                    let v = self.eval_expr(&args[0].value)?;
+                    match self.place_mut(object)? {
+                        Value::List(items) => items.push(v),
+                        _ => return Err(err("push() needs a List", &stmt.span)),
+                    }
+                }
+                Ok(Flow::Normal)
+            }
             StmtKind::Expr(e) => {
                 self.eval_expr(e)?;
                 Ok(Flow::Normal)
@@ -732,5 +747,10 @@ mod tests {
     #[test]
     fn failed_conversion_can_be_caught() {
         assert_eq!(run("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
+    }
+
+    #[test]
+    fn push_appends() {
+        assert_eq!(run("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"), "[1, 2, 3]\n3\n");
     }
 }

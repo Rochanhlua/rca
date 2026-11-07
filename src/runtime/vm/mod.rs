@@ -340,6 +340,18 @@ impl<'a> Vm<'a> {
                     }
                 }
 
+                Instruction::ListPush => {
+                    let list = self.pop();
+                    let val = self.pop();
+                    match list {
+                        Value::List(mut items) => {
+                            items.push(val);
+                            self.stack.push(Value::List(items));
+                        }
+                        _ => return Err(err("push() needs a List", span)),
+                    }
+                }
+
                 Instruction::Len => {
                     let v = self.pop();
                     match v {
@@ -622,5 +634,10 @@ mod tests {
     #[test]
     fn failed_conversion_can_be_caught() {
         assert_eq!(run_vm("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
+    }
+
+    #[test]
+    fn push_appends() {
+        assert_eq!(run_vm("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"), "[1, 2, 3]\n3\n");
     }
 }

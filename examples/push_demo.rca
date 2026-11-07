@@ -1,0 +1,4 @@
+mut xs = [1, 2]
+xs.push(3)
+print(xs)
+print(len(xs))
