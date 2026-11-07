@@ -1,0 +1,20 @@
+let name: String = "RCA"
+let version = 1
+mut counter: Int = 0
+counter = counter + 1
+let pi = 3.14
+let numbers = [1, 2, 3]
+
+if counter >= 1 and not false:
+    print("ok")
+
+for i in 0..10:
+    print(i * 2)
+
+for n in numbers:
+    print(n)
+
+while counter < 5:
+    counter = counter + 1
+
+print(numbers[0])

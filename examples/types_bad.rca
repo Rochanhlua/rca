@@ -1,0 +1,5 @@
+let x: Int = "hello"
+let y = 10
+y = 20
+print(z)
+let a = 1 + 2.5
