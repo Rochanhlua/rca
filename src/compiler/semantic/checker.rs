@@ -623,6 +623,24 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "matmul" {
+            if args.len() != 2 {
+                self.error("matmul() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            for a in args.iter() {
+                let t = self.check_expr(&a.value);
+                if !matches!(t, Type::Tensor | Type::Unknown) {
+                    self.error(
+                        format!("matmul() needs Tensor arguments, found {}", t),
+                        &a.value.span,
+                    );
+                }
+            }
+            return Type::Tensor;
+        }
+
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
             if args.len() != 1 {
                 self.error(format!("{}() takes exactly 1 argument", name), span);

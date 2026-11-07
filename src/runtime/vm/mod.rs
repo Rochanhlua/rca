@@ -404,6 +404,14 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::MatMul => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match crate::runtime::values::tensor_matmul(&a, &b) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::TensorShape => {
                     let v = self.pop();
                     match crate::runtime::values::tensor_shape(&v) {

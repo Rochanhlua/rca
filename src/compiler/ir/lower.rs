@@ -608,6 +608,16 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "matmul" {
+            if args.len() != 2 {
+                return Err(err("matmul() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::MatMul, span);
+            return Ok(());
+        }
+
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));

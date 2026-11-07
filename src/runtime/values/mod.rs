@@ -489,3 +489,86 @@ mod tensor_index_tests {
         assert!(tensor_index(&Value::Int(1), 0).is_err());
     }
 }
+
+/// matmul(a, b): [m, n] x [n, p] = [m, p]. Rank 2 only for now.
+pub fn tensor_matmul(l: &Value, r: &Value) -> Result<Value, String> {
+    let (s1, d1, s2, d2) = match (l, r) {
+        (
+            Value::Tensor {
+                shape: s1,
+                data: d1,
+            },
+            Value::Tensor {
+                shape: s2,
+                data: d2,
+            },
+        ) => (s1, d1, s2, d2),
+        _ => return Err("matmul() needs two Tensors".to_string()),
+    };
+    if s1.len() != 2 || s2.len() != 2 {
+        return Err(format!(
+            "matmul needs rank 2 tensors, found shapes {:?} and {:?}",
+            s1, s2
+        ));
+    }
+    let (m, n) = (s1[0], s1[1]);
+    let (n2, p) = (s2[0], s2[1]);
+    if n != n2 {
+        return Err(format!("matmul shapes do not match: {:?} and {:?}", s1, s2));
+    }
+    match m.checked_mul(p) {
+        Some(total) if total <= MAX_TENSOR_ELEMENTS => {}
+        _ => return Err("tensor is too large".to_string()),
+    }
+    let mut out = vec![0.0; m * p];
+    for i in 0..m {
+        for k in 0..n {
+            let a = d1[i * n + k];
+            for j in 0..p {
+                out[i * p + j] += a * d2[k * p + j];
+            }
+        }
+    }
+    Ok(Value::Tensor {
+        shape: vec![m, p],
+        data: out,
+    })
+}
+
+#[cfg(test)]
+mod tensor_matmul_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor { shape, data }
+    }
+
+    #[test]
+    fn square_matmul() {
+        let a = t(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
+        let b = t(vec![2, 2], vec![5.0, 6.0, 7.0, 8.0]);
+        assert_eq!(
+            tensor_matmul(&a, &b),
+            Ok(t(vec![2, 2], vec![19.0, 22.0, 43.0, 50.0]))
+        );
+    }
+
+    #[test]
+    fn non_square_matmul() {
+        let a = t(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b = t(vec![3, 2], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(
+            tensor_matmul(&a, &b),
+            Ok(t(vec![2, 2], vec![22.0, 28.0, 49.0, 64.0]))
+        );
+    }
+
+    #[test]
+    fn bad_shapes_are_errors() {
+        let a = t(vec![2, 3], vec![0.0; 6]);
+        assert!(tensor_matmul(&a, &a).is_err());
+        let v = t(vec![3], vec![0.0; 3]);
+        assert!(tensor_matmul(&v, &a).is_err());
+        assert!(tensor_matmul(&Value::Int(1), &a).is_err());
+    }
+}

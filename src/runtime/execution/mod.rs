@@ -552,6 +552,15 @@ impl Interpreter {
             return v.convert(kind).map_err(|m| err(m, span));
         }
 
+        if name == "matmul" {
+            if args.len() != 2 {
+                return Err(err("matmul() takes exactly 2 arguments", span));
+            }
+            let a = self.eval_expr(&args[0].value)?;
+            let b = self.eval_expr(&args[1].value)?;
+            return crate::runtime::values::tensor_matmul(&a, &b).map_err(|m| err(m, span));
+        }
+
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));

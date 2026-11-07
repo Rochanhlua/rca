@@ -98,6 +98,8 @@ pub enum Instruction {
     FillTensor(f64),
     /// Pops a Tensor, pushes its shape as a List of Int.
     TensorShape,
+    /// Pops two rank-2 Tensors (b then a), pushes the matrix product a x b.
+    MatMul,
     /// Pops a value, converts it, pushes the result.
     Convert(ConvKind),
     /// Stack: [value, list] -> new list with value appended.
