@@ -34,3 +34,22 @@ Status: DESIGN ONLY. Nothing here is implemented yet.
 2. Semantic: module loading, name resolution, visibility
 3. IR / VM: run imported modules
 4. Tests and examples after each step
+
+## 7. Implementation status (v0.5)
+
+Implemented:
+- Parsing: import, import as, from-import, from-import as, pub fn, pub struct
+- Module loader: finds NAME.rca next to the importing file, detects missing modules and circular imports, loads each module once
+- Checker: from-import of pub functions and structs, private/missing name errors, type checking of imported calls
+- rca check and rca run work across files (from-import form)
+- Same names in different modules do not clash (functions, structs, globals)
+- Imported module top-level code runs once, before the entry module
+
+Not implemented yet:
+- `import utils` followed by `utils.add(1, 2)` (module-qualified access)
+- pub on let / const
+- run-tree (tree-walking interpreter) with imports
+- Subdirectory packages
+
+Known limitation:
+- Default parameter values are compiled at the call site. A default that uses a global variable of an imported module may resolve wrongly. Literal defaults (numbers, strings) are fine.

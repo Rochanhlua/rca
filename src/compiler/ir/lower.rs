@@ -60,6 +60,8 @@ struct Compiler {
     func_sigs: Vec<FuncSig>,
     struct_ids: HashMap<String, usize>,
     structs: Vec<StructInfo>,
+    prefix: String,
+    aliases: HashMap<String, String>,
 }
 
 fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
@@ -90,6 +92,8 @@ impl Compiler {
             func_sigs: Vec::new(),
             struct_ids: HashMap::new(),
             structs: Vec::new(),
+            prefix: String::new(),
+            aliases: HashMap::new(),
         }
     }
 
@@ -117,7 +121,8 @@ impl Compiler {
             match &stmt.kind {
                 StmtKind::Struct(s) => {
                     let id = self.structs.len();
-                    self.struct_ids.insert(s.name.clone(), id);
+                    let k = self.key(&s.name);
+                    self.struct_ids.insert(k, id);
                     self.structs.push(StructInfo {
                         name: s.name.clone(),
                         fields: s.fields.iter().map(|f| f.name.clone()).collect(),
@@ -125,7 +130,8 @@ impl Compiler {
                 }
                 StmtKind::Function(f) => {
                     let id = self.functions.len();
-                    self.func_ids.insert(f.name.clone(), id);
+                    let k = self.key(&f.name);
+                    self.func_ids.insert(k, id);
                     self.func_sigs.push(FuncSig {
                         params: f.params.iter().map(|p| p.name.clone()).collect(),
                         defaults: f.params.iter().map(|p| p.default.clone()).collect(),
@@ -200,11 +206,12 @@ impl Compiler {
     /// Top-level variables (outside any block) are globals; everything else is a local.
     fn declare_var(&mut self, name: &str) -> VarRef {
         if self.state.is_main && self.state.scope_depth == 0 {
-            let slot = match self.globals.get(name) {
+            let slot = match self.globals.get(&self.key(name)) {
                 Some(&s) => s,
                 None => {
                     let s = self.globals.len();
-                    self.globals.insert(name.to_string(), s);
+                    let gk = self.key(name);
+                    self.globals.insert(gk, s);
                     s
                 }
             };
@@ -220,7 +227,7 @@ impl Compiler {
                 return Some(VarRef::Local(l.slot));
             }
         }
-        self.globals.get(name).map(|&s| VarRef::Global(s))
+        self.globals.get(&self.key(name)).map(|&s| VarRef::Global(s))
     }
 
     fn emit_store(&mut self, var: VarRef, span: &Span) {
@@ -233,7 +240,8 @@ impl Compiler {
     // ---------- functions ----------
 
     fn compile_function(&mut self, f: &FunctionDecl, span: &Span) -> Result<(), Diagnostic> {
-        let id = match self.func_ids.get(&f.name) {
+        let fkey = self.key(&f.name);
+        let id = match self.func_ids.get(&fkey) {
             Some(&id) => id,
             None => return Err(err(format!("unknown function '{}'", f.name), span)),
         };
@@ -564,14 +572,16 @@ impl Compiler {
             return Ok(());
         }
 
-        if let Some(&id) = self.func_ids.get(&name) {
+        let fkey = self.item_key(&name);
+        if let Some(&id) = self.func_ids.get(&fkey) {
             let sig = self.func_sigs[id].clone();
             self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;
             self.emit(Instruction::Call(id), span);
             return Ok(());
         }
 
-        if let Some(&id) = self.struct_ids.get(&name) {
+        let skey = self.item_key(&name);
+        if let Some(&id) = self.struct_ids.get(&skey) {
             let fields = self.structs[id].fields.clone();
             let no_defaults: Vec<Option<Expr>> = vec![None; fields.len()];
             self.emit_bound_args(&fields, &no_defaults, args, span)?;
@@ -817,5 +827,96 @@ mod tests {
         let text = ir("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(1, 2))\n").to_string();
         assert!(text.contains("== main"));
         assert!(text.contains("== fn add"));
+    }
+}
+
+impl Compiler {
+    /// Name of an item declared in the module being compiled.
+    /// The entry module has an empty prefix, so its names stay unchanged.
+    fn key(&self, name: &str) -> String {
+        if self.prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}::{}", self.prefix, name)
+        }
+    }
+
+    /// Resolves a function or struct name: names brought in by
+    /// `from m import x` first, then the current module's own items.
+    fn item_key(&self, name: &str) -> String {
+        match self.aliases.get(name) {
+            Some(full) => full.clone(),
+            None => self.key(name),
+        }
+    }
+}
+
+fn import_aliases(program: &Program) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for stmt in &program.statements {
+        if let StmtKind::FromImport { module, names } = &stmt.kind {
+            for item in names {
+                let local = item.alias.clone().unwrap_or_else(|| item.name.clone());
+                map.insert(local, format!("{}::{}", module, item.name));
+            }
+        }
+    }
+    map
+}
+
+/// Compiles modules (dependency order, entry module last) into one IR program.
+/// Top-level code of imported modules runs first, once, before the entry module.
+pub fn compile_modules(modules: &[crate::compiler::modules::Module]) -> Result<IrProgram, Diagnostic> {
+    let mut c = Compiler::new();
+    let last = modules.len().saturating_sub(1);
+    for (i, m) in modules.iter().enumerate() {
+        c.prefix = if i == last { String::new() } else { m.name.clone() };
+        c.declare_items(&m.program);
+    }
+    for (i, m) in modules.iter().enumerate() {
+        c.prefix = if i == last { String::new() } else { m.name.clone() };
+        c.aliases = import_aliases(&m.program);
+        for stmt in &m.program.statements {
+            match &stmt.kind {
+                StmtKind::Function(f) => c.compile_function(f, &stmt.span)?,
+                StmtKind::Struct(_) => {}
+                _ => c.compile_stmt(stmt)?,
+            }
+        }
+    }
+    Ok(c.finish())
+}
+
+#[cfg(test)]
+mod module_tests {
+    use super::*;
+    use crate::compiler::ir::Instruction;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::modules::Module;
+    use crate::compiler::parser::Parser;
+    use std::path::PathBuf;
+
+    fn module(name: &str, src: &str) -> Module {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Module { name: name.to_string(), path: PathBuf::new(), program }
+    }
+
+    const LIB: &str = "fn helper() -> Int:\n    return 100\npub fn value() -> Int:\n    return helper() + 1\n";
+    const MAIN: &str = "from lib import value\nfn helper() -> Int:\n    return 1\nprint(helper())\nprint(value())\n";
+
+    #[test]
+    fn same_function_name_in_two_modules_gets_two_functions() {
+        let ir = compile_modules(&[module("lib", LIB), module("main", MAIN)]).unwrap();
+        assert_eq!(ir.functions.len(), 3);
+    }
+
+    #[test]
+    fn calls_go_to_the_right_module() {
+        let ir = compile_modules(&[module("lib", LIB), module("main", MAIN)]).unwrap();
+        // ids: lib::helper = 0, lib::value = 1, main's helper = 2
+        assert!(ir.functions[1].chunk.code.contains(&Instruction::Call(0)));
+        assert!(ir.main.chunk.code.contains(&Instruction::Call(2)));
+        assert!(ir.main.chunk.code.contains(&Instruction::Call(1)));
     }
 }

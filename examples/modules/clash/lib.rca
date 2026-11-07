@@ -1,0 +1,8 @@
+print("lib loaded")
+let base: Int = 100
+
+fn helper() -> Int:
+    return base
+
+pub fn value() -> Int:
+    return helper() + 1

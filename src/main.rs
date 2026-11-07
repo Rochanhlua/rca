@@ -163,6 +163,42 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         println!("OK: no errors found ({} modules)", modules.len());
         return 0;
     }
-    eprintln!("error: running programs that use import is not supported yet");
-    1
+    if command == "run-tree" {
+        eprintln!("error: run-tree does not support import yet; use 'rca run'");
+        return 1;
+    }
+    let mut ir = match lower::compile_modules(&modules) {
+        Ok(ir) => ir,
+        Err(d) => {
+            eprintln!("compile error: {}", d);
+            return 1;
+        }
+    };
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error: {}", e);
+        return 1;
+    }
+    if command == "ir" {
+        println!("{}", ir);
+        return 0;
+    }
+    let before = instruction_count(&ir);
+    optimize(&mut ir);
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error (after optimization): {}", e);
+        return 1;
+    }
+    if command == "ir-opt" {
+        println!("; optimized: {} -> {} instructions\n", before, instruction_count(&ir));
+        println!("{}", ir);
+        return 0;
+    }
+    let mut vm = Vm::new(&ir);
+    match vm.run() {
+        Ok(()) => 0,
+        Err(d) => {
+            eprintln!("runtime error: {}", d);
+            1
+        }
+    }
 }
