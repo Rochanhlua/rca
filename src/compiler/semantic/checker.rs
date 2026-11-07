@@ -407,6 +407,9 @@ impl Checker {
                 }
                 self.scopes.pop();
             }
+            StmtKind::Import { .. } | StmtKind::FromImport { .. } => {
+                self.error("import is not supported yet", &stmt.span);
+            }
             StmtKind::Throw(e) => {
                 let t = self.check_expr(e);
                 if t != Type::String && t != Type::Unknown {

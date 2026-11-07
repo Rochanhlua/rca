@@ -263,6 +263,9 @@ impl Interpreter {
                     result
                 }
             },
+            StmtKind::Import { .. } | StmtKind::FromImport { .. } => {
+                Err(err("import is not supported yet", &stmt.span))
+            }
             StmtKind::Throw(e) => {
                 let v = self.eval_expr(e)?;
                 Err(err(v.to_string(), &stmt.span))

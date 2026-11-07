@@ -97,9 +97,18 @@ pub enum StmtKind {
     Struct(StructDecl),
     Try { body: Vec<Stmt>, catch_var: String, catch_block: Vec<Stmt> },
     Throw(Expr),
+    Import { module: String, alias: Option<String> },
+    FromImport { module: String, names: Vec<ImportName> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportName {
+    pub name: String,
+    pub alias: Option<String>,
+    pub span: Span,
 }

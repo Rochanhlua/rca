@@ -414,6 +414,7 @@ impl Compiler {
             }
             // Already handled when the program was scanned.
             StmtKind::Function(_) | StmtKind::Struct(_) => {}
+            StmtKind::Import { .. } | StmtKind::FromImport { .. } => {}
         }
         Ok(())
     }
