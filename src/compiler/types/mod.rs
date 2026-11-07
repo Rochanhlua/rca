@@ -10,6 +10,7 @@ pub enum Type {
     None,
     List(Box<Type>),
     Range,
+    Tensor,
     /// A user-defined struct, identified by name.
     Struct(String),
     /// Used after an error, or when a type is not yet known.
@@ -26,6 +27,7 @@ impl Type {
             "String" => Some(Type::String),
             "Char" => Some(Type::Char),
             "None" => Some(Type::None),
+            "Tensor" => Some(Type::Tensor),
             _ => None,
         }
     }
@@ -46,6 +48,7 @@ impl fmt::Display for Type {
             Type::None => write!(f, "None"),
             Type::List(inner) => write!(f, "List[{}]", inner),
             Type::Range => write!(f, "Range"),
+            Type::Tensor => write!(f, "Tensor"),
             Type::Struct(name) => write!(f, "{}", name),
             Type::Unknown => write!(f, "<unknown>"),
         }
