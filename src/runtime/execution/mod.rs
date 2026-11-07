@@ -1,3 +1,4 @@
+use crate::compiler::ir::ConvKind;
 use crate::compiler::ast::*;
 use crate::compiler::diagnostics::Diagnostic;
 use crate::compiler::lexer::token::Span;
@@ -467,6 +468,20 @@ impl Interpreter {
             return Ok(Value::None);
         }
 
+        if name == "str" || name == "int" || name == "float" {
+            let first = match args.first() {
+                Some(a) => a,
+                None => return Err(err(format!("{}() takes exactly 1 argument", name), span)),
+            };
+            let kind = match name.as_str() {
+                "str" => ConvKind::Str,
+                "int" => ConvKind::Int,
+                _ => ConvKind::Float,
+            };
+            let v = self.eval_expr(&first.value)?;
+            return v.convert(kind).map_err(|m| err(m, span));
+        }
+
         if name == "len" {
             let first = match args.first() {
                 Some(a) => a,
@@ -707,5 +722,15 @@ mod tests {
     #[test]
     fn len_of_list_and_string() {
         assert_eq!(run("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
+    }
+
+    #[test]
+    fn conversions_work() {
+        assert_eq!(run("print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"), "42!\n124\n1.5\n2\n1\n");
+    }
+
+    #[test]
+    fn failed_conversion_can_be_caught() {
+        assert_eq!(run("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
     }
 }

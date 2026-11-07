@@ -3,6 +3,14 @@ use std::fmt;
 
 pub mod lower;
 
+/// Target type of a `Convert` instruction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConvKind {
+    Str,
+    Int,
+    Float,
+}
+
 /// Stack-based bytecode instruction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -79,6 +87,8 @@ pub enum Instruction {
     // built-in
     /// Pops a String or List, pushes its length.
     Len,
+    /// Pops a value, converts it, pushes the result.
+    Convert(ConvKind),
 }
 
 #[derive(Debug, Clone, Default)]

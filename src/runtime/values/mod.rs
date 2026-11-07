@@ -1,3 +1,4 @@
+use crate::compiler::ir::ConvKind;
 use std::fmt;
 
 /// A runtime value. Values are copied on assignment (value semantics).
@@ -53,6 +54,42 @@ impl fmt::Display for Value {
                 }
                 write!(f, ")")
             }
+        }
+    }
+}
+
+impl Value {
+    /// Implements the built-in str(), int() and float() conversions.
+    pub fn convert(self, kind: ConvKind) -> Result<Value, String> {
+        match kind {
+            ConvKind::Str => Ok(Value::Str(self.to_string())),
+            ConvKind::Int => match self {
+                Value::Int(n) => Ok(Value::Int(n)),
+                Value::Float(x) => {
+                    if x.is_finite() && x >= -9.2e18 && x <= 9.2e18 {
+                        Ok(Value::Int(x as i64))
+                    } else {
+                        Err(format!("cannot convert {} to Int", x))
+                    }
+                }
+                Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                Value::Str(s) => s
+                    .trim()
+                    .parse::<i64>()
+                    .map(Value::Int)
+                    .map_err(|_| format!("cannot convert \"{}\" to Int", s)),
+                _ => Err("cannot convert this value to Int".to_string()),
+            },
+            ConvKind::Float => match self {
+                Value::Float(x) => Ok(Value::Float(x)),
+                Value::Int(n) => Ok(Value::Float(n as f64)),
+                Value::Str(s) => s
+                    .trim()
+                    .parse::<f64>()
+                    .map(Value::Float)
+                    .map_err(|_| format!("cannot convert \"{}\" to Float", s)),
+                _ => Err("cannot convert this value to Float".to_string()),
+            },
         }
     }
 }

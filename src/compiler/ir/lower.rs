@@ -1,4 +1,4 @@
-use super::{Chunk, Function, Instruction, IrProgram, StructInfo};
+use super::{Chunk, ConvKind, Function, Instruction, IrProgram, StructInfo};
 use crate::compiler::ast::*;
 use crate::compiler::diagnostics::Diagnostic;
 use crate::compiler::lexer::token::Span;
@@ -524,6 +524,20 @@ impl Compiler {
                 self.compile_expr(&a.value)?;
             }
             self.emit(Instruction::Print(args.len()), span);
+            return Ok(());
+        }
+
+        if name == "str" || name == "int" || name == "float" {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let kind = match name.as_str() {
+                "str" => ConvKind::Str,
+                "int" => ConvKind::Int,
+                _ => ConvKind::Float,
+            };
+            self.emit(Instruction::Convert(kind), span);
             return Ok(());
         }
 

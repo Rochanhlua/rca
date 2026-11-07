@@ -110,7 +110,7 @@ impl Checker {
         // pass 3: function signatures
         for stmt in &program.statements {
             if let StmtKind::Function(f) = &stmt.kind {
-                if f.name == "print" || f.name == "len"
+                if matches!(f.name.as_str(), "print" | "len" | "str" | "int" | "float")
                     || self.functions.contains_key(&f.name)
                     || self.structs.contains_key(&f.name)
                 {
@@ -514,6 +514,28 @@ impl Checker {
         if name == "print" {
             self.check_arg_exprs(args);
             return Type::None;
+        }
+
+        if name == "str" || name == "int" || name == "float" {
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+            } else {
+                let t = self.check_expr(&args[0].value);
+                let ok = match name.as_str() {
+                    "str" => true,
+                    "int" => matches!(t, Type::Int | Type::Float | Type::Bool | Type::String | Type::Unknown),
+                    _ => matches!(t, Type::Int | Type::Float | Type::String | Type::Unknown),
+                };
+                if !ok {
+                    self.error(format!("{}() cannot convert {}", name, t), &args[0].value.span);
+                }
+            }
+            return match name.as_str() {
+                "str" => Type::String,
+                "int" => Type::Int,
+                _ => Type::Float,
+            };
         }
 
         if name == "len" {
@@ -936,5 +958,14 @@ mod tests {
         assert!(check("print(len([1, 2]))\nprint(len(\"abc\"))\n").is_ok());
         assert!(first_error("print(len(5))\n").contains("len() needs a String or List"));
         assert!(first_error("print(len())\n").contains("exactly 1 argument"));
+    }
+
+    #[test]
+    fn conversions_check_types() {
+        assert!(check("print(str(1))\nprint(int(\"5\"))\nprint(float(2))\n").is_ok());
+        assert!(first_error("print(int([1]))\n").contains("cannot convert"));
+        assert!(first_error("print(str())\n").contains("exactly 1 argument"));
+        let r = check("let x: Int = str(5)\n");
+        assert!(r.is_err());
     }
 }

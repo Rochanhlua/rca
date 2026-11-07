@@ -332,6 +332,14 @@ impl<'a> Vm<'a> {
                     return Err(err(v.to_string(), span));
                 }
 
+                Instruction::Convert(kind) => {
+                    let v = self.pop();
+                    match v.convert(*kind) {
+                        Ok(r) => self.stack.push(r),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+
                 Instruction::Len => {
                     let v = self.pop();
                     match v {
@@ -604,5 +612,15 @@ mod tests {
     #[test]
     fn len_of_list_and_string() {
         assert_eq!(run_vm("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
+    }
+
+    #[test]
+    fn conversions_work() {
+        assert_eq!(run_vm("print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"), "42!\n124\n1.5\n2\n1\n");
+    }
+
+    #[test]
+    fn failed_conversion_can_be_caught() {
+        assert_eq!(run_vm("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
     }
 }
