@@ -412,6 +412,37 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::TensorSum
+                | Instruction::TensorMean
+                | Instruction::TensorMax
+                | Instruction::TensorMin => {
+                    let v = self.pop();
+                    let kind = match ins {
+                        Instruction::TensorSum => 's',
+                        Instruction::TensorMean => 'a',
+                        Instruction::TensorMax => 'x',
+                        _ => 'n',
+                    };
+                    match crate::runtime::values::tensor_reduce(&v, kind) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+                Instruction::TensorTranspose => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_transpose(&v) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+                Instruction::TensorReshape => {
+                    let s = self.pop();
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_reshape(&v, &s) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::TensorShape => {
                     let v = self.pop();
                     match crate::runtime::values::tensor_shape(&v) {

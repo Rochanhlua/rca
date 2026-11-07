@@ -100,6 +100,18 @@ pub enum Instruction {
     TensorShape,
     /// Pops two rank-2 Tensors (b then a), pushes the matrix product a x b.
     MatMul,
+    /// Pops a Tensor, pushes the sum of all elements (Float).
+    TensorSum,
+    /// Pops a Tensor, pushes the mean (Float).
+    TensorMean,
+    /// Pops a Tensor, pushes the largest element (Float).
+    TensorMax,
+    /// Pops a Tensor, pushes the smallest element (Float).
+    TensorMin,
+    /// Pops a Tensor, pushes its transpose.
+    TensorTranspose,
+    /// Pops a shape List then a Tensor, pushes the reshaped Tensor.
+    TensorReshape,
     /// Pops a value, converts it, pushes the result.
     Convert(ConvKind),
     /// Stack: [value, list] -> new list with value appended.

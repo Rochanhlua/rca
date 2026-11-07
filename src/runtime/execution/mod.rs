@@ -439,6 +439,7 @@ impl Interpreter {
                 BinaryOp::Add => '+',
                 BinaryOp::Sub => '-',
                 BinaryOp::Mul => '*',
+                BinaryOp::Div => '/',
                 _ => return Err(err("this operator is not supported for Tensor", span)),
             };
             return crate::runtime::values::tensor_arith(sym, &l, &r).map_err(|m| err(m, span));
@@ -559,6 +560,30 @@ impl Interpreter {
             let a = self.eval_expr(&args[0].value)?;
             let b = self.eval_expr(&args[1].value)?;
             return crate::runtime::values::tensor_matmul(&a, &b).map_err(|m| err(m, span));
+        }
+
+        if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            let r = match name.as_str() {
+                "sum" => crate::runtime::values::tensor_reduce(&v, 's'),
+                "mean" => crate::runtime::values::tensor_reduce(&v, 'a'),
+                "max" => crate::runtime::values::tensor_reduce(&v, 'x'),
+                "min" => crate::runtime::values::tensor_reduce(&v, 'n'),
+                _ => crate::runtime::values::tensor_transpose(&v),
+            };
+            return r.map_err(|m| err(m, span));
+        }
+
+        if name == "reshape" {
+            if args.len() != 2 {
+                return Err(err("reshape() takes exactly 2 arguments", span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            let s = self.eval_expr(&args[1].value)?;
+            return crate::runtime::values::tensor_reshape(&v, &s).map_err(|m| err(m, span));
         }
 
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {

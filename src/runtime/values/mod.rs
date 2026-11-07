@@ -367,6 +367,7 @@ pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
     let f = |a: f64, b: f64| match op {
         '+' => a + b,
         '-' => a - b,
+        '/' => a / b,
         _ => a * b,
     };
     match (l, r) {
@@ -654,6 +655,7 @@ fn tensor_broadcast(
         data.push(match op {
             '+' => a + b,
             '-' => a - b,
+            '/' => a / b,
             _ => a * b,
         });
     }
@@ -706,5 +708,142 @@ mod tensor_broadcast_tests {
         let c = t(vec![3], vec![0.0; 3]);
         let d = t(vec![4], vec![0.0; 4]);
         assert!(tensor_arith('*', &c, &d).is_err());
+    }
+}
+
+/// sum / mean / max / min of every element. kind: 's', 'a' (mean), 'x' (max), 'n' (min).
+pub fn tensor_reduce(v: &Value, kind: char) -> Result<Value, String> {
+    let data = match v {
+        Value::Tensor { data, .. } => data,
+        _ => return Err("this function needs a Tensor".to_string()),
+    };
+    if data.is_empty() && kind != 's' {
+        return Err("cannot take mean, max or min of an empty tensor".to_string());
+    }
+    let r = match kind {
+        's' => data.iter().sum::<f64>(),
+        'a' => data.iter().sum::<f64>() / data.len() as f64,
+        'x' => data.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+        _ => data.iter().cloned().fold(f64::INFINITY, f64::min),
+    };
+    Ok(Value::Float(r))
+}
+
+/// transpose(t): rank 1 is unchanged, rank 2 swaps rows and columns.
+pub fn tensor_transpose(v: &Value) -> Result<Value, String> {
+    let (shape, data) = match v {
+        Value::Tensor { shape, data } => (shape, data),
+        _ => return Err("transpose() needs a Tensor".to_string()),
+    };
+    match shape.len() {
+        1 => Ok(v.clone()),
+        2 => {
+            let (r, c) = (shape[0], shape[1]);
+            let mut out = vec![0.0; r * c];
+            for i in 0..r {
+                for j in 0..c {
+                    out[j * r + i] = data[i * c + j];
+                }
+            }
+            Ok(Value::Tensor {
+                shape: vec![c, r],
+                data: out,
+            })
+        }
+        _ => Err("transpose() supports rank 1 and rank 2 tensors only".to_string()),
+    }
+}
+
+/// reshape(t, [..]): same elements, new shape. Element count must stay equal.
+pub fn tensor_reshape(v: &Value, new_shape: &Value) -> Result<Value, String> {
+    let data = match v {
+        Value::Tensor { data, .. } => data,
+        _ => return Err("reshape() needs a Tensor".to_string()),
+    };
+    let items = match new_shape {
+        Value::List(i) => i,
+        _ => return Err("shape must be a List of Int".to_string()),
+    };
+    if items.is_empty() {
+        return Err("shape must not be empty".to_string());
+    }
+    let mut shape = Vec::new();
+    let mut total: usize = 1;
+    for it in items {
+        match it {
+            Value::Int(n) if *n >= 0 => {
+                let d = *n as usize;
+                total = total.checked_mul(d).ok_or("tensor is too large")?;
+                shape.push(d);
+            }
+            _ => return Err("shape must be a List of non-negative Int".to_string()),
+        }
+    }
+    if total != data.len() {
+        return Err(format!(
+            "cannot reshape tensor of {} elements into shape {:?}",
+            data.len(),
+            shape
+        ));
+    }
+    Ok(Value::Tensor {
+        shape,
+        data: data.clone(),
+    })
+}
+
+#[cfg(test)]
+mod tensor_numeric_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor { shape, data }
+    }
+
+    #[test]
+    fn divide_tensor() {
+        let a = t(vec![2], vec![1.0, 4.0]);
+        assert_eq!(
+            tensor_arith('/', &a, &Value::Float(2.0)),
+            Ok(t(vec![2], vec![0.5, 2.0]))
+        );
+        let b = t(vec![2, 2], vec![2.0, 4.0, 6.0, 8.0]);
+        assert_eq!(
+            tensor_arith('/', &b, &t(vec![2], vec![2.0, 4.0])),
+            Ok(t(vec![2, 2], vec![1.0, 1.0, 3.0, 2.0]))
+        );
+    }
+
+    #[test]
+    fn reductions() {
+        let a = t(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(tensor_reduce(&a, 's'), Ok(Value::Float(10.0)));
+        assert_eq!(tensor_reduce(&a, 'a'), Ok(Value::Float(2.5)));
+        assert_eq!(tensor_reduce(&a, 'x'), Ok(Value::Float(4.0)));
+        assert_eq!(tensor_reduce(&a, 'n'), Ok(Value::Float(1.0)));
+    }
+
+    #[test]
+    fn transpose_and_reshape() {
+        let a = t(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(
+            tensor_transpose(&a),
+            Ok(t(vec![3, 2], vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]))
+        );
+        let shape = Value::List(vec![Value::Int(3), Value::Int(2)]);
+        assert_eq!(
+            tensor_reshape(&a, &shape),
+            Ok(t(vec![3, 2], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
+        );
+    }
+
+    #[test]
+    fn bad_inputs_are_errors() {
+        let a = t(vec![2, 3], vec![0.0; 6]);
+        assert!(tensor_reshape(&a, &Value::List(vec![Value::Int(4)])).is_err());
+        assert!(tensor_reshape(&a, &Value::List(vec![])).is_err());
+        assert!(tensor_reduce(&t(vec![0], vec![]), 'x').is_err());
+        assert!(tensor_reduce(&Value::Int(1), 's').is_err());
+        assert!(tensor_transpose(&t(vec![1, 1, 1], vec![0.0])).is_err());
     }
 }

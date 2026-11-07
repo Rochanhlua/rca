@@ -618,6 +618,32 @@ impl Compiler {
             return Ok(());
         }
 
+        if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let ins = match name.as_str() {
+                "sum" => Instruction::TensorSum,
+                "mean" => Instruction::TensorMean,
+                "max" => Instruction::TensorMax,
+                "min" => Instruction::TensorMin,
+                _ => Instruction::TensorTranspose,
+            };
+            self.emit(ins, span);
+            return Ok(());
+        }
+
+        if name == "reshape" {
+            if args.len() != 2 {
+                return Err(err("reshape() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::TensorReshape, span);
+            return Ok(());
+        }
+
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));

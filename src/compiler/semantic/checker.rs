@@ -641,6 +641,55 @@ impl Checker {
             return Type::Tensor;
         }
 
+        if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
+            let ret = if name == "transpose" {
+                Type::Tensor
+            } else {
+                Type::Float
+            };
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+                return ret;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("{}() needs a Tensor, found {}", name, t),
+                    &args[0].value.span,
+                );
+            }
+            return ret;
+        }
+
+        if name == "reshape" {
+            if args.len() != 2 {
+                self.error("reshape() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("reshape() needs a Tensor, found {}", t),
+                    &args[0].value.span,
+                );
+            }
+            let s = self.check_expr(&args[1].value);
+            let ok = match &s {
+                Type::List(inner) => matches!(**inner, Type::Int | Type::Unknown),
+                Type::Unknown => true,
+                _ => false,
+            };
+            if !ok {
+                self.error(
+                    format!("reshape() needs a List of Int (the shape), found {}", s),
+                    &args[1].value.span,
+                );
+            }
+            return Type::Tensor;
+        }
+
         if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
             if args.len() != 1 {
                 self.error(format!("{}() takes exactly 1 argument", name), span);
@@ -849,8 +898,10 @@ impl Checker {
         if *left == Type::Unknown || *right == Type::Unknown {
             return Type::Unknown;
         }
-        if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul)
-            && (*left == Type::Tensor || *right == Type::Tensor)
+        if matches!(
+            op,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div
+        ) && (*left == Type::Tensor || *right == Type::Tensor)
         {
             let ok = matches!(
                 (left, right),
