@@ -39,8 +39,8 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::Index
         | I::SetField(_) => (2, 1),
         I::Neg | I::Not | I::GetField(_) => (1, 1),
-        I::Jump(_) | I::ForNext { .. } => (0, 0),
-        I::Return => (1, 0),
+        I::Jump(_) | I::ForNext { .. } | I::PushHandler(_) | I::PopHandler => (0, 0),
+        I::Return | I::Throw => (1, 0),
         I::StoreIndex => (3, 1),
         I::MakeList(n) => (*n, 1),
         I::Print(n) => (*n, 1),
@@ -67,7 +67,7 @@ fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProg
     // 1. operands are in range
     for (i, ins) in chunk.code.iter().enumerate() {
         match ins {
-            I::Jump(t) | I::JumpIfFalse(t) if *t >= n => {
+            I::Jump(t) | I::JumpIfFalse(t) | I::PushHandler(t) if *t >= n => {
                 return Err(bad_at(name, i, format!("jump target {} out of range", t)));
             }
             I::ForNext { iter, idx, var, exit } => {
@@ -112,7 +112,30 @@ fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProg
             }
             continue;
         }
+        if let I::PushHandler(t) = ins {
+            let hd = d + 1;
+            match depth[*t] {
+                None => {
+                    depth[*t] = Some(hd);
+                    work.push(*t);
+                }
+                Some(x) => {
+                    if x != hd {
+                        return Err(bad_at(
+                            name,
+                            *t,
+                            format!("inconsistent stack depth ({} vs {})", x, hd),
+                        ));
+                    }
+                }
+            }
+        }
         for s in ins.successors(i) {
+            if let I::PushHandler(t) = ins {
+                if s == *t && s != i + 1 {
+                    continue;
+                }
+            }
             if s >= n {
                 return Err(bad_at(name, i, "execution falls off the end of the code"));
             }

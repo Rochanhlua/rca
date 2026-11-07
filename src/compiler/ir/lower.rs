@@ -159,7 +159,7 @@ impl Compiler {
     fn patch(&mut self, index: usize) {
         let target = self.here();
         match &mut self.state.chunk.code[index] {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) => *t = target,
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => *t = target,
             Instruction::ForNext { exit, .. } => *exit = target,
             _ => {}
         }
@@ -320,6 +320,24 @@ impl Compiler {
                     }
                     None => self.patch(jump_false),
                 }
+            }
+            StmtKind::Try { body, catch_var, catch_block } => {
+                let handler = self.emit_jump(Instruction::PushHandler(0), span);
+                self.compile_block(body)?;
+                self.emit(Instruction::PopHandler, span);
+                let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                self.patch(handler);
+                self.begin_scope();
+                let var = self.declare_var(catch_var);
+                self.emit_store(var, span);
+                let result = self.compile_stmts(catch_block);
+                self.end_scope();
+                result?;
+                self.patch(jump_end);
+            }
+            StmtKind::Throw(e) => {
+                self.compile_expr(e)?;
+                self.emit(Instruction::Throw, span);
             }
             StmtKind::While { condition, body } => {
                 let start = self.here();

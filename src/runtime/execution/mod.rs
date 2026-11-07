@@ -237,6 +237,20 @@ impl Interpreter {
                     Ok(Flow::Normal)
                 }
             }
+            StmtKind::Try { body, catch_var, catch_block } => match self.exec_block(body) {
+                Ok(flow) => Ok(flow),
+                Err(e) => {
+                    self.push_scope();
+                    self.declare(catch_var, Value::Str(e.message));
+                    let result = self.exec_stmts(catch_block);
+                    self.pop_scope();
+                    result
+                }
+            },
+            StmtKind::Throw(e) => {
+                let v = self.eval_expr(e)?;
+                Err(err(v.to_string(), &stmt.span))
+            }
             StmtKind::While { condition, body } => {
                 while self.eval_cond(condition)? {
                     match self.exec_block(body)? {
@@ -641,5 +655,28 @@ mod tests {
             .join()
             .unwrap();
         assert!(msg.contains("stack overflow"));
+    }
+
+    #[test]
+    fn try_catches_runtime_error() {
+        let src = "try:\n    print(1 / 0)\ncatch e:\n    print(\"caught\")\nprint(\"after\")\n";
+        assert_eq!(run(src), "caught\nafter\n");
+    }
+
+    #[test]
+    fn throw_from_function_is_caught() {
+        let src = "fn f() -> None:\n    throw \"boom\"\ntry:\n    f()\ncatch e:\n    print(e)\n";
+        assert_eq!(run(src), "boom\n");
+    }
+
+    #[test]
+    fn try_without_error_skips_catch() {
+        assert_eq!(run("try:\n    print(1)\ncatch e:\n    print(2)\n"), "1\n");
+    }
+
+    #[test]
+    fn return_inside_try() {
+        let src = "fn f() -> Int:\n    try:\n        return 5\n    catch e:\n        return 0\n    return 1\nprint(f())\n";
+        assert_eq!(run(src), "5\n");
     }
 }

@@ -31,7 +31,7 @@ fn jump_targets(code: &[Instruction]) -> Vec<bool> {
     let mut targets = vec![false; code.len() + 1];
     for ins in code {
         match ins {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) => targets[*t] = true,
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => targets[*t] = true,
             Instruction::ForNext { exit, .. } => targets[*exit] = true,
             _ => {}
         }
@@ -43,7 +43,7 @@ fn jump_targets(code: &[Instruction]) -> Vec<bool> {
 fn remap(code: &mut [Instruction], map: &[usize]) {
     for ins in code.iter_mut() {
         match ins {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) => *t = map[*t],
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => *t = map[*t],
             Instruction::ForNext { exit, .. } => *exit = map[*exit],
             _ => {}
         }

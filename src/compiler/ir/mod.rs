@@ -67,6 +67,14 @@ pub enum Instruction {
     // built-in
     /// Pops `n` values, prints them, pushes None.
     Print(usize),
+
+    // error handling
+    /// Registers a catch handler; `catch_target` is the instruction index of the catch block.
+    PushHandler(usize),
+    /// Removes the innermost handler (the try block finished without error).
+    PopHandler,
+    /// Pops a String and raises it as an error.
+    Throw,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -140,8 +148,9 @@ impl Instruction {
         match self {
             Instruction::Jump(t) => vec![*t],
             Instruction::JumpIfFalse(t) => vec![index + 1, *t],
+            Instruction::PushHandler(t) => vec![index + 1, *t],
             Instruction::ForNext { exit, .. } => vec![index + 1, *exit],
-            Instruction::Return => vec![],
+            Instruction::Return | Instruction::Throw => vec![],
             _ => vec![index + 1],
         }
     }

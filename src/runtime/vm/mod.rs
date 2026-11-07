@@ -11,6 +11,13 @@ fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
     Diagnostic::new(message, span.clone())
 }
 
+/// An active `try` block.
+struct Handler {
+    catch_ip: usize,
+    frame_depth: usize,
+    stack_depth: usize,
+}
+
 struct CallFrame<'a> {
     chunk: &'a Chunk,
     ip: usize,
@@ -22,6 +29,7 @@ pub struct Vm<'a> {
     stack: Vec<Value>,
     globals: Vec<Value>,
     frames: Vec<CallFrame<'a>>,
+    handlers: Vec<Handler>,
     capture: bool,
     output: String,
 }
@@ -43,6 +51,7 @@ impl<'a> Vm<'a> {
             stack: Vec::new(),
             globals: vec![Value::None; program.num_globals],
             frames: Vec::new(),
+            handlers: Vec::new(),
             capture,
             output: String::new(),
         }
@@ -73,6 +82,12 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    fn drop_stale_handlers(&mut self) {
+        while self.handlers.last().map_or(false, |h| h.frame_depth > self.frames.len()) {
+            self.handlers.pop();
+        }
+    }
+
     pub fn run(&mut self) -> Result<(), Diagnostic> {
         let program: &'a IrProgram = self.program;
         let main = &program.main;
@@ -81,6 +96,25 @@ impl<'a> Vm<'a> {
             ip: 0,
             locals: vec![Value::None; main.num_locals],
         });
+        loop {
+            match self.run_loop() {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    let h = match self.handlers.pop() {
+                        Some(h) => h,
+                        None => return Err(e),
+                    };
+                    self.frames.truncate(h.frame_depth);
+                    self.stack.truncate(h.stack_depth);
+                    self.stack.push(Value::Str(e.message.clone()));
+                    self.frames.last_mut().unwrap().ip = h.catch_ip;
+                }
+            }
+        }
+    }
+
+    fn run_loop(&mut self) -> Result<(), Diagnostic> {
+        let program: &'a IrProgram = self.program;
 
         loop {
             let chunk: &'a Chunk = self.frames.last().unwrap().chunk;
@@ -198,6 +232,7 @@ impl<'a> Vm<'a> {
                 Instruction::Return => {
                     let ret = self.pop();
                     self.frames.pop();
+                    self.drop_stale_handlers();
                     if self.frames.is_empty() {
                         return Ok(());
                     }
@@ -279,6 +314,22 @@ impl<'a> Vm<'a> {
                         }
                         _ => return Err(err("value has no fields", span)),
                     }
+                }
+
+                // error handling
+                Instruction::PushHandler(target) => {
+                    self.handlers.push(Handler {
+                        catch_ip: *target,
+                        frame_depth: self.frames.len(),
+                        stack_depth: self.stack.len(),
+                    });
+                }
+                Instruction::PopHandler => {
+                    self.handlers.pop();
+                }
+                Instruction::Throw => {
+                    let v = self.pop();
+                    return Err(err(v.to_string(), span));
                 }
 
                 // built-in
@@ -504,5 +555,28 @@ mod tests {
         let tree = run_tree(src);
         assert!(tree.contains("Adult"));
         assert_eq!(tree, run_vm(src));
+    }
+
+    #[test]
+    fn try_catches_runtime_error() {
+        let src = "try:\n    print(1 / 0)\ncatch e:\n    print(\"caught\")\nprint(\"after\")\n";
+        assert_eq!(run_vm(src), "caught\nafter\n");
+    }
+
+    #[test]
+    fn throw_from_function_is_caught() {
+        let src = "fn f() -> None:\n    throw \"boom\"\ntry:\n    f()\ncatch e:\n    print(e)\n";
+        assert_eq!(run_vm(src), "boom\n");
+    }
+
+    #[test]
+    fn try_without_error_skips_catch() {
+        assert_eq!(run_vm("try:\n    print(1)\ncatch e:\n    print(2)\n"), "1\n");
+    }
+
+    #[test]
+    fn return_inside_try() {
+        let src = "fn f() -> Int:\n    try:\n        return 5\n    catch e:\n        return 0\n    return 1\nprint(f())\n";
+        assert_eq!(run_vm(src), "5\n");
     }
 }
