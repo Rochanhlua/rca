@@ -6,7 +6,12 @@ use crate::runtime::values::Value;
 
 /// Total number of instructions in the program.
 pub fn instruction_count(program: &IrProgram) -> usize {
-    program.main.chunk.code.len() + program.functions.iter().map(|f| f.chunk.code.len()).sum::<usize>()
+    program.main.chunk.code.len()
+        + program
+            .functions
+            .iter()
+            .map(|f| f.chunk.code.len())
+            .sum::<usize>()
 }
 
 /// Optimizes every function of the program. Program behavior never changes.
@@ -31,7 +36,9 @@ fn jump_targets(code: &[Instruction]) -> Vec<bool> {
     let mut targets = vec![false; code.len() + 1];
     for ins in code {
         match ins {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => targets[*t] = true,
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => {
+                targets[*t] = true
+            }
             Instruction::ForNext { exit, .. } => targets[*exit] = true,
             _ => {}
         }
@@ -43,7 +50,9 @@ fn jump_targets(code: &[Instruction]) -> Vec<bool> {
 fn remap(code: &mut [Instruction], map: &[usize]) {
     for ins in code.iter_mut() {
         match ins {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => *t = map[*t],
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => {
+                *t = map[*t]
+            }
             Instruction::ForNext { exit, .. } => *exit = map[*exit],
             _ => {}
         }
@@ -71,7 +80,12 @@ fn to_instruction(v: Value) -> Option<Instruction> {
 }
 
 /// `Push a; Push b; <op>` becomes a single push, when the operation succeeds.
-fn fold_binary(a: &Instruction, b: &Instruction, c: &Instruction, span: &Span) -> Option<Instruction> {
+fn fold_binary(
+    a: &Instruction,
+    b: &Instruction,
+    c: &Instruction,
+    span: &Span,
+) -> Option<Instruction> {
     let op = match c {
         Instruction::Add => BinaryOp::Add,
         Instruction::Sub => BinaryOp::Sub,
@@ -96,11 +110,15 @@ fn fold_binary(a: &Instruction, b: &Instruction, c: &Instruction, span: &Span) -
 
 fn fold_pair(a: &Instruction, b: &Instruction) -> Option<Vec<Instruction>> {
     match (a, b) {
-        (Instruction::PushInt(n), Instruction::Neg) => n.checked_neg().map(|v| vec![Instruction::PushInt(v)]),
+        (Instruction::PushInt(n), Instruction::Neg) => {
+            n.checked_neg().map(|v| vec![Instruction::PushInt(v)])
+        }
         (Instruction::PushFloat(x), Instruction::Neg) => Some(vec![Instruction::PushFloat(-x)]),
         (Instruction::PushBool(v), Instruction::Not) => Some(vec![Instruction::PushBool(!v)]),
         (Instruction::PushBool(true), Instruction::JumpIfFalse(_)) => Some(Vec::new()),
-        (Instruction::PushBool(false), Instruction::JumpIfFalse(t)) => Some(vec![Instruction::Jump(*t)]),
+        (Instruction::PushBool(false), Instruction::JumpIfFalse(t)) => {
+            Some(vec![Instruction::Jump(*t)])
+        }
         _ => None,
     }
 }
@@ -257,7 +275,10 @@ mod tests {
     #[test]
     fn folds_float_and_string() {
         assert_eq!(
-            optimized("let a = 1.5 + 2.5\nlet s = \"a\" + \"b\"\n").main.chunk.code,
+            optimized("let a = 1.5 + 2.5\nlet s = \"a\" + \"b\"\n")
+                .main
+                .chunk
+                .code,
             vec![
                 I::PushFloat(4.0),
                 I::StoreGlobal(0),
@@ -273,7 +294,12 @@ mod tests {
     fn folds_not_and_comparison() {
         assert_eq!(
             optimized("let b = not (1 < 2)\n").main.chunk.code,
-            vec![I::PushBool(false), I::StoreGlobal(0), I::PushNone, I::Return]
+            vec![
+                I::PushBool(false),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
@@ -281,7 +307,14 @@ mod tests {
     fn keeps_division_by_zero() {
         assert_eq!(
             optimized("let a = 1 / 0\n").main.chunk.code,
-            vec![I::PushInt(1), I::PushInt(0), I::Div, I::StoreGlobal(0), I::PushNone, I::Return]
+            vec![
+                I::PushInt(1),
+                I::PushInt(0),
+                I::Div,
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
@@ -289,14 +322,22 @@ mod tests {
     fn simplifies_constant_and() {
         assert_eq!(
             optimized("let a = true and false\n").main.chunk.code,
-            vec![I::PushBool(false), I::StoreGlobal(0), I::PushNone, I::Return]
+            vec![
+                I::PushBool(false),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
     #[test]
     fn removes_dead_branch() {
         assert_eq!(
-            optimized("if false:\n    print(1)\nprint(2)\n").main.chunk.code,
+            optimized("if false:\n    print(1)\nprint(2)\n")
+                .main
+                .chunk
+                .code,
             vec![I::PushInt(2), I::Print(1), I::Pop, I::PushNone, I::Return]
         );
     }
@@ -309,7 +350,8 @@ mod tests {
 
     #[test]
     fn while_true_with_break() {
-        let src = "mut i = 0\nwhile true:\n    i = i + 1\n    if i == 3:\n        break\nprint(i)\n";
+        let src =
+            "mut i = 0\nwhile true:\n    i = i + 1\n    if i == 3:\n        break\nprint(i)\n";
         assert_eq!(run_ir(&optimized(src)), "3\n");
     }
 

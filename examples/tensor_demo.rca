@@ -1,0 +1,6 @@
+let a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+print(a)
+print(shape(a))
+print(len(a))
+print(zeros([2, 3]))
+print(ones([3]))

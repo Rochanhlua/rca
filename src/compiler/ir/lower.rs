@@ -170,7 +170,9 @@ impl Compiler {
     fn patch(&mut self, index: usize) {
         let target = self.here();
         match &mut self.state.chunk.code[index] {
-            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => *t = target,
+            Instruction::Jump(t) | Instruction::JumpIfFalse(t) | Instruction::PushHandler(t) => {
+                *t = target
+            }
             Instruction::ForNext { exit, .. } => *exit = target,
             _ => {}
         }
@@ -229,7 +231,9 @@ impl Compiler {
                 return Some(VarRef::Local(l.slot));
             }
         }
-        self.globals.get(&self.key(name)).map(|&s| VarRef::Global(s))
+        self.globals
+            .get(&self.key(name))
+            .map(|&s| VarRef::Global(s))
     }
 
     fn emit_store(&mut self, var: VarRef, span: &Span) {
@@ -295,9 +299,10 @@ impl Compiler {
                 self.compile_expr(value)?;
                 self.emit_store_to(target)?;
             }
-            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
-                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
-            {
+            StmtKind::Expr(Expr {
+                kind: ExprKind::Call { callee, args },
+                ..
+            }) if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") => {
                 if args.len() != 1 {
                     return Err(err("push() takes exactly 1 argument", span));
                 }
@@ -347,7 +352,11 @@ impl Compiler {
                 };
                 self.emit(Instruction::Jump(start), span);
             }
-            StmtKind::If { condition, then_block, else_block } => {
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
                 self.compile_expr(condition)?;
                 let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
                 self.compile_block(then_block)?;
@@ -361,7 +370,11 @@ impl Compiler {
                     None => self.patch(jump_false),
                 }
             }
-            StmtKind::Try { body, catch_var, catch_block } => {
+            StmtKind::Try {
+                body,
+                catch_var,
+                catch_block,
+            } => {
                 let handler = self.emit_jump(Instruction::PushHandler(0), span);
                 self.state.try_depth += 1;
                 let body_result = self.compile_block(body);
@@ -386,7 +399,11 @@ impl Compiler {
                 let start = self.here();
                 self.compile_expr(condition)?;
                 let exit = self.emit_jump(Instruction::JumpIfFalse(0), span);
-                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new(), try_depth: self.state.try_depth });
+                self.state.loops.push(LoopCtx {
+                    start,
+                    break_jumps: Vec::new(),
+                    try_depth: self.state.try_depth,
+                });
                 let result = self.compile_block(body);
                 let ctx = self.state.loops.pop().unwrap();
                 result?;
@@ -408,10 +425,19 @@ impl Compiler {
 
                 let start = self.here();
                 let next = self.emit_jump(
-                    Instruction::ForNext { iter: iter_slot, idx: idx_slot, var: var_slot, exit: 0 },
+                    Instruction::ForNext {
+                        iter: iter_slot,
+                        idx: idx_slot,
+                        var: var_slot,
+                        exit: 0,
+                    },
                     span,
                 );
-                self.state.loops.push(LoopCtx { start, break_jumps: Vec::new(), try_depth: self.state.try_depth });
+                self.state.loops.push(LoopCtx {
+                    start,
+                    break_jumps: Vec::new(),
+                    try_depth: self.state.try_depth,
+                });
                 let result = self.compile_block(body);
                 let ctx = self.state.loops.pop().unwrap();
                 result?;
@@ -537,7 +563,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Result<(), Diagnostic> {
+    fn compile_call(
+        &mut self,
+        callee: &Expr,
+        args: &[Argument],
+        span: &Span,
+    ) -> Result<(), Diagnostic> {
         if let ExprKind::Field { object, name: item } = &callee.kind {
             if let ExprKind::Ident(m) = &object.kind {
                 if let Some(module) = self.module_aliases.get(m).cloned() {
@@ -556,7 +587,10 @@ impl Compiler {
                             self.emit(Instruction::MakeStruct(id), span);
                             return Ok(());
                         }
-                        return Err(err(format!("module '{}' has no item '{}'", module, item), &callee.span));
+                        return Err(err(
+                            format!("module '{}' has no item '{}'", module, item),
+                            &callee.span,
+                        ));
                     }
                 }
             }
@@ -571,6 +605,21 @@ impl Compiler {
                 self.compile_expr(&a.value)?;
             }
             self.emit(Instruction::Print(args.len()), span);
+            return Ok(());
+        }
+
+        if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let ins = match name.as_str() {
+                "Tensor" => Instruction::MakeTensor,
+                "zeros" => Instruction::FillTensor(0.0),
+                "ones" => Instruction::FillTensor(1.0),
+                _ => Instruction::TensorShape,
+            };
+            self.emit(ins, span);
             return Ok(());
         }
 
@@ -683,7 +732,14 @@ mod tests {
     fn let_and_arithmetic() {
         assert_eq!(
             main_code("let x = 1 + 2\n"),
-            vec![I::PushInt(1), I::PushInt(2), I::Add, I::StoreGlobal(0), I::PushNone, I::Return]
+            vec![
+                I::PushInt(1),
+                I::PushInt(2),
+                I::Add,
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
@@ -744,11 +800,26 @@ mod tests {
         assert_eq!(p.functions[0].arity, 2);
         assert_eq!(
             p.functions[0].chunk.code,
-            vec![I::LoadLocal(0), I::LoadLocal(1), I::Add, I::Return, I::PushNone, I::Return]
+            vec![
+                I::LoadLocal(0),
+                I::LoadLocal(1),
+                I::Add,
+                I::Return,
+                I::PushNone,
+                I::Return
+            ]
         );
         assert_eq!(
             p.main.chunk.code,
-            vec![I::PushInt(1), I::PushInt(2), I::Call(0), I::Print(1), I::Pop, I::PushNone, I::Return]
+            vec![
+                I::PushInt(1),
+                I::PushInt(2),
+                I::Call(0),
+                I::Print(1),
+                I::Pop,
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
@@ -778,7 +849,14 @@ mod tests {
         assert_eq!(p.structs[0].fields, vec!["x".to_string(), "y".to_string()]);
         assert_eq!(
             p.main.chunk.code,
-            vec![I::PushInt(1), I::PushInt(2), I::MakeStruct(0), I::StoreGlobal(0), I::PushNone, I::Return]
+            vec![
+                I::PushInt(1),
+                I::PushInt(2),
+                I::MakeStruct(0),
+                I::StoreGlobal(0),
+                I::PushNone,
+                I::Return
+            ]
         );
     }
 
@@ -788,7 +866,15 @@ mod tests {
         let code = &p.main.chunk.code;
         assert_eq!(p.main.num_locals, 3);
         assert_eq!(code[2], I::MakeRange);
-        assert_eq!(code[6], I::ForNext { iter: 0, idx: 1, var: 2, exit: 11 });
+        assert_eq!(
+            code[6],
+            I::ForNext {
+                iter: 0,
+                idx: 1,
+                var: 2,
+                exit: 11
+            }
+        );
         assert_eq!(code[10], I::Jump(6));
     }
 
@@ -849,7 +935,8 @@ mod tests {
 
     #[test]
     fn disassembly_lists_functions() {
-        let text = ir("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(1, 2))\n").to_string();
+        let text =
+            ir("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(1, 2))\n").to_string();
         assert!(text.contains("== main"));
         assert!(text.contains("== fn add"));
     }
@@ -891,15 +978,25 @@ fn import_aliases(program: &Program) -> HashMap<String, String> {
 
 /// Compiles modules (dependency order, entry module last) into one IR program.
 /// Top-level code of imported modules runs first, once, before the entry module.
-pub fn compile_modules(modules: &[crate::compiler::modules::Module]) -> Result<IrProgram, Diagnostic> {
+pub fn compile_modules(
+    modules: &[crate::compiler::modules::Module],
+) -> Result<IrProgram, Diagnostic> {
     let mut c = Compiler::new();
     let last = modules.len().saturating_sub(1);
     for (i, m) in modules.iter().enumerate() {
-        c.prefix = if i == last { String::new() } else { m.name.clone() };
+        c.prefix = if i == last {
+            String::new()
+        } else {
+            m.name.clone()
+        };
         c.declare_items(&m.program);
     }
     for (i, m) in modules.iter().enumerate() {
-        c.prefix = if i == last { String::new() } else { m.name.clone() };
+        c.prefix = if i == last {
+            String::new()
+        } else {
+            m.name.clone()
+        };
         c.aliases = import_aliases(&m.program);
         c.module_aliases = module_aliases_of(&m.program);
         for stmt in &m.program.statements {
@@ -925,10 +1022,15 @@ mod module_tests {
     fn module(name: &str, src: &str) -> Module {
         let tokens = Lexer::new(src).tokenize().unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
-        Module { name: name.to_string(), path: PathBuf::new(), program }
+        Module {
+            name: name.to_string(),
+            path: PathBuf::new(),
+            program,
+        }
     }
 
-    const LIB: &str = "fn helper() -> Int:\n    return 100\npub fn value() -> Int:\n    return helper() + 1\n";
+    const LIB: &str =
+        "fn helper() -> Int:\n    return 100\npub fn value() -> Int:\n    return helper() + 1\n";
     const MAIN: &str = "from lib import value\nfn helper() -> Int:\n    return 1\nprint(helper())\nprint(value())\n";
 
     #[test]
@@ -951,7 +1053,10 @@ fn module_aliases_of(program: &Program) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for stmt in &program.statements {
         if let StmtKind::Import { module, alias } = &stmt.kind {
-            map.insert(alias.clone().unwrap_or_else(|| module.clone()), module.clone());
+            map.insert(
+                alias.clone().unwrap_or_else(|| module.clone()),
+                module.clone(),
+            );
         }
     }
     map

@@ -13,8 +13,14 @@ pub enum Value {
     /// Start (inclusive) and end (exclusive), like `0..10`.
     Range(i64, i64),
     /// Row-major flat storage. Invariant: shape.iter().product() == data.len().
-    Tensor { shape: Vec<usize>, data: Vec<f64> },
-    Struct { name: String, fields: Vec<(String, Value)> },
+    Tensor {
+        shape: Vec<usize>,
+        data: Vec<f64>,
+    },
+    Struct {
+        name: String,
+        fields: Vec<(String, Value)>,
+    },
 }
 
 impl Value {
@@ -133,7 +139,12 @@ fn fmt_tensor(f: &mut fmt::Formatter, shape: &[usize], data: &[f64]) -> fmt::Res
 
 /// Why a tensor could not be built from a value.
 pub fn tensor_from_value(v: &Value) -> Result<Value, String> {
-    fn walk(v: &Value, depth: usize, shape: &mut Vec<usize>, data: &mut Vec<f64>) -> Result<(), String> {
+    fn walk(
+        v: &Value,
+        depth: usize,
+        shape: &mut Vec<usize>,
+        data: &mut Vec<f64>,
+    ) -> Result<(), String> {
         match v {
             Value::Float(x) => {
                 if depth != shape.len() {
@@ -167,7 +178,9 @@ pub fn tensor_from_value(v: &Value) -> Result<Value, String> {
     }
     let mut total: usize = 1;
     for d in &shape {
-        total = total.checked_mul(*d).ok_or_else(|| "tensor is too large".to_string())?;
+        total = total
+            .checked_mul(*d)
+            .ok_or_else(|| "tensor is too large".to_string())?;
     }
     if total != data.len() {
         return Err("tensor rows must all have the same length".to_string());
@@ -186,7 +199,13 @@ mod tensor_tests {
     #[test]
     fn builds_1d_tensor() {
         let v = Value::List(vec![f(1.0), f(2.0), f(3.0)]);
-        assert_eq!(tensor_from_value(&v), Ok(Value::Tensor { shape: vec![3], data: vec![1.0, 2.0, 3.0] }));
+        assert_eq!(
+            tensor_from_value(&v),
+            Ok(Value::Tensor {
+                shape: vec![3],
+                data: vec![1.0, 2.0, 3.0]
+            })
+        );
     }
 
     #[test]
@@ -197,7 +216,10 @@ mod tensor_tests {
         ]);
         assert_eq!(
             tensor_from_value(&v),
-            Ok(Value::Tensor { shape: vec![2, 2], data: vec![1.0, 2.0, 3.0, 4.0] })
+            Ok(Value::Tensor {
+                shape: vec![2, 2],
+                data: vec![1.0, 2.0, 3.0, 4.0]
+            })
         );
     }
 
@@ -218,7 +240,107 @@ mod tensor_tests {
 
     #[test]
     fn display_shows_shape_and_values() {
-        let t = Value::Tensor { shape: vec![2, 2], data: vec![1.0, 2.0, 3.0, 4.0] };
-        assert_eq!(t.to_string(), "Tensor(shape=[2, 2], [[1.0, 2.0], [3.0, 4.0]])");
+        let t = Value::Tensor {
+            shape: vec![2, 2],
+            data: vec![1.0, 2.0, 3.0, 4.0],
+        };
+        assert_eq!(
+            t.to_string(),
+            "Tensor(shape=[2, 2], [[1.0, 2.0], [3.0, 4.0]])"
+        );
+    }
+}
+
+/// Largest tensor RCA will allocate (elements). Bigger is a runtime error.
+pub const MAX_TENSOR_ELEMENTS: usize = 10_000_000;
+
+/// zeros([2, 3]) / ones([3]): builds a tensor filled with `fill` from a List of Int.
+pub fn tensor_filled(v: &Value, fill: f64) -> Result<Value, String> {
+    let items = match v {
+        Value::List(i) => i,
+        _ => return Err("shape must be a List of Int".to_string()),
+    };
+    if items.is_empty() {
+        return Err("shape must not be empty".to_string());
+    }
+    let mut shape = Vec::new();
+    let mut total: usize = 1;
+    for it in items {
+        match it {
+            Value::Int(n) if *n >= 0 => {
+                let d = *n as usize;
+                total = total.checked_mul(d).ok_or("tensor is too large")?;
+                shape.push(d);
+            }
+            _ => return Err("shape must be a List of non-negative Int".to_string()),
+        }
+    }
+    if total > MAX_TENSOR_ELEMENTS {
+        return Err("tensor is too large".to_string());
+    }
+    Ok(Value::Tensor {
+        shape,
+        data: vec![fill; total],
+    })
+}
+
+/// shape(t): the shape of a tensor as a List of Int.
+pub fn tensor_shape(v: &Value) -> Result<Value, String> {
+    match v {
+        Value::Tensor { shape, .. } => Ok(Value::List(
+            shape.iter().map(|d| Value::Int(*d as i64)).collect(),
+        )),
+        _ => Err("shape() needs a Tensor".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tensor_fill_tests {
+    use super::*;
+
+    #[test]
+    fn zeros_and_ones() {
+        let shape = Value::List(vec![Value::Int(2), Value::Int(2)]);
+        assert_eq!(
+            tensor_filled(&shape, 0.0),
+            Ok(Value::Tensor {
+                shape: vec![2, 2],
+                data: vec![0.0; 4]
+            })
+        );
+        assert_eq!(
+            tensor_filled(&Value::List(vec![Value::Int(3)]), 1.0),
+            Ok(Value::Tensor {
+                shape: vec![3],
+                data: vec![1.0; 3]
+            })
+        );
+    }
+
+    #[test]
+    fn bad_shapes_are_errors() {
+        assert!(tensor_filled(&Value::List(vec![Value::Int(-1)]), 0.0).is_err());
+        assert!(tensor_filled(&Value::List(vec![]), 0.0).is_err());
+        assert!(tensor_filled(&Value::Int(3), 0.0).is_err());
+        assert!(
+            tensor_filled(
+                &Value::List(vec![Value::Int(100000), Value::Int(100000)]),
+                0.0
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn shape_of_tensor() {
+        let t = Value::Tensor {
+            shape: vec![2, 3],
+            data: vec![0.0; 6],
+        };
+        assert_eq!(
+            tensor_shape(&t),
+            Ok(Value::List(vec![Value::Int(2), Value::Int(3)]))
+        );
+        assert!(tensor_shape(&Value::Int(1)).is_err());
     }
 }

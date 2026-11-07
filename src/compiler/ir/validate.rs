@@ -1,12 +1,22 @@
 use super::{Chunk, Instruction as I, IrProgram};
 
 fn bad_at(name: &str, index: usize, message: impl Into<String>) -> String {
-    format!("invalid IR in '{}' at instruction {}: {}", name, index, message.into())
+    format!(
+        "invalid IR in '{}' at instruction {}: {}",
+        name,
+        index,
+        message.into()
+    )
 }
 
 /// Checks that compiled IR is well-formed. A failure means a compiler bug.
 pub fn validate(program: &IrProgram) -> Result<(), String> {
-    validate_chunk("<main>", &program.main.chunk, program.main.num_locals, program)?;
+    validate_chunk(
+        "<main>",
+        &program.main.chunk,
+        program.main.num_locals,
+        program,
+    )?;
     for f in &program.functions {
         validate_chunk(&f.name, &f.chunk, f.num_locals, program)?;
     }
@@ -39,7 +49,14 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::Index
         | I::SetField(_)
         | I::ListPush => (2, 1),
-        I::Neg | I::Not | I::GetField(_) | I::Len | I::Convert(_) => (1, 1),
+        I::Neg
+        | I::Not
+        | I::GetField(_)
+        | I::Len
+        | I::Convert(_)
+        | I::MakeTensor
+        | I::FillTensor(_)
+        | I::TensorShape => (1, 1),
         I::Jump(_) | I::ForNext { .. } | I::PushHandler(_) | I::PopHandler => (0, 0),
         I::Return | I::Throw => (1, 0),
         I::StoreIndex => (3, 1),
@@ -56,13 +73,21 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
     })
 }
 
-fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProgram) -> Result<(), String> {
+fn validate_chunk(
+    name: &str,
+    chunk: &Chunk,
+    num_locals: usize,
+    program: &IrProgram,
+) -> Result<(), String> {
     let n = chunk.code.len();
     if n == 0 {
         return Err(format!("invalid IR in '{}': no instructions", name));
     }
     if chunk.spans.len() != n {
-        return Err(format!("invalid IR in '{}': code and spans have different lengths", name));
+        return Err(format!(
+            "invalid IR in '{}': code and spans have different lengths",
+            name
+        ));
     }
 
     // 1. operands are in range
@@ -71,9 +96,18 @@ fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProg
             I::Jump(t) | I::JumpIfFalse(t) | I::PushHandler(t) if *t >= n => {
                 return Err(bad_at(name, i, format!("jump target {} out of range", t)));
             }
-            I::ForNext { iter, idx, var, exit } => {
+            I::ForNext {
+                iter,
+                idx,
+                var,
+                exit,
+            } => {
                 if *exit >= n {
-                    return Err(bad_at(name, i, format!("jump target {} out of range", exit)));
+                    return Err(bad_at(
+                        name,
+                        i,
+                        format!("jump target {} out of range", exit),
+                    ));
                 }
                 for s in [*iter, *idx, *var] {
                     if s >= num_locals {
@@ -109,7 +143,11 @@ fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProg
         let nd = d - pops + pushes;
         if let I::Return = ins {
             if nd != 0 {
-                return Err(bad_at(name, i, format!("stack not empty at return ({} extra)", nd)));
+                return Err(bad_at(
+                    name,
+                    i,
+                    format!("stack not empty at return ({} extra)", nd),
+                ));
             }
             continue;
         }
@@ -163,10 +201,10 @@ fn validate_chunk(name: &str, chunk: &Chunk, num_locals: usize, program: &IrProg
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::ir::lower;
     use crate::compiler::ir::Function;
-    use crate::compiler::lexer::token::Span;
+    use crate::compiler::ir::lower;
     use crate::compiler::lexer::Lexer;
+    use crate::compiler::lexer::token::Span;
     use crate::compiler::parser::Parser;
     use crate::compiler::semantic::Checker;
 
@@ -206,7 +244,12 @@ mod tests {
 
     #[test]
     fn bad_local_slot_is_detected() {
-        let e = error_of(vec![I::PushInt(1), I::StoreLocal(5), I::PushNone, I::Return]);
+        let e = error_of(vec![
+            I::PushInt(1),
+            I::StoreLocal(5),
+            I::PushNone,
+            I::Return,
+        ]);
         assert!(e.contains("local slot"));
     }
 
@@ -223,7 +266,13 @@ mod tests {
 
     #[test]
     fn inconsistent_stack_depth_is_detected() {
-        let code = vec![I::PushBool(true), I::JumpIfFalse(3), I::PushInt(1), I::PushNone, I::Return];
+        let code = vec![
+            I::PushBool(true),
+            I::JumpIfFalse(3),
+            I::PushInt(1),
+            I::PushNone,
+            I::Return,
+        ];
         assert!(validate(&program_with(code)).is_err());
     }
 

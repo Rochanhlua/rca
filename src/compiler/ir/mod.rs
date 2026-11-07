@@ -52,7 +52,12 @@ pub enum Instruction {
     /// For-loop step: reads the iterable in local `iter` (Range or List) and
     /// the counter in local `idx`. If finished, jumps to `exit`; otherwise
     /// stores the next element in local `var` and increments the counter.
-    ForNext { iter: usize, idx: usize, var: usize, exit: usize },
+    ForNext {
+        iter: usize,
+        idx: usize,
+        var: usize,
+        exit: usize,
+    },
 
     // functions
     Call(usize),
@@ -87,6 +92,12 @@ pub enum Instruction {
     // built-in
     /// Pops a String or List, pushes its length.
     Len,
+    /// Pops a List (of Float, nested), pushes a Tensor.
+    MakeTensor,
+    /// Pops a List of Int (the shape), pushes a Tensor filled with the value.
+    FillTensor(f64),
+    /// Pops a Tensor, pushes its shape as a List of Int.
+    TensorShape,
     /// Pops a value, converts it, pushes the result.
     Convert(ConvKind),
     /// Stack: [value, list] -> new list with value appended.

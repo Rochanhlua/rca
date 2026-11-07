@@ -135,7 +135,8 @@ impl Checker {
                     Some(t) => self.resolve_type(t, true),
                     None => Type::None,
                 };
-                self.functions.insert(f.name.clone(), FuncSig { params, ret });
+                self.functions
+                    .insert(f.name.clone(), FuncSig { params, ret });
             }
         }
     }
@@ -143,9 +144,11 @@ impl Checker {
     fn always_returns(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| match &s.kind {
             StmtKind::Return(_) => true,
-            StmtKind::If { then_block, else_block: Some(else_b), .. } => {
-                Self::always_returns(then_block) && Self::always_returns(else_b)
-            }
+            StmtKind::If {
+                then_block,
+                else_block: Some(else_b),
+                ..
+            } => Self::always_returns(then_block) && Self::always_returns(else_b),
             _ => false,
         })
     }
@@ -221,7 +224,12 @@ impl Checker {
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::Let { name, mutable, ty, value } => {
+            StmtKind::Let {
+                name,
+                mutable,
+                ty,
+                value,
+            } => {
                 let value_ty = self.check_expr(value);
                 let var_ty = match ty {
                     Some(annotation) => {
@@ -236,7 +244,10 @@ impl Checker {
                     }
                     None => value_ty,
                 };
-                let symbol = Symbol { ty: var_ty, mutable: *mutable };
+                let symbol = Symbol {
+                    ty: var_ty,
+                    mutable: *mutable,
+                };
                 if !self.scopes.declare(name, symbol) {
                     self.error(
                         format!("'{}' is already declared in this scope", name),
@@ -264,7 +275,10 @@ impl Checker {
                                     );
                                 } else if !Type::compatible(&var_ty, &value_ty) {
                                     self.error(
-                                        format!("type mismatch: expected {}, found {}", var_ty, value_ty),
+                                        format!(
+                                            "type mismatch: expected {}, found {}",
+                                            var_ty, value_ty
+                                        ),
                                         &value.span,
                                     );
                                 }
@@ -287,7 +301,10 @@ impl Checker {
                         }
                         if !Type::compatible(&target_ty, &value_ty) {
                             self.error(
-                                format!("type mismatch: expected {}, found {}", target_ty, value_ty),
+                                format!(
+                                    "type mismatch: expected {}, found {}",
+                                    target_ty, value_ty
+                                ),
                                 &value.span,
                             );
                         }
@@ -297,9 +314,10 @@ impl Checker {
                     }
                 }
             }
-            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
-                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
-            {
+            StmtKind::Expr(Expr {
+                kind: ExprKind::Call { callee, args },
+                ..
+            }) if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") => {
                 if let ExprKind::Field { object, .. } = &callee.kind {
                     if args.len() != 1 {
                         self.error("push() takes exactly 1 argument", &stmt.span);
@@ -311,7 +329,10 @@ impl Checker {
                             Type::List(inner) => {
                                 if !Type::compatible(&inner, &val_ty) {
                                     self.error(
-                                        format!("type mismatch: expected {}, found {}", inner, val_ty),
+                                        format!(
+                                            "type mismatch: expected {}, found {}",
+                                            inner, val_ty
+                                        ),
                                         &args[0].value.span,
                                     );
                                 }
@@ -370,7 +391,11 @@ impl Checker {
                     self.error("'continue' outside of a loop", &stmt.span);
                 }
             }
-            StmtKind::If { condition, then_block, else_block } => {
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
                 self.check_condition(condition);
                 self.check_block(then_block);
                 if let Some(block) = else_block {
@@ -395,7 +420,13 @@ impl Checker {
                     }
                 };
                 self.scopes.push();
-                self.scopes.declare(var, Symbol { ty: var_ty, mutable: false });
+                self.scopes.declare(
+                    var,
+                    Symbol {
+                        ty: var_ty,
+                        mutable: false,
+                    },
+                );
                 self.loop_depth += 1;
                 for s in body {
                     self.check_stmt(s);
@@ -403,10 +434,20 @@ impl Checker {
                 self.loop_depth -= 1;
                 self.scopes.pop();
             }
-            StmtKind::Try { body, catch_var, catch_block } => {
+            StmtKind::Try {
+                body,
+                catch_var,
+                catch_block,
+            } => {
                 self.check_block(body);
                 self.scopes.push();
-                self.scopes.declare(catch_var, Symbol { ty: Type::String, mutable: false });
+                self.scopes.declare(
+                    catch_var,
+                    Symbol {
+                        ty: Type::String,
+                        mutable: false,
+                    },
+                );
                 for s in catch_block {
                     self.check_stmt(s);
                 }
@@ -422,10 +463,16 @@ impl Checker {
                 }
             }
             StmtKind::Function(_) => {
-                self.error("functions can only be declared at the top level for now", &stmt.span);
+                self.error(
+                    "functions can only be declared at the top level for now",
+                    &stmt.span,
+                );
             }
             StmtKind::Struct(_) => {
-                self.error("structs can only be declared at the top level for now", &stmt.span);
+                self.error(
+                    "structs can only be declared at the top level for now",
+                    &stmt.span,
+                );
             }
         }
     }
@@ -489,7 +536,10 @@ impl Checker {
                     let t = self.check_expr(item);
                     if !Type::compatible(&first, &t) {
                         self.error(
-                            format!("list elements must have the same type: expected {}, found {}", first, t),
+                            format!(
+                                "list elements must have the same type: expected {}, found {}",
+                                first, t
+                            ),
                             &item.span,
                         );
                     }
@@ -500,7 +550,10 @@ impl Checker {
                 let obj = self.check_expr(object);
                 let idx = self.check_expr(index);
                 if !Type::compatible(&Type::Int, &idx) {
-                    self.error(format!("list index must be Int, found {}", idx), &index.span);
+                    self.error(
+                        format!("list index must be Int, found {}", idx),
+                        &index.span,
+                    );
                 }
                 match obj {
                     Type::List(inner) => *inner,
@@ -569,6 +622,56 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+                return if name == "shape" {
+                    Type::List(Box::new(Type::Int))
+                } else {
+                    Type::Tensor
+                };
+            }
+            let t = self.check_expr(&args[0].value);
+            let arg_span = args[0].value.span.clone();
+            match name.as_str() {
+                "Tensor" => {
+                    let ok = match &t {
+                        Type::List(inner) => tensor_elem_ok(inner),
+                        Type::Unknown => true,
+                        _ => false,
+                    };
+                    if !ok {
+                        self.error(
+                            format!("Tensor() needs a List of Float values, found {}", t),
+                            &arg_span,
+                        );
+                    }
+                    return Type::Tensor;
+                }
+                "zeros" | "ones" => {
+                    let ok = match &t {
+                        Type::List(inner) => matches!(**inner, Type::Int | Type::Unknown),
+                        Type::Unknown => true,
+                        _ => false,
+                    };
+                    if !ok {
+                        self.error(
+                            format!("{}() needs a List of Int (the shape), found {}", name, t),
+                            &arg_span,
+                        );
+                    }
+                    return Type::Tensor;
+                }
+                _ => {
+                    if !matches!(t, Type::Tensor | Type::Unknown) {
+                        self.error(format!("shape() needs a Tensor, found {}", t), &arg_span);
+                    }
+                    return Type::List(Box::new(Type::Int));
+                }
+            }
+        }
+
         if name == "str" || name == "int" || name == "float" {
             if args.len() != 1 {
                 self.error(format!("{}() takes exactly 1 argument", name), span);
@@ -577,11 +680,17 @@ impl Checker {
                 let t = self.check_expr(&args[0].value);
                 let ok = match name.as_str() {
                     "str" => true,
-                    "int" => matches!(t, Type::Int | Type::Float | Type::Bool | Type::String | Type::Unknown),
+                    "int" => matches!(
+                        t,
+                        Type::Int | Type::Float | Type::Bool | Type::String | Type::Unknown
+                    ),
                     _ => matches!(t, Type::Int | Type::Float | Type::String | Type::Unknown),
                 };
                 if !ok {
-                    self.error(format!("{}() cannot convert {}", name, t), &args[0].value.span);
+                    self.error(
+                        format!("{}() cannot convert {}", name, t),
+                        &args[0].value.span,
+                    );
                 }
             }
             return match name.as_str() {
@@ -599,7 +708,7 @@ impl Checker {
             }
             let t = self.check_expr(&args[0].value);
             match t {
-                Type::String | Type::List(_) | Type::Unknown => {}
+                Type::String | Type::List(_) | Type::Tensor | Type::Unknown => {}
                 other => self.error(
                     format!("len() needs a String or List, found {}", other),
                     &args[0].value.span,
@@ -616,7 +725,11 @@ impl Checker {
             let sig = FuncSig {
                 params: fields
                     .into_iter()
-                    .map(|(n, t)| ParamSig { name: n, ty: t, has_default: false })
+                    .map(|(n, t)| ParamSig {
+                        name: n,
+                        ty: t,
+                        has_default: false,
+                    })
                     .collect(),
                 ret: Type::Struct(name.clone()),
             };
@@ -679,7 +792,10 @@ impl Checker {
 
             if provided[index] {
                 self.error(
-                    format!("parameter '{}' given more than once", sig.params[index].name),
+                    format!(
+                        "parameter '{}' given more than once",
+                        sig.params[index].name
+                    ),
                     &arg.value.span,
                 );
                 continue;
@@ -729,7 +845,10 @@ impl Checker {
                     left.clone()
                 } else {
                     self.error(
-                        format!("arithmetic needs two numbers of the same type, found {} and {}", left, right),
+                        format!(
+                            "arithmetic needs two numbers of the same type, found {} and {}",
+                            left, right
+                        ),
                         span,
                     );
                     Type::Unknown
@@ -744,7 +863,10 @@ impl Checker {
             BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq => {
                 if !(left == right && numeric(left)) {
                     self.error(
-                        format!("comparison needs two numbers of the same type, found {} and {}", left, right),
+                        format!(
+                            "comparison needs two numbers of the same type, found {} and {}",
+                            left, right
+                        ),
                         span,
                     );
                 }
@@ -753,7 +875,10 @@ impl Checker {
             BinaryOp::And | BinaryOp::Or => {
                 if *left != Type::Bool || *right != Type::Bool {
                     self.error(
-                        format!("'and'/'or' need Bool operands, found {} and {}", left, right),
+                        format!(
+                            "'and'/'or' need Bool operands, found {} and {}",
+                            left, right
+                        ),
                         span,
                     );
                 }
@@ -794,12 +919,17 @@ mod tests {
 
     #[test]
     fn valid_program() {
-        assert!(check("let x = 1\nlet y: Float = 2.5\nmut c: Int = 0\nc = c + 1\nprint(x)\n").is_ok());
+        assert!(
+            check("let x = 1\nlet y: Float = 2.5\nmut c: Int = 0\nc = c + 1\nprint(x)\n").is_ok()
+        );
     }
 
     #[test]
     fn type_mismatch() {
-        assert_eq!(first_error("let x: Int = \"hello\"\n"), "type mismatch: expected Int, found String");
+        assert_eq!(
+            first_error("let x: Int = \"hello\"\n"),
+            "type mismatch: expected Int, found String"
+        );
     }
 
     #[test]
@@ -870,25 +1000,36 @@ mod tests {
 
     #[test]
     fn function_call_ok() {
-        assert!(check("fn add(a: Int, b: Int) -> Int:\n    return a + b\nlet r = add(1, 2)\nprint(r)\n").is_ok());
+        assert!(
+            check(
+                "fn add(a: Int, b: Int) -> Int:\n    return a + b\nlet r = add(1, 2)\nprint(r)\n"
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn wrong_argument_type() {
-        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(\"x\")\n")
-            .contains("expected Int, found String"));
+        assert!(
+            first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(\"x\")\n")
+                .contains("expected Int, found String")
+        );
     }
 
     #[test]
     fn too_many_arguments() {
-        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(1, 2)\n")
-            .contains("takes 1 argument"));
+        assert!(
+            first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(1, 2)\n")
+                .contains("takes 1 argument")
+        );
     }
 
     #[test]
     fn missing_argument() {
-        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f()\n")
-            .contains("missing argument 'a'"));
+        assert!(
+            first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f()\n")
+                .contains("missing argument 'a'")
+        );
     }
 
     #[test]
@@ -909,7 +1050,8 @@ mod tests {
 
     #[test]
     fn return_in_if_else() {
-        let src = "fn f(a: Int) -> Int:\n    if a > 0:\n        return 1\n    else:\n        return 2\n";
+        let src =
+            "fn f(a: Int) -> Int:\n    if a > 0:\n        return 1\n    else:\n        return 2\n";
         assert!(check(src).is_ok());
     }
 
@@ -943,8 +1085,10 @@ mod tests {
 
     #[test]
     fn unknown_named_argument() {
-        assert!(first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(b = 1)\n")
-            .contains("no parameter named 'b'"));
+        assert!(
+            first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(b = 1)\n")
+                .contains("no parameter named 'b'")
+        );
     }
 
     // ----- structs -----
@@ -953,13 +1097,19 @@ mod tests {
 
     #[test]
     fn struct_ok() {
-        let src = format!("{}let u = User(name = \"A\", age = 20)\nprint(u.name)\nlet n: Int = u.age\n", USER);
+        let src = format!(
+            "{}let u = User(name = \"A\", age = 20)\nprint(u.name)\nlet n: Int = u.age\n",
+            USER
+        );
         assert!(check(&src).is_ok());
     }
 
     #[test]
     fn unknown_field() {
-        let src = format!("{}let u = User(name = \"A\", age = 20)\nprint(u.email)\n", USER);
+        let src = format!(
+            "{}let u = User(name = \"A\", age = 20)\nprint(u.email)\n",
+            USER
+        );
         assert!(first_error(&src).contains("has no field 'email'"));
     }
 
@@ -1086,7 +1236,10 @@ impl Checker {
         for stmt in &program.statements {
             match &stmt.kind {
                 StmtKind::Import { module, alias } => {
-                    self.module_aliases.insert(alias.clone().unwrap_or_else(|| module.clone()), module.clone());
+                    self.module_aliases.insert(
+                        alias.clone().unwrap_or_else(|| module.clone()),
+                        module.clone(),
+                    );
                     if !self.imports.contains_key(module) {
                         self.error(format!("cannot find module '{}'", module), &stmt.span);
                     }
@@ -1139,7 +1292,10 @@ mod import_tests {
         let exports = Checker::collect_exports(&parse(lib), &HashMap::new());
         let mut imports = HashMap::new();
         imports.insert("utils".to_string(), exports);
-        match Checker::new().with_imports(imports).check_program(&parse(main)) {
+        match Checker::new()
+            .with_imports(imports)
+            .check_program(&parse(main))
+        {
             Ok(()) => Vec::new(),
             Err(v) => v.iter().map(|e| e.to_string()).collect(),
         }
@@ -1154,27 +1310,46 @@ mod import_tests {
 
     #[test]
     fn from_import_alias_works() {
-        assert!(errors_of(ADD, "from utils import add as plus\nlet r: Int = plus(1, 2)\n").is_empty());
+        assert!(
+            errors_of(
+                ADD,
+                "from utils import add as plus\nlet r: Int = plus(1, 2)\n"
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn importing_private_function_is_error() {
         let lib = "fn secret() -> Int:\n    return 1\n";
         let errs = errors_of(lib, "from utils import secret\n");
-        assert!(errs.iter().any(|e| e.contains("private")), "got: {:?}", errs);
+        assert!(
+            errs.iter().any(|e| e.contains("private")),
+            "got: {:?}",
+            errs
+        );
     }
 
     #[test]
     fn importing_missing_name_is_error() {
         let errs = errors_of(ADD, "from utils import nothing\n");
-        assert!(errs.iter().any(|e| e.contains("no public item 'nothing'")), "got: {:?}", errs);
+        assert!(
+            errs.iter().any(|e| e.contains("no public item 'nothing'")),
+            "got: {:?}",
+            errs
+        );
     }
 
     #[test]
     fn unknown_module_is_error() {
         let result = Checker::new().check_program(&parse("import other\n"));
         let errs: Vec<String> = result.unwrap_err().iter().map(|e| e.to_string()).collect();
-        assert!(errs.iter().any(|e| e.contains("cannot find module 'other'")), "got: {:?}", errs);
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("cannot find module 'other'")),
+            "got: {:?}",
+            errs
+        );
     }
 
     #[test]
@@ -1186,7 +1361,10 @@ mod import_tests {
     #[test]
     fn imported_struct_can_be_constructed() {
         let lib = "pub struct Point:\n    x: Int\n    y: Int\n";
-        let errs = errors_of(lib, "from utils import Point\nlet p = Point(x = 1, y = 2)\n");
+        let errs = errors_of(
+            lib,
+            "from utils import Point\nlet p = Point(x = 1, y = 2)\n",
+        );
         assert!(errs.is_empty(), "got: {:?}", errs);
     }
 }
@@ -1244,16 +1422,26 @@ impl Checker {
             let sig = FuncSig {
                 params: fields
                     .into_iter()
-                    .map(|(n, t)| ParamSig { name: n, ty: t, has_default: false })
+                    .map(|(n, t)| ParamSig {
+                        name: n,
+                        ty: t,
+                        has_default: false,
+                    })
                     .collect(),
                 ret: Type::Struct(item.to_string()),
             };
             return self.check_function_call(&item.to_string(), &sig, args, span);
         }
         if exports.private.contains(item) {
-            self.error(format!("'{}' is private in module '{}'", item, module), callee_span);
+            self.error(
+                format!("'{}' is private in module '{}'", item, module),
+                callee_span,
+            );
         } else {
-            self.error(format!("module '{}' has no public item '{}'", module, item), callee_span);
+            self.error(
+                format!("module '{}' has no public item '{}'", module, item),
+                callee_span,
+            );
         }
         self.check_arg_exprs(args);
         Type::Unknown
@@ -1275,7 +1463,10 @@ mod qualified_tests {
         let exports = Checker::collect_exports(&parse(lib), &HashMap::new());
         let mut imports = HashMap::new();
         imports.insert("utils".to_string(), exports);
-        match Checker::new().with_imports(imports).check_program(&parse(main)) {
+        match Checker::new()
+            .with_imports(imports)
+            .check_program(&parse(main))
+        {
             Ok(()) => Vec::new(),
             Err(v) => v.iter().map(|e| e.to_string()).collect(),
         }
@@ -1296,13 +1487,21 @@ mod qualified_tests {
     #[test]
     fn qualified_private_is_error() {
         let errs = errors_of(LIB, "import utils\nlet r = utils.secret()\n");
-        assert!(errs.iter().any(|e| e.contains("private")), "got: {:?}", errs);
+        assert!(
+            errs.iter().any(|e| e.contains("private")),
+            "got: {:?}",
+            errs
+        );
     }
 
     #[test]
     fn qualified_missing_is_error() {
         let errs = errors_of(LIB, "import utils\nlet r = utils.nothing()\n");
-        assert!(errs.iter().any(|e| e.contains("no public item 'nothing'")), "got: {:?}", errs);
+        assert!(
+            errs.iter().any(|e| e.contains("no public item 'nothing'")),
+            "got: {:?}",
+            errs
+        );
     }
 
     #[test]
@@ -1315,5 +1514,14 @@ mod qualified_tests {
     fn qualified_struct_constructor_works() {
         let errs = errors_of(LIB, "import utils\nlet p = utils.Point(x = 1, y = 2)\n");
         assert!(errs.is_empty(), "got: {:?}", errs);
+    }
+}
+
+/// A Tensor can be built from nested lists whose innermost elements are Float.
+fn tensor_elem_ok(t: &Type) -> bool {
+    match t {
+        Type::Float | Type::Unknown => true,
+        Type::List(inner) => tensor_elem_ok(inner),
+        _ => false,
     }
 }

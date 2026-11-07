@@ -1,6 +1,6 @@
-use crate::compiler::ir::ConvKind;
 use crate::compiler::ast::*;
 use crate::compiler::diagnostics::Diagnostic;
+use crate::compiler::ir::ConvKind;
 use crate::compiler::lexer::token::Span;
 use crate::runtime::values::Value;
 use std::cmp::Ordering;
@@ -137,10 +137,12 @@ impl Interpreter {
             ExprKind::Field { object, name } => {
                 let base = self.place_mut(object)?;
                 match base {
-                    Value::Struct { fields, .. } => match fields.iter_mut().find(|f| f.0 == *name) {
-                        Some(f) => Ok(&mut f.1),
-                        None => Err(err(format!("no field '{}'", name), &expr.span)),
-                    },
+                    Value::Struct { fields, .. } => {
+                        match fields.iter_mut().find(|f| f.0 == *name) {
+                            Some(f) => Ok(&mut f.1),
+                            None => Err(err(format!("no field '{}'", name), &expr.span)),
+                        }
+                    }
                     _ => Err(err("value has no fields", &expr.span)),
                 }
             }
@@ -188,7 +190,12 @@ impl Interpreter {
         Ok(Flow::Normal)
     }
 
-    fn run_iteration(&mut self, var: &str, value: Value, body: &[Stmt]) -> Result<Flow, Diagnostic> {
+    fn run_iteration(
+        &mut self,
+        var: &str,
+        value: Value,
+        body: &[Stmt],
+    ) -> Result<Flow, Diagnostic> {
         self.push_scope();
         self.declare(var, value);
         let result = self.exec_stmts(body);
@@ -216,9 +223,10 @@ impl Interpreter {
                 *slot = v;
                 Ok(Flow::Normal)
             }
-            StmtKind::Expr(Expr { kind: ExprKind::Call { callee, args }, .. })
-                if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") =>
-            {
+            StmtKind::Expr(Expr {
+                kind: ExprKind::Call { callee, args },
+                ..
+            }) if matches!(&callee.kind, ExprKind::Field { name, .. } if name == "push") => {
                 if args.len() != 1 {
                     return Err(err("push() takes exactly 1 argument", &stmt.span));
                 }
@@ -244,7 +252,11 @@ impl Interpreter {
             }
             StmtKind::Break => Ok(Flow::Break),
             StmtKind::Continue => Ok(Flow::Continue),
-            StmtKind::If { condition, then_block, else_block } => {
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
                 if self.eval_cond(condition)? {
                     self.exec_block(then_block)
                 } else if let Some(block) = else_block {
@@ -253,7 +265,11 @@ impl Interpreter {
                     Ok(Flow::Normal)
                 }
             }
-            StmtKind::Try { body, catch_var, catch_block } => match self.exec_block(body) {
+            StmtKind::Try {
+                body,
+                catch_var,
+                catch_block,
+            } => match self.exec_block(body) {
                 Ok(flow) => Ok(flow),
                 Err(e) => {
                     self.push_scope();
@@ -368,7 +384,11 @@ impl Interpreter {
                     (Value::List(items), Value::Int(i)) => {
                         if i < 0 || (i as usize) >= items.len() {
                             Err(err(
-                                format!("index {} out of bounds for list of length {}", i, items.len()),
+                                format!(
+                                    "index {} out of bounds for list of length {}",
+                                    i,
+                                    items.len()
+                                ),
                                 &expr.span,
                             ))
                         } else {
@@ -400,7 +420,12 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn apply_binary(op: &BinaryOp, l: Value, r: Value, span: &Span) -> Result<Value, Diagnostic> {
+    pub(crate) fn apply_binary(
+        op: &BinaryOp,
+        l: Value,
+        r: Value,
+        span: &Span,
+    ) -> Result<Value, Diagnostic> {
         match op {
             BinaryOp::Eq => return Ok(Value::Bool(l == r)),
             BinaryOp::NotEq => return Ok(Value::Bool(l != r)),
@@ -408,12 +433,18 @@ impl Interpreter {
         }
         let overflow = || err("integer overflow", span);
         match (op, l, r) {
-            (BinaryOp::Add, Value::Int(a), Value::Int(b)) => a.checked_add(b).map(Value::Int).ok_or_else(overflow),
+            (BinaryOp::Add, Value::Int(a), Value::Int(b)) => {
+                a.checked_add(b).map(Value::Int).ok_or_else(overflow)
+            }
             (BinaryOp::Add, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (BinaryOp::Add, Value::Str(a), Value::Str(b)) => Ok(Value::Str(a + &b)),
-            (BinaryOp::Sub, Value::Int(a), Value::Int(b)) => a.checked_sub(b).map(Value::Int).ok_or_else(overflow),
+            (BinaryOp::Sub, Value::Int(a), Value::Int(b)) => {
+                a.checked_sub(b).map(Value::Int).ok_or_else(overflow)
+            }
             (BinaryOp::Sub, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
-            (BinaryOp::Mul, Value::Int(a), Value::Int(b)) => a.checked_mul(b).map(Value::Int).ok_or_else(overflow),
+            (BinaryOp::Mul, Value::Int(a), Value::Int(b)) => {
+                a.checked_mul(b).map(Value::Int).ok_or_else(overflow)
+            }
             (BinaryOp::Mul, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             (BinaryOp::Div, Value::Int(a), Value::Int(b)) => {
                 if b == 0 {
@@ -431,15 +462,19 @@ impl Interpreter {
                 }
             }
             (BinaryOp::Mod, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),
-            (BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq, Value::Int(a), Value::Int(b)) => {
-                Ok(Value::Bool(Self::compare_ord(op, a.cmp(&b))))
-            }
-            (BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq, Value::Float(a), Value::Float(b)) => {
-                match a.partial_cmp(&b) {
-                    Some(ord) => Ok(Value::Bool(Self::compare_ord(op, ord))),
-                    None => Ok(Value::Bool(false)),
-                }
-            }
+            (
+                BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq,
+                Value::Int(a),
+                Value::Int(b),
+            ) => Ok(Value::Bool(Self::compare_ord(op, a.cmp(&b)))),
+            (
+                BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq,
+                Value::Float(a),
+                Value::Float(b),
+            ) => match a.partial_cmp(&b) {
+                Some(ord) => Ok(Value::Bool(Self::compare_ord(op, ord))),
+                None => Ok(Value::Bool(false)),
+            },
             (BinaryOp::Range, Value::Int(a), Value::Int(b)) => Ok(Value::Range(a, b)),
             _ => Err(err("invalid operands for this operator", span)),
         }
@@ -471,7 +506,12 @@ impl Interpreter {
         Ok(bound)
     }
 
-    fn eval_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Result<Value, Diagnostic> {
+    fn eval_call(
+        &mut self,
+        callee: &Expr,
+        args: &[Argument],
+        span: &Span,
+    ) -> Result<Value, Diagnostic> {
         let name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
             _ => return Err(err("this value cannot be called", &callee.span)),
@@ -500,6 +540,20 @@ impl Interpreter {
             return v.convert(kind).map_err(|m| err(m, span));
         }
 
+        if name == "Tensor" || name == "zeros" || name == "ones" || name == "shape" {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            let r = match name.as_str() {
+                "Tensor" => crate::runtime::values::tensor_from_value(&v),
+                "zeros" => crate::runtime::values::tensor_filled(&v, 0.0),
+                "ones" => crate::runtime::values::tensor_filled(&v, 1.0),
+                _ => crate::runtime::values::tensor_shape(&v),
+            };
+            return r.map_err(|m| err(m, span));
+        }
+
         if name == "len" {
             let first = match args.first() {
                 Some(a) => a,
@@ -508,6 +562,7 @@ impl Interpreter {
             return match self.eval_expr(&first.value)? {
                 Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
                 Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Tensor { shape, .. } => Ok(Value::Int(shape[0] as i64)),
                 _ => Err(err("len() needs a String or List", span)),
             };
         }
@@ -531,7 +586,12 @@ impl Interpreter {
         Err(err(format!("undefined function '{}'", name), &callee.span))
     }
 
-    fn call_function(&mut self, f: &FunctionDecl, args: &[Argument], span: &Span) -> Result<Value, Diagnostic> {
+    fn call_function(
+        &mut self,
+        f: &FunctionDecl,
+        args: &[Argument],
+        span: &Span,
+    ) -> Result<Value, Diagnostic> {
         if self.frames.len() >= MAX_CALL_DEPTH {
             return Err(err("stack overflow: call depth exceeded", span));
         }
@@ -543,7 +603,12 @@ impl Interpreter {
         result
     }
 
-    fn run_body(&mut self, f: &FunctionDecl, bound: Vec<Option<Value>>, span: &Span) -> Result<Value, Diagnostic> {
+    fn run_body(
+        &mut self,
+        f: &FunctionDecl,
+        bound: Vec<Option<Value>>,
+        span: &Span,
+    ) -> Result<Value, Diagnostic> {
         for (p, val) in f.params.iter().zip(bound) {
             let v = match val {
                 Some(v) => v,
@@ -600,12 +665,18 @@ mod tests {
 
     #[test]
     fn strings() {
-        assert_eq!(run("print(\"a\" + \"b\")\nprint(\"x\", 1, true)\n"), "ab\nx 1 true\n");
+        assert_eq!(
+            run("print(\"a\" + \"b\")\nprint(\"x\", 1, true)\n"),
+            "ab\nx 1 true\n"
+        );
     }
 
     #[test]
     fn variables() {
-        assert_eq!(run("mut c: Int = 0\nc = c + 1\nc = c + 1\nprint(c)\n"), "2\n");
+        assert_eq!(
+            run("mut c: Int = 0\nc = c + 1\nc = c + 1\nprint(c)\n"),
+            "2\n"
+        );
     }
 
     #[test]
@@ -616,7 +687,10 @@ mod tests {
 
     #[test]
     fn while_loop() {
-        assert_eq!(run("mut i = 0\nwhile i < 3:\n    print(i)\n    i = i + 1\n"), "0\n1\n2\n");
+        assert_eq!(
+            run("mut i = 0\nwhile i < 3:\n    print(i)\n    i = i + 1\n"),
+            "0\n1\n2\n"
+        );
     }
 
     #[test]
@@ -632,7 +706,10 @@ mod tests {
 
     #[test]
     fn function_call() {
-        assert_eq!(run("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(2, 3))\n"), "5\n");
+        assert_eq!(
+            run("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(2, 3))\n"),
+            "5\n"
+        );
     }
 
     #[test]
@@ -678,7 +755,10 @@ mod tests {
 
     #[test]
     fn division_by_zero() {
-        assert_eq!(run_err("let a = 10\nlet b = 0\nprint(a / b)\n"), "division by zero");
+        assert_eq!(
+            run_err("let a = 10\nlet b = 0\nprint(a / b)\n"),
+            "division by zero"
+        );
     }
 
     #[test]
@@ -688,7 +768,10 @@ mod tests {
 
     #[test]
     fn integer_overflow() {
-        assert_eq!(run_err("let a = 9223372036854775807\nprint(a + 1)\n"), "integer overflow");
+        assert_eq!(
+            run_err("let a = 9223372036854775807\nprint(a + 1)\n"),
+            "integer overflow"
+        );
     }
 
     #[test]
@@ -739,21 +822,35 @@ mod tests {
 
     #[test]
     fn len_of_list_and_string() {
-        assert_eq!(run("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
+        assert_eq!(
+            run("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"),
+            "3\n5\n0\n"
+        );
     }
 
     #[test]
     fn conversions_work() {
-        assert_eq!(run("print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"), "42!\n124\n1.5\n2\n1\n");
+        assert_eq!(
+            run(
+                "print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"
+            ),
+            "42!\n124\n1.5\n2\n1\n"
+        );
     }
 
     #[test]
     fn failed_conversion_can_be_caught() {
-        assert_eq!(run("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
+        assert_eq!(
+            run("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"),
+            "cannot convert \"abc\" to Int\n"
+        );
     }
 
     #[test]
     fn push_appends() {
-        assert_eq!(run("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"), "[1, 2, 3]\n3\n");
+        assert_eq!(
+            run("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"),
+            "[1, 2, 3]\n3\n"
+        );
     }
 }

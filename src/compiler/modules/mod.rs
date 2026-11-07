@@ -63,7 +63,11 @@ impl Loader {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(Diagnostic::new(
-                        format!("cannot find module '{}' (looked for {})", module, target.display()),
+                        format!(
+                            "cannot find module '{}' (looked for {})",
+                            module,
+                            target.display()
+                        ),
                         stmt.span.clone(),
                     ));
                 }
@@ -106,7 +110,11 @@ impl Loader {
 
         self.loading.pop();
         self.done.insert(path.clone());
-        self.modules.push(Module { name, path, program });
+        self.modules.push(Module {
+            name,
+            path,
+            program,
+        });
         Ok(())
     }
 }

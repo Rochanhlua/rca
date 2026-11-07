@@ -143,7 +143,7 @@ impl Parser {
                         return Err(Diagnostic::new(
                             format!("expected 'fn' or 'struct' after 'pub', found {:?}", other),
                             self.span(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -184,7 +184,10 @@ impl Parser {
                 if self.eat(&TokenKind::Assign) {
                     let value = self.parse_expr()?;
                     self.end_simple()?;
-                    StmtKind::Assign { target: expr, value }
+                    StmtKind::Assign {
+                        target: expr,
+                        value,
+                    }
                 } else {
                     self.end_simple()?;
                     StmtKind::Expr(expr)
@@ -243,7 +246,12 @@ impl Parser {
         self.expect(&TokenKind::Assign, "'='")?;
         let value = self.parse_expr()?;
         self.end_simple()?;
-        Ok(StmtKind::Let { name, mutable, ty, value })
+        Ok(StmtKind::Let {
+            name,
+            mutable,
+            ty,
+            value,
+        })
     }
 
     fn parse_if(&mut self) -> Result<StmtKind, Diagnostic> {
@@ -259,7 +267,11 @@ impl Parser {
         } else {
             None
         };
-        Ok(StmtKind::If { condition, then_block, else_block })
+        Ok(StmtKind::If {
+            condition,
+            then_block,
+            else_block,
+        })
     }
 
     fn parse_while(&mut self) -> Result<StmtKind, Diagnostic> {
@@ -276,7 +288,11 @@ impl Parser {
         self.expect(&TokenKind::Catch, "'catch' after try block")?;
         let (catch_var, _) = self.expect_ident("a name for the caught error")?;
         let catch_block = self.parse_block()?;
-        Ok(StmtKind::Try { body, catch_var, catch_block })
+        Ok(StmtKind::Try {
+            body,
+            catch_var,
+            catch_block,
+        })
     }
 
     fn parse_for(&mut self) -> Result<StmtKind, Diagnostic> {
@@ -303,7 +319,11 @@ impl Parser {
                 } else {
                     None
                 };
-                params.push(Param { name: pname, ty, default });
+                params.push(Param {
+                    name: pname,
+                    ty,
+                    default,
+                });
                 if !self.eat(&TokenKind::Comma) {
                     break;
                 }
@@ -319,7 +339,13 @@ impl Parser {
             None
         };
         let body = self.parse_block()?;
-        Ok(FunctionDecl { name, params, return_type, body, public: false })
+        Ok(FunctionDecl {
+            name,
+            params,
+            return_type,
+            body,
+            public: false,
+        })
     }
 
     fn parse_struct(&mut self) -> Result<StructDecl, Diagnostic> {
@@ -335,11 +361,19 @@ impl Parser {
             self.expect(&TokenKind::Colon, "':' after field name")?;
             let ty = self.parse_type()?;
             self.end_simple()?;
-            fields.push(FieldDecl { name: fname, ty, span });
+            fields.push(FieldDecl {
+                name: fname,
+                ty,
+                span,
+            });
             self.skip_newlines();
         }
         self.expect(&TokenKind::Dedent, "end of struct")?;
-        Ok(StructDecl { name, fields, public: false })
+        Ok(StructDecl {
+            name,
+            fields,
+            public: false,
+        })
     }
 
     // ---------- expressions (low to high precedence) ----------
@@ -384,7 +418,10 @@ impl Parser {
             self.advance();
             let operand = self.parse_not()?;
             return Ok(Expr {
-                kind: ExprKind::Unary { op: UnaryOp::Not, operand: Box::new(operand) },
+                kind: ExprKind::Unary {
+                    op: UnaryOp::Not,
+                    operand: Box::new(operand),
+                },
                 span,
             });
         }
@@ -456,7 +493,10 @@ impl Parser {
             self.advance();
             let operand = self.parse_unary()?;
             return Ok(Expr {
-                kind: ExprKind::Unary { op: UnaryOp::Neg, operand: Box::new(operand) },
+                kind: ExprKind::Unary {
+                    op: UnaryOp::Neg,
+                    operand: Box::new(operand),
+                },
                 span,
             });
         }
@@ -470,20 +510,29 @@ impl Parser {
             if self.eat(&TokenKind::LParen) {
                 let args = self.parse_arguments()?;
                 expr = Expr {
-                    kind: ExprKind::Call { callee: Box::new(expr), args },
+                    kind: ExprKind::Call {
+                        callee: Box::new(expr),
+                        args,
+                    },
                     span,
                 };
             } else if self.eat(&TokenKind::Dot) {
                 let (name, _) = self.expect_ident("a field or method name")?;
                 expr = Expr {
-                    kind: ExprKind::Field { object: Box::new(expr), name },
+                    kind: ExprKind::Field {
+                        object: Box::new(expr),
+                        name,
+                    },
                     span,
                 };
             } else if self.eat(&TokenKind::LBracket) {
                 let index = self.parse_expr()?;
                 self.expect(&TokenKind::RBracket, "']'")?;
                 expr = Expr {
-                    kind: ExprKind::Index { object: Box::new(expr), index: Box::new(index) },
+                    kind: ExprKind::Index {
+                        object: Box::new(expr),
+                        index: Box::new(index),
+                    },
                     span,
                 };
             } else {
@@ -524,31 +573,52 @@ impl Parser {
         match self.peek().clone() {
             TokenKind::IntLiteral(v) => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Int(v), span })
+                Ok(Expr {
+                    kind: ExprKind::Int(v),
+                    span,
+                })
             }
             TokenKind::FloatLiteral(v) => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Float(v), span })
+                Ok(Expr {
+                    kind: ExprKind::Float(v),
+                    span,
+                })
             }
             TokenKind::StringLiteral(s) => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Str(s), span })
+                Ok(Expr {
+                    kind: ExprKind::Str(s),
+                    span,
+                })
             }
             TokenKind::True => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Bool(true), span })
+                Ok(Expr {
+                    kind: ExprKind::Bool(true),
+                    span,
+                })
             }
             TokenKind::False => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Bool(false), span })
+                Ok(Expr {
+                    kind: ExprKind::Bool(false),
+                    span,
+                })
             }
             TokenKind::None => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::NoneLit, span })
+                Ok(Expr {
+                    kind: ExprKind::NoneLit,
+                    span,
+                })
             }
             TokenKind::Identifier(name) => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Ident(name), span })
+                Ok(Expr {
+                    kind: ExprKind::Ident(name),
+                    span,
+                })
             }
             TokenKind::LParen => {
                 self.advance();
@@ -571,7 +641,10 @@ impl Parser {
                     }
                 }
                 self.expect(&TokenKind::RBracket, "']'")?;
-                Ok(Expr { kind: ExprKind::List(items), span })
+                Ok(Expr {
+                    kind: ExprKind::List(items),
+                    span,
+                })
             }
             other => Err(Diagnostic::new(
                 format!("expected an expression, found {:?}", other),
@@ -595,13 +668,15 @@ mod tests {
         parse_result(src).unwrap()
     }
 
-
     #[test]
     fn import_simple() {
         let p = parse("import utils\n");
         assert_eq!(
             p.statements[0].kind,
-            StmtKind::Import { module: "utils".to_string(), alias: None }
+            StmtKind::Import {
+                module: "utils".to_string(),
+                alias: None
+            }
         );
     }
 
@@ -610,7 +685,10 @@ mod tests {
         let p = parse("import utils as u\n");
         assert_eq!(
             p.statements[0].kind,
-            StmtKind::Import { module: "utils".to_string(), alias: Some("u".to_string()) }
+            StmtKind::Import {
+                module: "utils".to_string(),
+                alias: Some("u".to_string())
+            }
         );
     }
 
@@ -676,7 +754,9 @@ mod tests {
         let p = parse("let x: Int = 5\n");
         assert_eq!(p.statements.len(), 1);
         match &p.statements[0].kind {
-            StmtKind::Let { name, mutable, ty, .. } => {
+            StmtKind::Let {
+                name, mutable, ty, ..
+            } => {
                 assert_eq!(name, "x");
                 assert!(!mutable);
                 assert_eq!(ty.as_ref().unwrap().name, "Int");
@@ -692,7 +772,13 @@ mod tests {
             StmtKind::Expr(e) => match &e.kind {
                 ExprKind::Binary { op, right, .. } => {
                     assert_eq!(*op, BinaryOp::Add);
-                    assert!(matches!(right.kind, ExprKind::Binary { op: BinaryOp::Mul, .. }));
+                    assert!(matches!(
+                        right.kind,
+                        ExprKind::Binary {
+                            op: BinaryOp::Mul,
+                            ..
+                        }
+                    ));
                 }
                 other => panic!("unexpected {:?}", other),
             },
@@ -741,7 +827,9 @@ mod tests {
 
     #[test]
     fn struct_and_named_arguments() {
-        let p = parse("struct User:\n    name: String\n    age: Int\n\nlet user = User(name = \"A\", age = 20)\n");
+        let p = parse(
+            "struct User:\n    name: String\n    age: Int\n\nlet user = User(name = \"A\", age = 20)\n",
+        );
         assert_eq!(p.statements.len(), 2);
         match &p.statements[1].kind {
             StmtKind::Let { value, .. } => match &value.kind {
@@ -780,7 +868,11 @@ mod tests {
     fn try_catch_statement() {
         let p = parse("try:\n    print(1)\ncatch e:\n    print(e)\n");
         match &p.statements[0].kind {
-            StmtKind::Try { body, catch_var, catch_block } => {
+            StmtKind::Try {
+                body,
+                catch_var,
+                catch_block,
+            } => {
                 assert_eq!(body.len(), 1);
                 assert_eq!(catch_var, "e");
                 assert_eq!(catch_block.len(), 1);

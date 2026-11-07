@@ -1,9 +1,8 @@
 use rca::compiler::ast::StmtKind;
-use rca::compiler::modules::load_program;
-use std::path::Path;
 use rca::compiler::ir::lower;
 use rca::compiler::ir::validate::validate;
 use rca::compiler::lexer::Lexer;
+use rca::compiler::modules::load_program;
 use rca::compiler::optimizer::{instruction_count, optimize};
 use rca::compiler::parser::Parser;
 use rca::compiler::semantic::Checker;
@@ -11,6 +10,7 @@ use rca::runtime::execution::Interpreter;
 use rca::runtime::vm::Vm;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process;
 use std::thread;
 
@@ -41,11 +41,12 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
-    if program
-        .statements
-        .iter()
-        .any(|s| matches!(s.kind, StmtKind::Import { .. } | StmtKind::FromImport { .. }))
-    {
+    if program.statements.iter().any(|s| {
+        matches!(
+            s.kind,
+            StmtKind::Import { .. } | StmtKind::FromImport { .. }
+        )
+    }) {
         return run_with_imports(command, path, source);
     }
 
@@ -95,7 +96,11 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 1;
     }
     if command == "ir-opt" {
-        println!("; optimized: {} -> {} instructions\n", before, instruction_count(&ir));
+        println!(
+            "; optimized: {} -> {} instructions\n",
+            before,
+            instruction_count(&ir)
+        );
         println!("{}", ir);
         return 0;
     }
@@ -189,7 +194,11 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         return 1;
     }
     if command == "ir-opt" {
-        println!("; optimized: {} -> {} instructions\n", before, instruction_count(&ir));
+        println!(
+            "; optimized: {} -> {} instructions\n",
+            before,
+            instruction_count(&ir)
+        );
         println!("{}", ir);
         return 0;
     }

@@ -83,7 +83,11 @@ impl<'a> Vm<'a> {
     }
 
     fn drop_stale_handlers(&mut self) {
-        while self.handlers.last().map_or(false, |h| h.frame_depth > self.frames.len()) {
+        while self
+            .handlers
+            .last()
+            .map_or(false, |h| h.frame_depth > self.frames.len())
+        {
             self.handlers.pop();
         }
     }
@@ -194,7 +198,12 @@ impl<'a> Vm<'a> {
                     }
                     _ => return Err(err("condition must be Bool", span)),
                 },
-                Instruction::ForNext { iter, idx, var, exit } => {
+                Instruction::ForNext {
+                    iter,
+                    idx,
+                    var,
+                    exit,
+                } => {
                     let frame = self.frames.last_mut().unwrap();
                     let i = match &frame.locals[*idx] {
                         Value::Int(n) => *n,
@@ -227,7 +236,11 @@ impl<'a> Vm<'a> {
                     for i in (0..callee.arity).rev() {
                         locals[i] = self.pop();
                     }
-                    self.frames.push(CallFrame { chunk: &callee.chunk, ip: 0, locals });
+                    self.frames.push(CallFrame {
+                        chunk: &callee.chunk,
+                        ip: 0,
+                        locals,
+                    });
                 }
                 Instruction::Return => {
                     let ret = self.pop();
@@ -255,7 +268,11 @@ impl<'a> Vm<'a> {
                         (Value::List(items), Value::Int(i)) => {
                             if i < 0 || (i as usize) >= items.len() {
                                 return Err(err(
-                                    format!("index {} out of bounds for list of length {}", i, items.len()),
+                                    format!(
+                                        "index {} out of bounds for list of length {}",
+                                        i,
+                                        items.len()
+                                    ),
                                     span,
                                 ));
                             }
@@ -272,7 +289,11 @@ impl<'a> Vm<'a> {
                         (Value::List(mut items), Value::Int(i)) => {
                             if i < 0 || (i as usize) >= items.len() {
                                 return Err(err(
-                                    format!("index {} out of bounds for list of length {}", i, items.len()),
+                                    format!(
+                                        "index {} out of bounds for list of length {}",
+                                        i,
+                                        items.len()
+                                    ),
                                     span,
                                 ));
                             }
@@ -289,15 +310,20 @@ impl<'a> Vm<'a> {
                     let start = self.stack.len() - info.fields.len();
                     let values = self.stack.split_off(start);
                     let fields = info.fields.iter().cloned().zip(values).collect();
-                    self.stack.push(Value::Struct { name: info.name.clone(), fields });
+                    self.stack.push(Value::Struct {
+                        name: info.name.clone(),
+                        fields,
+                    });
                 }
                 Instruction::GetField(name) => {
                     let obj = self.pop();
                     match obj {
-                        Value::Struct { fields, .. } => match fields.into_iter().find(|f| f.0 == *name) {
-                            Some(f) => self.stack.push(f.1),
-                            None => return Err(err(format!("no field '{}'", name), span)),
-                        },
+                        Value::Struct { fields, .. } => {
+                            match fields.into_iter().find(|f| f.0 == *name) {
+                                Some(f) => self.stack.push(f.1),
+                                None => return Err(err(format!("no field '{}'", name), span)),
+                            }
+                        }
                         _ => return Err(err("value has no fields", span)),
                     }
                 }
@@ -305,12 +331,18 @@ impl<'a> Vm<'a> {
                     let obj = self.pop();
                     let val = self.pop();
                     match obj {
-                        Value::Struct { name: struct_name, mut fields } => {
+                        Value::Struct {
+                            name: struct_name,
+                            mut fields,
+                        } => {
                             match fields.iter_mut().find(|f| f.0 == *name) {
                                 Some(f) => f.1 = val,
                                 None => return Err(err(format!("no field '{}'", name), span)),
                             }
-                            self.stack.push(Value::Struct { name: struct_name, fields });
+                            self.stack.push(Value::Struct {
+                                name: struct_name,
+                                fields,
+                            });
                         }
                         _ => return Err(err("value has no fields", span)),
                     }
@@ -352,11 +384,34 @@ impl<'a> Vm<'a> {
                     }
                 }
 
+                Instruction::MakeTensor => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_from_value(&v) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+                Instruction::FillTensor(x) => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_filled(&v, *x) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+                Instruction::TensorShape => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_shape(&v) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+
                 Instruction::Len => {
                     let v = self.pop();
                     match v {
                         Value::Str(s) => self.stack.push(Value::Int(s.chars().count() as i64)),
                         Value::List(items) => self.stack.push(Value::Int(items.len() as i64)),
+                        Value::Tensor { shape, .. } => self.stack.push(Value::Int(shape[0] as i64)),
                         _ => return Err(err("len() needs a String or List", span)),
                     }
                 }
@@ -439,7 +494,10 @@ mod tests {
 
     #[test]
     fn strings() {
-        same("print(\"a\" + \"b\")\nprint(\"x\", 1, true)\n", "ab\nx 1 true\n");
+        same(
+            "print(\"a\" + \"b\")\nprint(\"x\", 1, true)\n",
+            "ab\nx 1 true\n",
+        );
     }
 
     #[test]
@@ -455,7 +513,10 @@ mod tests {
 
     #[test]
     fn while_loop() {
-        same("mut i = 0\nwhile i < 3:\n    print(i)\n    i = i + 1\n", "0\n1\n2\n");
+        same(
+            "mut i = 0\nwhile i < 3:\n    print(i)\n    i = i + 1\n",
+            "0\n1\n2\n",
+        );
     }
 
     #[test]
@@ -471,7 +532,10 @@ mod tests {
 
     #[test]
     fn function_call() {
-        same("fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(2, 3))\n", "5\n");
+        same(
+            "fn add(a: Int, b: Int) -> Int:\n    return a + b\nprint(add(2, 3))\n",
+            "5\n",
+        );
     }
 
     #[test]
@@ -494,7 +558,8 @@ mod tests {
 
     #[test]
     fn default_value_uses_global() {
-        let src = "let base = 10\nfn f(a: Int, b: Int = base) -> Int:\n    return a + b\nprint(f(1))\n";
+        let src =
+            "let base = 10\nfn f(a: Int, b: Int = base) -> Int:\n    return a + b\nprint(f(1))\n";
         same(src, "11\n");
     }
 
@@ -524,7 +589,8 @@ mod tests {
 
     #[test]
     fn global_access_and_mutation_from_function() {
-        let src = "mut g = 0\nfn bump(n: Int) -> None:\n    g = g + n\nbump(2)\nbump(3)\nprint(g)\n";
+        let src =
+            "mut g = 0\nfn bump(n: Int) -> None:\n    g = g + n\nbump(2)\nbump(3)\nprint(g)\n";
         same(src, "5\n");
     }
 
@@ -600,7 +666,10 @@ mod tests {
 
     #[test]
     fn try_without_error_skips_catch() {
-        assert_eq!(run_vm("try:\n    print(1)\ncatch e:\n    print(2)\n"), "1\n");
+        assert_eq!(
+            run_vm("try:\n    print(1)\ncatch e:\n    print(2)\n"),
+            "1\n"
+        );
     }
 
     #[test]
@@ -623,21 +692,35 @@ mod tests {
 
     #[test]
     fn len_of_list_and_string() {
-        assert_eq!(run_vm("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"), "3\n5\n0\n");
+        assert_eq!(
+            run_vm("print(len([1, 2, 3]))\nprint(len(\"hello\"))\nprint(len(\"\"))\n"),
+            "3\n5\n0\n"
+        );
     }
 
     #[test]
     fn conversions_work() {
-        assert_eq!(run_vm("print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"), "42!\n124\n1.5\n2\n1\n");
+        assert_eq!(
+            run_vm(
+                "print(str(42) + \"!\")\nprint(int(\"123\") + 1)\nprint(float(3) / 2.0)\nprint(int(2.9))\nprint(int(true))\n"
+            ),
+            "42!\n124\n1.5\n2\n1\n"
+        );
     }
 
     #[test]
     fn failed_conversion_can_be_caught() {
-        assert_eq!(run_vm("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"), "cannot convert \"abc\" to Int\n");
+        assert_eq!(
+            run_vm("try:\n    print(int(\"abc\"))\ncatch e:\n    print(e)\n"),
+            "cannot convert \"abc\" to Int\n"
+        );
     }
 
     #[test]
     fn push_appends() {
-        assert_eq!(run_vm("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"), "[1, 2, 3]\n3\n");
+        assert_eq!(
+            run_vm("mut xs = [1]\nxs.push(2)\nxs.push(3)\nprint(xs)\nprint(len(xs))\n"),
+            "[1, 2, 3]\n3\n"
+        );
     }
 }

@@ -13,7 +13,9 @@ pub struct ScopeStack {
 
 impl ScopeStack {
     pub fn new() -> Self {
-        ScopeStack { scopes: vec![HashMap::new()] }
+        ScopeStack {
+            scopes: vec![HashMap::new()],
+        }
     }
 
     pub fn push(&mut self) {

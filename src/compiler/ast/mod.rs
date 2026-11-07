@@ -8,9 +8,19 @@ pub struct TypeExpr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Mod,
-    Eq, NotEq, Lt, LtEq, Gt, GtEq,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    And,
+    Or,
     Range,
 }
 
@@ -40,11 +50,27 @@ pub enum ExprKind {
     Bool(bool),
     NoneLit,
     Ident(String),
-    Unary { op: UnaryOp, operand: Box<Expr> },
-    Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr> },
-    Call { callee: Box<Expr>, args: Vec<Argument> },
-    Field { object: Box<Expr>, name: String },
-    Index { object: Box<Expr>, index: Box<Expr> },
+    Unary {
+        op: UnaryOp,
+        operand: Box<Expr>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    Call {
+        callee: Box<Expr>,
+        args: Vec<Argument>,
+    },
+    Field {
+        object: Box<Expr>,
+        name: String,
+    },
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
+    },
     List(Vec<Expr>),
 }
 
@@ -86,21 +112,50 @@ pub struct Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
-    Let { name: String, mutable: bool, ty: Option<TypeExpr>, value: Expr },
-    Assign { target: Expr, value: Expr },
+    Let {
+        name: String,
+        mutable: bool,
+        ty: Option<TypeExpr>,
+        value: Expr,
+    },
+    Assign {
+        target: Expr,
+        value: Expr,
+    },
     Expr(Expr),
     Return(Option<Expr>),
     Break,
     Continue,
-    If { condition: Expr, then_block: Vec<Stmt>, else_block: Option<Vec<Stmt>> },
-    While { condition: Expr, body: Vec<Stmt> },
-    For { var: String, iter: Expr, body: Vec<Stmt> },
+    If {
+        condition: Expr,
+        then_block: Vec<Stmt>,
+        else_block: Option<Vec<Stmt>>,
+    },
+    While {
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
+    For {
+        var: String,
+        iter: Expr,
+        body: Vec<Stmt>,
+    },
     Function(FunctionDecl),
     Struct(StructDecl),
-    Try { body: Vec<Stmt>, catch_var: String, catch_block: Vec<Stmt> },
+    Try {
+        body: Vec<Stmt>,
+        catch_var: String,
+        catch_block: Vec<Stmt>,
+    },
     Throw(Expr),
-    Import { module: String, alias: Option<String> },
-    FromImport { module: String, names: Vec<ImportName> },
+    Import {
+        module: String,
+        alias: Option<String>,
+    },
+    FromImport {
+        module: String,
+        names: Vec<ImportName>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,4 +1,4 @@
-use super::token::{keyword_from_str, Span, Token, TokenKind};
+use super::token::{Span, Token, TokenKind, keyword_from_str};
 use crate::compiler::diagnostics::Diagnostic;
 
 pub struct Lexer {
@@ -43,7 +43,10 @@ impl Lexer {
     }
 
     fn span(&self) -> Span {
-        Span { line: self.line, column: self.column }
+        Span {
+            line: self.line,
+            column: self.column,
+        }
     }
 
     fn match_next(&mut self, expected: char) -> bool {
@@ -74,11 +77,17 @@ impl Lexer {
         let current = *self.indent_stack.last().unwrap();
         if indent > current {
             self.indent_stack.push(indent);
-            self.tokens.push(Token { kind: TokenKind::Indent, span });
+            self.tokens.push(Token {
+                kind: TokenKind::Indent,
+                span,
+            });
         } else if indent < current {
             while *self.indent_stack.last().unwrap() > indent {
                 self.indent_stack.pop();
-                self.tokens.push(Token { kind: TokenKind::Dedent, span: span.clone() });
+                self.tokens.push(Token {
+                    kind: TokenKind::Dedent,
+                    span: span.clone(),
+                });
             }
             if *self.indent_stack.last().unwrap() != indent {
                 return Err(Diagnostic::new("inconsistent indentation", span));
@@ -134,7 +143,10 @@ impl Lexer {
                 '\n' => {
                     self.advance();
                     if depth == 0 {
-                        self.tokens.push(Token { kind: TokenKind::Newline, span });
+                        self.tokens.push(Token {
+                            kind: TokenKind::Newline,
+                            span,
+                        });
                         at_line_start = true;
                     }
                 }
@@ -162,7 +174,10 @@ impl Lexer {
                             Some(ch) => s.push(ch),
                         }
                     }
-                    self.tokens.push(Token { kind: TokenKind::StringLiteral(s), span });
+                    self.tokens.push(Token {
+                        kind: TokenKind::StringLiteral(s),
+                        span,
+                    });
                 }
                 c if c.is_ascii_digit() => {
                     let mut s = String::new();
@@ -200,7 +215,9 @@ impl Lexer {
                     } else {
                         match s.parse::<i64>() {
                             Ok(v) => TokenKind::IntLiteral(v),
-                            Err(_) => return Err(Diagnostic::new("integer literal too large", span)),
+                            Err(_) => {
+                                return Err(Diagnostic::new("integer literal too large", span));
+                            }
                         }
                     };
                     self.tokens.push(Token { kind, span });
@@ -226,43 +243,84 @@ impl Lexer {
                 ',' => self.single(TokenKind::Comma, span),
                 '-' => {
                     self.advance();
-                    let kind = if self.match_next('>') { TokenKind::Arrow } else { TokenKind::Minus };
+                    let kind = if self.match_next('>') {
+                        TokenKind::Arrow
+                    } else {
+                        TokenKind::Minus
+                    };
                     self.tokens.push(Token { kind, span });
                 }
                 '=' => {
                     self.advance();
-                    let kind = if self.match_next('=') { TokenKind::EqEq } else { TokenKind::Assign };
+                    let kind = if self.match_next('=') {
+                        TokenKind::EqEq
+                    } else {
+                        TokenKind::Assign
+                    };
                     self.tokens.push(Token { kind, span });
                 }
                 '<' => {
                     self.advance();
-                    let kind = if self.match_next('=') { TokenKind::LtEq } else { TokenKind::Lt };
+                    let kind = if self.match_next('=') {
+                        TokenKind::LtEq
+                    } else {
+                        TokenKind::Lt
+                    };
                     self.tokens.push(Token { kind, span });
                 }
                 '>' => {
                     self.advance();
-                    let kind = if self.match_next('=') { TokenKind::GtEq } else { TokenKind::Gt };
+                    let kind = if self.match_next('=') {
+                        TokenKind::GtEq
+                    } else {
+                        TokenKind::Gt
+                    };
                     self.tokens.push(Token { kind, span });
                 }
                 '.' => {
                     self.advance();
-                    let kind = if self.match_next('.') { TokenKind::DotDot } else { TokenKind::Dot };
+                    let kind = if self.match_next('.') {
+                        TokenKind::DotDot
+                    } else {
+                        TokenKind::Dot
+                    };
                     self.tokens.push(Token { kind, span });
                 }
                 '!' => {
                     self.advance();
                     if self.match_next('=') {
-                        self.tokens.push(Token { kind: TokenKind::NotEq, span });
+                        self.tokens.push(Token {
+                            kind: TokenKind::NotEq,
+                            span,
+                        });
                     } else {
                         return Err(Diagnostic::new("unexpected '!'; use 'not' instead", span));
                     }
                 }
-                '(' => { depth += 1; self.single(TokenKind::LParen, span); }
-                ')' => { depth = depth.saturating_sub(1); self.single(TokenKind::RParen, span); }
-                '[' => { depth += 1; self.single(TokenKind::LBracket, span); }
-                ']' => { depth = depth.saturating_sub(1); self.single(TokenKind::RBracket, span); }
-                '{' => { depth += 1; self.single(TokenKind::LBrace, span); }
-                '}' => { depth = depth.saturating_sub(1); self.single(TokenKind::RBrace, span); }
+                '(' => {
+                    depth += 1;
+                    self.single(TokenKind::LParen, span);
+                }
+                ')' => {
+                    depth = depth.saturating_sub(1);
+                    self.single(TokenKind::RParen, span);
+                }
+                '[' => {
+                    depth += 1;
+                    self.single(TokenKind::LBracket, span);
+                }
+                ']' => {
+                    depth = depth.saturating_sub(1);
+                    self.single(TokenKind::RBracket, span);
+                }
+                '{' => {
+                    depth += 1;
+                    self.single(TokenKind::LBrace, span);
+                }
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    self.single(TokenKind::RBrace, span);
+                }
                 other => {
                     return Err(Diagnostic::new(
                         format!("unexpected character '{}'", other),
@@ -279,16 +337,25 @@ impl Lexer {
         if let Some(last) = self.tokens.last() {
             if last.kind != TokenKind::Newline {
                 let span = self.span();
-                self.tokens.push(Token { kind: TokenKind::Newline, span });
+                self.tokens.push(Token {
+                    kind: TokenKind::Newline,
+                    span,
+                });
             }
         }
         while self.indent_stack.len() > 1 {
             self.indent_stack.pop();
             let span = self.span();
-            self.tokens.push(Token { kind: TokenKind::Dedent, span });
+            self.tokens.push(Token {
+                kind: TokenKind::Dedent,
+                span,
+            });
         }
         let span = self.span();
-        self.tokens.push(Token { kind: TokenKind::Eof, span });
+        self.tokens.push(Token {
+            kind: TokenKind::Eof,
+            span,
+        });
         Ok(self.tokens)
     }
 }
@@ -299,20 +366,35 @@ mod tests {
     use TokenKind::*;
 
     fn kinds(src: &str) -> Vec<TokenKind> {
-        Lexer::new(src).tokenize().unwrap().into_iter().map(|t| t.kind).collect()
+        Lexer::new(src)
+            .tokenize()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.kind)
+            .collect()
     }
 
     #[test]
     fn let_statement() {
         assert_eq!(
             kinds("let x = 5\n"),
-            vec![Let, Identifier("x".into()), Assign, IntLiteral(5), Newline, Eof]
+            vec![
+                Let,
+                Identifier("x".into()),
+                Assign,
+                IntLiteral(5),
+                Newline,
+                Eof
+            ]
         );
     }
 
     #[test]
     fn range_is_not_float() {
-        assert_eq!(kinds("0..10"), vec![IntLiteral(0), DotDot, IntLiteral(10), Newline, Eof]);
+        assert_eq!(
+            kinds("0..10"),
+            vec![IntLiteral(0), DotDot, IntLiteral(10), Newline, Eof]
+        );
     }
 
     #[test]
@@ -329,20 +411,41 @@ mod tests {
     fn indentation_blocks() {
         assert_eq!(
             kinds("if x:\n    y\n"),
-            vec![If, Identifier("x".into()), Colon, Newline, Indent,
-                 Identifier("y".into()), Newline, Dedent, Eof]
+            vec![
+                If,
+                Identifier("x".into()),
+                Colon,
+                Newline,
+                Indent,
+                Identifier("y".into()),
+                Newline,
+                Dedent,
+                Eof
+            ]
         );
     }
 
     #[test]
     fn comments_are_skipped() {
-        assert_eq!(kinds("# hello\nlet a = 1 # note\n"),
-            vec![Let, Identifier("a".into()), Assign, IntLiteral(1), Newline, Eof]);
+        assert_eq!(
+            kinds("# hello\nlet a = 1 # note\n"),
+            vec![
+                Let,
+                Identifier("a".into()),
+                Assign,
+                IntLiteral(1),
+                Newline,
+                Eof
+            ]
+        );
     }
 
     #[test]
     fn string_literal() {
-        assert_eq!(kinds("\"RCA\""), vec![StringLiteral("RCA".into()), Newline, Eof]);
+        assert_eq!(
+            kinds("\"RCA\""),
+            vec![StringLiteral("RCA".into()), Newline, Eof]
+        );
     }
 
     #[test]

@@ -9,12 +9,19 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     pub fn new(message: impl Into<String>, span: Span) -> Self {
-        Diagnostic { message: message.into(), span }
+        Diagnostic {
+            message: message.into(),
+            span,
+        }
     }
 }
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}: {}", self.span.line, self.span.column, self.message)
+        write!(
+            f,
+            "{}:{}: {}",
+            self.span.line, self.span.column, self.message
+        )
     }
 }
