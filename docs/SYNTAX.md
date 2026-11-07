@@ -42,3 +42,15 @@
 - Ranges are end-exclusive: `0..3` yields 0, 1, 2
 - Values are copied on assignment (value semantics)
 - Runtime errors: division by zero, index out of bounds, integer overflow, stack overflow
+
+## Current status (v0.5) - supersedes "Planned" and "Deferred" above
+Implemented since v0.1:
+- try / catch / throw (throw takes a String; break/continue inside try is handled)
+- import, import as, from ... import [as], pub fn, pub struct, module-qualified calls (utils.add(1, 2))
+- Built-ins: print, len, str, int, float, list push
+- Runtime checks: list bounds, integer overflow, division by zero, call depth
+
+Still not implemented (per the lists above):
+- enum, match, const, private, type aliases, generics
+- List type annotations (lists are inferred from literals only)
+- pub on let / const
