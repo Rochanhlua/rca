@@ -367,7 +367,7 @@ impl Interpreter {
         }
     }
 
-    fn apply_binary(op: &BinaryOp, l: Value, r: Value, span: &Span) -> Result<Value, Diagnostic> {
+    pub(crate) fn apply_binary(op: &BinaryOp, l: Value, r: Value, span: &Span) -> Result<Value, Diagnostic> {
         match op {
             BinaryOp::Eq => return Ok(Value::Bool(l == r)),
             BinaryOp::NotEq => return Ok(Value::Bool(l != r)),

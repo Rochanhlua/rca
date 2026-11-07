@@ -3,6 +3,7 @@ use rca::compiler::lexer::Lexer;
 use rca::compiler::parser::Parser;
 use rca::compiler::semantic::Checker;
 use rca::runtime::execution::Interpreter;
+use rca::runtime::vm::Vm;
 use std::env;
 use std::fs;
 use std::process;
@@ -47,21 +48,31 @@ fn run_command(command: &str, source: &str) -> i32 {
         return 0;
     }
 
-    if command == "ir" {
-        return match lower::compile(&program) {
-            Ok(ir) => {
-                println!("{}", ir);
-                0
-            }
+    if command == "run-tree" {
+        let mut interpreter = Interpreter::new();
+        return match interpreter.run(&program) {
+            Ok(()) => 0,
             Err(d) => {
-                eprintln!("compile error: {}", d);
+                eprintln!("runtime error: {}", d);
                 1
             }
         };
     }
 
-    let mut interpreter = Interpreter::new();
-    match interpreter.run(&program) {
+    let ir = match lower::compile(&program) {
+        Ok(ir) => ir,
+        Err(d) => {
+            eprintln!("compile error: {}", d);
+            return 1;
+        }
+    };
+    if command == "ir" {
+        println!("{}", ir);
+        return 0;
+    }
+
+    let mut vm = Vm::new(&ir);
+    match vm.run() {
         Ok(()) => 0,
         Err(d) => {
             eprintln!("runtime error: {}", d);
@@ -72,15 +83,16 @@ fn run_command(command: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let commands = ["lex", "parse", "check", "ir", "run"];
+    let commands = ["lex", "parse", "check", "ir", "run", "run-tree"];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
         println!("Usage:");
         println!("  rca lex <file.rca>");
         println!("  rca parse <file.rca>");
         println!("  rca check <file.rca>");
-        println!("  rca ir <file.rca>");
-        println!("  rca run <file.rca>");
+        println!("  rca ir <file.rca>        (show bytecode)");
+        println!("  rca run <file.rca>       (run on the VM)");
+        println!("  rca run-tree <file.rca>  (run on the tree-walking interpreter)");
         return;
     }
 
