@@ -131,3 +131,18 @@ impl fmt::Display for IrProgram {
         Ok(())
     }
 }
+
+pub mod validate;
+
+impl Instruction {
+    /// Indexes of the instructions that can run right after this one.
+    pub fn successors(&self, index: usize) -> Vec<usize> {
+        match self {
+            Instruction::Jump(t) => vec![*t],
+            Instruction::JumpIfFalse(t) => vec![index + 1, *t],
+            Instruction::ForNext { exit, .. } => vec![index + 1, *exit],
+            Instruction::Return => vec![],
+            _ => vec![index + 1],
+        }
+    }
+}

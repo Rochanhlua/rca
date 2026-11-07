@@ -1,5 +1,7 @@
 use rca::compiler::ir::lower;
+use rca::compiler::ir::validate::validate;
 use rca::compiler::lexer::Lexer;
+use rca::compiler::optimizer::{instruction_count, optimize};
 use rca::compiler::parser::Parser;
 use rca::compiler::semantic::Checker;
 use rca::runtime::execution::Interpreter;
@@ -59,14 +61,30 @@ fn run_command(command: &str, source: &str) -> i32 {
         };
     }
 
-    let ir = match lower::compile(&program) {
+    let mut ir = match lower::compile(&program) {
         Ok(ir) => ir,
         Err(d) => {
             eprintln!("compile error: {}", d);
             return 1;
         }
     };
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error: {}", e);
+        return 1;
+    }
     if command == "ir" {
+        println!("{}", ir);
+        return 0;
+    }
+
+    let before = instruction_count(&ir);
+    optimize(&mut ir);
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error (after optimization): {}", e);
+        return 1;
+    }
+    if command == "ir-opt" {
+        println!("; optimized: {} -> {} instructions\n", before, instruction_count(&ir));
         println!("{}", ir);
         return 0;
     }
@@ -83,7 +101,7 @@ fn run_command(command: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let commands = ["lex", "parse", "check", "ir", "run", "run-tree"];
+    let commands = ["lex", "parse", "check", "ir", "ir-opt", "run", "run-tree"];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
         println!("Usage:");
@@ -91,6 +109,7 @@ fn main() {
         println!("  rca parse <file.rca>");
         println!("  rca check <file.rca>");
         println!("  rca ir <file.rca>        (show bytecode)");
+        println!("  rca ir-opt <file.rca>    (show optimized bytecode)");
         println!("  rca run <file.rca>       (run on the VM)");
         println!("  rca run-tree <file.rca>  (run on the tree-walking interpreter)");
         return;

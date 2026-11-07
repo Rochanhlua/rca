@@ -1,0 +1,5 @@
+let a = 2 * 3 + 4
+let b = a + 1 * 5
+if false:
+    print("never")
+print(a, b)
