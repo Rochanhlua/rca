@@ -1,0 +1,31 @@
+# RCA full syntax test
+struct User:
+    name: String
+    age: Int
+
+fn greet(user: User, times: Int = 1) -> String:
+    mut i: Int = 0
+    while i < times:
+        print(user.name)
+        i = i + 1
+    return "done"
+
+let user = User(
+    name = "RCA Developer",
+    age = 20
+)
+
+let numbers = [1, 2, 3]
+let score = (10 + 5) * 2 - 3
+
+if user.age >= 18 and not false:
+    print("Adult")
+elif user.age >= 13:
+    print("Teen")
+else:
+    print("Minor")
+
+for n in 0..10:
+    if n == 5:
+        continue
+    print(n)
