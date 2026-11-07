@@ -22,3 +22,17 @@
 ## Planned (not yet parsed)
 - import / from / as, enum, match, try / catch / throw
 - const, pub / private, type aliases, generics
+
+## Type checking (v0.2, Phase 2)
+- Strict static typing: Int and Float cannot be mixed in arithmetic
+- Type inference for let / mut without annotation
+- Functions: parameter types, return types, default values, named arguments,
+  forward calls, recursion, "must return on all paths" check
+- Structs: constructors, field access, field assignment (requires mut)
+- Scopes: block scopes, shadowing in inner scopes, no redeclaration in same scope
+- Built-in: print(...)
+
+## Deferred
+- Modules (import / from / as): after execution engine and stdlib exist
+- enum, match, try / catch / throw, const, pub / private, generics
+- List type annotations (e.g. List[Int]); lists are inferred from literals only
