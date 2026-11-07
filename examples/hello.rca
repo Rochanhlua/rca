@@ -1,0 +1,10 @@
+# RCA hello
+let name: String = "RCA"
+mut counter: Int = 0
+counter = counter + 1
+
+fn add(a: Int, b: Int) -> Int:
+    return a + b
+
+for i in 0..10:
+    print(i)
