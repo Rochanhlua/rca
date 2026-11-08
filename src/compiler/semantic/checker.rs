@@ -964,6 +964,40 @@ impl Checker {
             return Type::Tensor;
         }
 
+        if name == "track" {
+            if args.len() != 1 {
+                self.error("track() takes exactly 1 argument".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("track() needs a Tensor, found {}", t),
+                    &args[0].value.span,
+                );
+            }
+            return Type::Tensor;
+        }
+
+        if name == "grad" {
+            if args.len() != 2 {
+                self.error("grad() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            for a in args.iter() {
+                let t = self.check_expr(&a.value);
+                if !matches!(t, Type::Tensor | Type::Unknown) {
+                    self.error(
+                        format!("grad() needs Tensor arguments, found {}", t),
+                        &a.value.span,
+                    );
+                }
+            }
+            return Type::Tensor;
+        }
+
         if name == "reshape" {
             if args.len() != 2 {
                 self.error("reshape() takes exactly 2 arguments".to_string(), span);
@@ -1413,6 +1447,15 @@ mod tests {
         assert!(
             first_error("print(relu(Tensor([1.0]), 2))\n")
                 .contains("relu() takes exactly 1 argument")
+        );
+    }
+
+    #[test]
+    fn autodiff_builtins_check_arguments() {
+        assert!(first_error("print(track(5))\n").contains("track() needs a Tensor, found Int"));
+        assert!(
+            first_error("print(grad(Tensor([1.0])))\n")
+                .contains("grad() takes exactly 2 arguments")
         );
     }
 

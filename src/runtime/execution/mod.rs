@@ -477,7 +477,9 @@ impl Interpreter {
             BinaryOp::NotEq => return Ok(Value::Bool(l != r)),
             _ => {}
         }
-        if matches!(l, Value::Tensor { .. }) || matches!(r, Value::Tensor { .. }) {
+        if matches!(l, Value::Tensor { .. } | Value::Tracked(_))
+            || matches!(r, Value::Tensor { .. } | Value::Tracked(_))
+        {
             let sym = match op {
                 BinaryOp::Add => '+',
                 BinaryOp::Sub => '-',
@@ -637,6 +639,23 @@ impl Interpreter {
                 _ => 's',
             };
             return crate::runtime::values::tensor_map(&v, kind).map_err(|m| err(m, span));
+        }
+
+        if name == "track" {
+            if args.len() != 1 {
+                return Err(err("track() takes exactly 1 argument", span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            return crate::runtime::values::tensor_track(&v).map_err(|m| err(m, span));
+        }
+
+        if name == "grad" {
+            if args.len() != 2 {
+                return Err(err("grad() takes exactly 2 arguments", span));
+            }
+            let y = self.eval_expr(&args[0].value)?;
+            let x = self.eval_expr(&args[1].value)?;
+            return crate::runtime::values::tensor_grad(&y, &x).map_err(|m| err(m, span));
         }
 
         if name == "reshape" {

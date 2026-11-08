@@ -19,6 +19,8 @@ pub enum Value {
         shape: Vec<usize>,
         data: Arc<Vec<f64>>,
     },
+    /// A tensor that remembers how it was computed (automatic differentiation).
+    Tracked(Arc<crate::runtime::autodiff::Tracked>),
     Enum {
         name: String,
         variant: String,
@@ -78,6 +80,18 @@ impl fmt::Display for Value {
                 }
                 write!(f, "], ")?;
                 fmt_tensor(f, shape, data)?;
+                write!(f, ")")
+            }
+            Value::Tracked(t) => {
+                write!(f, "Tensor(shape=[")?;
+                for (i, d) in t.shape.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", d)?;
+                }
+                write!(f, "], ")?;
+                fmt_tensor(f, &t.shape, &t.data)?;
                 write!(f, ")")
             }
             Value::Enum { name, variant } => write!(f, "{}.{}", name, variant),
@@ -369,6 +383,9 @@ mod tensor_fill_tests {
 /// Tensor op Tensor needs equal shapes (no broadcasting yet).
 /// Tensor op Float and Float op Tensor apply the scalar to every element.
 pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
+    if matches!(l, Value::Tracked(_)) || matches!(r, Value::Tracked(_)) {
+        return tracked_arith(op, l, r);
+    }
     if let (
         Value::Tensor {
             shape: s1,
@@ -901,6 +918,52 @@ mod enum_value_tests {
         assert_eq!(format!("{}", a), "Color.Green");
         assert_eq!(a, a.clone());
         assert_ne!(a, b);
+    }
+}
+
+fn tracked_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
+    use crate::runtime::autodiff;
+    match (l, r) {
+        (Value::Tracked(a), Value::Tracked(b)) => {
+            let t = match op {
+                '+' => autodiff::add(a, b)?,
+                '*' => autodiff::mul(a, b)?,
+                _ => {
+                    return Err(
+                        "this operator is not supported for tracked tensors yet".to_string()
+                    );
+                }
+            };
+            Ok(Value::Tracked(Arc::new(t)))
+        }
+        _ => Err(
+            "tracked tensors can only be combined with other tracked tensors (for now)".to_string(),
+        ),
+    }
+}
+
+/// track(t): turn a Tensor into a differentiable leaf.
+pub fn tensor_track(v: &Value) -> Result<Value, String> {
+    match v {
+        Value::Tensor { shape, data } => Ok(Value::Tracked(Arc::new(
+            crate::runtime::autodiff::leaf(shape.clone(), data.clone()),
+        ))),
+        Value::Tracked(_) => Ok(v.clone()),
+        _ => Err("track() needs a Tensor".to_string()),
+    }
+}
+
+/// grad(y, x): gradient of y with respect to x, as a plain Tensor.
+pub fn tensor_grad(y: &Value, x: &Value) -> Result<Value, String> {
+    match (y, x) {
+        (Value::Tracked(y), Value::Tracked(x)) => {
+            let (shape, data) = crate::runtime::autodiff::grad(y, x)?;
+            Ok(Value::Tensor {
+                shape,
+                data: data.into(),
+            })
+        }
+        _ => Err("grad() needs two tracked Tensors (use track())".to_string()),
     }
 }
 

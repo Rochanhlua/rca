@@ -678,6 +678,25 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "track" {
+            if args.len() != 1 {
+                return Err(err("track() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::Track, span);
+            return Ok(());
+        }
+
+        if name == "grad" {
+            if args.len() != 2 {
+                return Err(err("grad() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::Grad, span);
+            return Ok(());
+        }
+
         if name == "reshape" {
             if args.len() != 2 {
                 return Err(err("reshape() takes exactly 2 arguments", span));

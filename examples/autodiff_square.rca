@@ -1,0 +1,3 @@
+let x = track(Tensor([2.0]))
+let y = x * x
+print(grad(y, x))
