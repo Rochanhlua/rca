@@ -806,6 +806,53 @@ mod tests {
     }
 
     #[test]
+    fn autodiff_elementwise_matches() {
+        let src = "let z = track(Tensor([0.0]))\nprint(grad(sum(sigmoid(z)), z))\nprint(grad(sum(exp(z)), z))\nprint(grad(sum(tanh(z)), z))\nlet p = track(Tensor([4.0]))\nprint(grad(sum(sqrt(p)), p))\nprint(grad(sum(log(p)), p))\nlet r = track(Tensor([-1.0, 2.0, 3.0]))\nprint(grad(sum(relu(r)), r))\n";
+        same(
+            src,
+            "Tensor(shape=[1], [0.25])\nTensor(shape=[1], [1.0])\nTensor(shape=[1], [1.0])\nTensor(shape=[1], [0.25])\nTensor(shape=[1], [0.25])\nTensor(shape=[3], [0.0, 1.0, 1.0])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_transpose_reshape_matches() {
+        let src = "let x = track(Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))\nlet w = Tensor([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]])\nprint(grad(sum(transpose(x) * w), x))\nlet v = track(Tensor([1.0, 2.0, 3.0, 4.0]))\nlet m = Tensor([[1.0, 2.0], [3.0, 4.0]])\nprint(grad(sum(reshape(v, [2, 2]) * m), v))\n";
+        same(
+            src,
+            "Tensor(shape=[2, 3], [[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]])\nTensor(shape=[4], [1.0, 2.0, 3.0, 4.0])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_elementwise_errors_match() {
+        for (src, msg) in [
+            (
+                "let x = track(Tensor([-1.0]))\nprint(log(x))\n",
+                "log() needs positive values",
+            ),
+            (
+                "let x = track(Tensor([1.0, 2.0, 3.0]))\nprint(reshape(x, [2, 2]))\n",
+                "cannot reshape tensor of 3 elements into shape [2, 2]",
+            ),
+            (
+                "let x = track(Tensor([0.0]))\nprint(grad(sum(sqrt(x)), x))\n",
+                "grad(): gradient is not finite",
+            ),
+        ] {
+            assert_eq!(error_in_vm(src), msg);
+            assert_eq!(error_in_tree(src), error_in_vm(src));
+        }
+    }
+
+    #[test]
+    fn autodiff_logistic_example_matches() {
+        let src = include_str!("../../../examples/autodiff_logistic.rca");
+        let out = run_tree(src);
+        assert_eq!(run_vm(src), out);
+        assert!(out.starts_with("Tensor(shape=[1], ["));
+    }
+
+    #[test]
     fn autodiff_errors_match() {
         for (src, msg) in [
             (

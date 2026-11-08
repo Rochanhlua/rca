@@ -1,0 +1,7 @@
+# Gradient of a one-layer sigmoid model: loss = mean(sigmoid(x * w))
+let w = track(Tensor([[0.5], [-0.5]]))
+let x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+let p = sigmoid(matmul(x, w))
+let loss = mean(p)
+print(loss)
+print(grad(loss, w))
