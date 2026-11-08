@@ -58,14 +58,15 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::MakeTensor
         | I::FillTensor(_)
         | I::TensorShape => (1, 1),
-        I::MatMul => (2, 1),
+        I::MatMul | I::Grad => (2, 1),
         I::TensorReshape => (2, 1),
         I::TensorSum
         | I::TensorMean
         | I::TensorMax
         | I::TensorMin
         | I::TensorTranspose
-        | I::TensorMap(_) => (1, 1),
+        | I::TensorMap(_)
+        | I::Track => (1, 1),
         I::Jump(_) | I::ForNext { .. } | I::PushHandler(_) | I::PopHandler => (0, 0),
         I::Return | I::Throw => (1, 0),
         I::StoreIndex => (3, 1),

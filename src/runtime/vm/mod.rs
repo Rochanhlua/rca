@@ -455,6 +455,21 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::Track => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_track(&v) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
+                Instruction::Grad => {
+                    let x = self.pop();
+                    let y = self.pop();
+                    match crate::runtime::values::tensor_grad(&y, &x) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::TensorReshape => {
                     let s = self.pop();
                     let v = self.pop();
@@ -710,6 +725,47 @@ mod tests {
             (
                 "print(exp(Tensor([1000.0])))\n",
                 "exp() result is not finite",
+            ),
+        ] {
+            assert_eq!(error_in_vm(src), msg);
+            assert_eq!(error_in_tree(src), error_in_vm(src));
+        }
+    }
+
+    #[test]
+    fn autodiff_square_matches() {
+        let src = "let x = track(Tensor([2.0]))\nlet y = x * x\nprint(grad(y, x))\n";
+        same(src, "Tensor(shape=[1], [4.0])\n");
+    }
+
+    #[test]
+    fn autodiff_chain_matches() {
+        let src =
+            "let x = track(Tensor([3.0]))\nlet y = x * x * x + x\nprint(grad(y, x))\nprint(y)\n";
+        same(
+            src,
+            "Tensor(shape=[1], [28.0])\nTensor(shape=[1], [30.0])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_errors_match() {
+        for (src, msg) in [
+            (
+                "let x = track(Tensor([2.0]))\nlet z = track(Tensor([1.0]))\nlet y = x * x\nprint(grad(y, z))\n",
+                "grad(): the result does not depend on this tensor",
+            ),
+            (
+                "let x = Tensor([2.0])\nprint(grad(x, x))\n",
+                "grad() needs two tracked Tensors (use track())",
+            ),
+            (
+                "let x = track(Tensor([1.0, 2.0]))\nlet y = x * x\nprint(grad(y, x))\n",
+                "grad() needs a result with exactly one element",
+            ),
+            (
+                "let x = track(Tensor([2.0]))\nprint(x - x)\n",
+                "this operator is not supported for tracked tensors yet",
             ),
         ] {
             assert_eq!(error_in_vm(src), msg);
