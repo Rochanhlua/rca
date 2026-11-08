@@ -86,7 +86,7 @@ impl<'a> Vm<'a> {
         while self
             .handlers
             .last()
-            .map_or(false, |h| h.frame_depth > self.frames.len())
+            .is_some_and(|h| h.frame_depth > self.frames.len())
         {
             self.handlers.pop();
         }

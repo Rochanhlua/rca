@@ -193,7 +193,7 @@ impl Lexer {
                     }
                     let mut is_float = false;
                     if self.peek() == Some('.')
-                        && self.peek_next().map_or(false, |n| n.is_ascii_digit())
+                        && self.peek_next().is_some_and(|n| n.is_ascii_digit())
                     {
                         is_float = true;
                         s.push('.');
@@ -334,14 +334,14 @@ impl Lexer {
             return Err(Diagnostic::new("unclosed bracket", self.span()));
         }
 
-        if let Some(last) = self.tokens.last() {
-            if last.kind != TokenKind::Newline {
-                let span = self.span();
-                self.tokens.push(Token {
-                    kind: TokenKind::Newline,
-                    span,
-                });
-            }
+        if let Some(last) = self.tokens.last()
+            && last.kind != TokenKind::Newline
+        {
+            let span = self.span();
+            self.tokens.push(Token {
+                kind: TokenKind::Newline,
+                span,
+            });
         }
         while self.indent_stack.len() > 1 {
             self.indent_stack.pop();

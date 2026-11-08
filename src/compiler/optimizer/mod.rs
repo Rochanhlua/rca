@@ -137,43 +137,46 @@ fn fold(chunk: &mut Chunk) -> bool {
         map[i] = new_code.len();
 
         // a jump to the very next instruction does nothing
-        if let Instruction::Jump(t) = &chunk.code[i] {
-            if *t == i + 1 {
-                changed = true;
-                i += 1;
-                continue;
-            }
+        if let Instruction::Jump(t) = &chunk.code[i]
+            && *t == i + 1
+        {
+            changed = true;
+            i += 1;
+            continue;
         }
 
         // never fold across an instruction that something else jumps to
-        if i + 2 < n && !targets[i + 1] && !targets[i + 2] {
-            if let Some(ins) = fold_binary(
+        if i + 2 < n
+            && !targets[i + 1]
+            && !targets[i + 2]
+            && let Some(ins) = fold_binary(
                 &chunk.code[i],
                 &chunk.code[i + 1],
                 &chunk.code[i + 2],
                 &chunk.spans[i + 2],
-            ) {
-                map[i + 1] = new_code.len();
-                map[i + 2] = new_code.len();
-                new_code.push(ins);
-                new_spans.push(chunk.spans[i + 2].clone());
-                i += 3;
-                changed = true;
-                continue;
-            }
+            )
+        {
+            map[i + 1] = new_code.len();
+            map[i + 2] = new_code.len();
+            new_code.push(ins);
+            new_spans.push(chunk.spans[i + 2].clone());
+            i += 3;
+            changed = true;
+            continue;
         }
 
-        if i + 1 < n && !targets[i + 1] {
-            if let Some(replacement) = fold_pair(&chunk.code[i], &chunk.code[i + 1]) {
-                map[i + 1] = new_code.len();
-                for r in replacement {
-                    new_code.push(r);
-                    new_spans.push(chunk.spans[i + 1].clone());
-                }
-                i += 2;
-                changed = true;
-                continue;
+        if i + 1 < n
+            && !targets[i + 1]
+            && let Some(replacement) = fold_pair(&chunk.code[i], &chunk.code[i + 1])
+        {
+            map[i + 1] = new_code.len();
+            for r in replacement {
+                new_code.push(r);
+                new_spans.push(chunk.spans[i + 1].clone());
             }
+            i += 2;
+            changed = true;
+            continue;
         }
 
         new_code.push(chunk.code[i].clone());

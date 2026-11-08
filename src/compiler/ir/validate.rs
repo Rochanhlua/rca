@@ -175,10 +175,11 @@ fn validate_chunk(
             }
         }
         for s in ins.successors(i) {
-            if let I::PushHandler(t) = ins {
-                if s == *t && s != i + 1 {
-                    continue;
-                }
+            if let I::PushHandler(t) = ins
+                && s == *t
+                && s != i + 1
+            {
+                continue;
             }
             if s >= n {
                 return Err(bad_at(name, i, "execution falls off the end of the code"));

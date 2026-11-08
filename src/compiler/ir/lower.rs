@@ -574,11 +574,12 @@ impl Compiler {
                 self.emit(Instruction::Index, span);
             }
             ExprKind::Field { object, name } => {
-                if let ExprKind::Ident(en) = &object.kind {
-                    if self.resolve(en).is_none() && !self.module_aliases.contains_key(en) {
-                        self.emit(Instruction::PushEnum(en.clone(), name.clone()), span);
-                        return Ok(());
-                    }
+                if let ExprKind::Ident(en) = &object.kind
+                    && self.resolve(en).is_none()
+                    && !self.module_aliases.contains_key(en)
+                {
+                    self.emit(Instruction::PushEnum(en.clone(), name.clone()), span);
+                    return Ok(());
                 }
                 self.compile_expr(object)?;
                 self.emit(Instruction::GetField(name.clone()), span);
@@ -594,31 +595,29 @@ impl Compiler {
         args: &[Argument],
         span: &Span,
     ) -> Result<(), Diagnostic> {
-        if let ExprKind::Field { object, name: item } = &callee.kind {
-            if let ExprKind::Ident(m) = &object.kind {
-                if let Some(module) = self.module_aliases.get(m).cloned() {
-                    if self.resolve(m).is_none() {
-                        let key = format!("{}::{}", module, item);
-                        if let Some(&id) = self.func_ids.get(&key) {
-                            let sig = self.func_sigs[id].clone();
-                            self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;
-                            self.emit(Instruction::Call(id), span);
-                            return Ok(());
-                        }
-                        if let Some(&id) = self.struct_ids.get(&key) {
-                            let fields = self.structs[id].fields.clone();
-                            let no_defaults: Vec<Option<Expr>> = vec![None; fields.len()];
-                            self.emit_bound_args(&fields, &no_defaults, args, span)?;
-                            self.emit(Instruction::MakeStruct(id), span);
-                            return Ok(());
-                        }
-                        return Err(err(
-                            format!("module '{}' has no item '{}'", module, item),
-                            &callee.span,
-                        ));
-                    }
-                }
+        if let ExprKind::Field { object, name: item } = &callee.kind
+            && let ExprKind::Ident(m) = &object.kind
+            && let Some(module) = self.module_aliases.get(m).cloned()
+            && self.resolve(m).is_none()
+        {
+            let key = format!("{}::{}", module, item);
+            if let Some(&id) = self.func_ids.get(&key) {
+                let sig = self.func_sigs[id].clone();
+                self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;
+                self.emit(Instruction::Call(id), span);
+                return Ok(());
             }
+            if let Some(&id) = self.struct_ids.get(&key) {
+                let fields = self.structs[id].fields.clone();
+                let no_defaults: Vec<Option<Expr>> = vec![None; fields.len()];
+                self.emit_bound_args(&fields, &no_defaults, args, span)?;
+                self.emit(Instruction::MakeStruct(id), span);
+                return Ok(());
+            }
+            return Err(err(
+                format!("module '{}' has no item '{}'", module, item),
+                &callee.span,
+            ));
         }
         let name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
