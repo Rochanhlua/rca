@@ -66,6 +66,15 @@ impl Parser {
                 self.advance();
                 Ok((name, span))
             }
+            TokenKind::LParen if what == "a variable name" || what == "a parameter name" => {
+                Err(Diagnostic::new(
+                    format!(
+                        "expected {}, found '(' (tuple patterns are not supported here)",
+                        what
+                    ),
+                    span,
+                ))
+            }
             other => Err(Diagnostic::new(
                 format!("expected {}, found {:?}", what, other),
                 span,
