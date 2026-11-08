@@ -1,0 +1,6 @@
+let a = zeros([100, 1000])
+mut total: Int = 0
+for i in 0..1000:
+    let n = len(a)
+    total = total + n
+print(total)
