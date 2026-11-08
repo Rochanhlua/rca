@@ -1,5 +1,6 @@
 use crate::compiler::ir::ConvKind;
 use std::fmt;
+use std::sync::Arc;
 
 /// A runtime value. Values are copied on assignment (value semantics).
 #[derive(Debug, Clone, PartialEq)]
@@ -16,7 +17,7 @@ pub enum Value {
     /// Row-major flat storage. Invariant: shape.iter().product() == data.len().
     Tensor {
         shape: Vec<usize>,
-        data: Vec<f64>,
+        data: Arc<Vec<f64>>,
     },
     Enum {
         name: String,
@@ -201,7 +202,7 @@ pub fn tensor_from_value(v: &Value) -> Result<Value, String> {
     if total != data.len() {
         return Err("tensor rows must all have the same length".to_string());
     }
-    Ok(Value::Tensor { shape, data })
+    Ok(Value::Tensor { shape, data: data.into() })
 }
 
 #[cfg(test)]
@@ -219,7 +220,7 @@ mod tensor_tests {
             tensor_from_value(&v),
             Ok(Value::Tensor {
                 shape: vec![3],
-                data: vec![1.0, 2.0, 3.0]
+                data: vec![1.0, 2.0, 3.0].into()
             })
         );
     }
@@ -234,7 +235,7 @@ mod tensor_tests {
             tensor_from_value(&v),
             Ok(Value::Tensor {
                 shape: vec![2, 2],
-                data: vec![1.0, 2.0, 3.0, 4.0]
+                data: vec![1.0, 2.0, 3.0, 4.0].into()
             })
         );
     }
@@ -258,7 +259,7 @@ mod tensor_tests {
     fn display_shows_shape_and_values() {
         let t = Value::Tensor {
             shape: vec![2, 2],
-            data: vec![1.0, 2.0, 3.0, 4.0],
+            data: vec![1.0, 2.0, 3.0, 4.0].into(),
         };
         assert_eq!(
             t.to_string(),
@@ -296,7 +297,7 @@ pub fn tensor_filled(v: &Value, fill: f64) -> Result<Value, String> {
     }
     Ok(Value::Tensor {
         shape,
-        data: vec![fill; total],
+        data: vec![fill; total].into(),
     })
 }
 
@@ -321,14 +322,14 @@ mod tensor_fill_tests {
             tensor_filled(&shape, 0.0),
             Ok(Value::Tensor {
                 shape: vec![2, 2],
-                data: vec![0.0; 4]
+                data: vec![0.0; 4].into()
             })
         );
         assert_eq!(
             tensor_filled(&Value::List(vec![Value::Int(3)]), 1.0),
             Ok(Value::Tensor {
                 shape: vec![3],
-                data: vec![1.0; 3]
+                data: vec![1.0; 3].into()
             })
         );
     }
@@ -351,7 +352,7 @@ mod tensor_fill_tests {
     fn shape_of_tensor() {
         let t = Value::Tensor {
             shape: vec![2, 3],
-            data: vec![0.0; 6],
+            data: vec![0.0; 6].into(),
         };
         assert_eq!(
             tensor_shape(&t),
@@ -401,16 +402,16 @@ pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
             }
             Ok(Value::Tensor {
                 shape: s1.clone(),
-                data: d1.iter().zip(d2.iter()).map(|(a, b)| f(*a, *b)).collect(),
+                data: d1.iter().zip(d2.iter()).map(|(a, b)| f(*a, *b)).collect::<Vec<f64>>().into(),
             })
         }
         (Value::Tensor { shape, data }, Value::Float(x)) => Ok(Value::Tensor {
             shape: shape.clone(),
-            data: data.iter().map(|a| f(*a, *x)).collect(),
+            data: data.iter().map(|a| f(*a, *x)).collect::<Vec<f64>>().into(),
         }),
         (Value::Float(x), Value::Tensor { shape, data }) => Ok(Value::Tensor {
             shape: shape.clone(),
-            data: data.iter().map(|a| f(*x, *a)).collect(),
+            data: data.iter().map(|a| f(*x, *a)).collect::<Vec<f64>>().into(),
         }),
         _ => Err("tensor arithmetic needs a Tensor with a Tensor or a Float".to_string()),
     }
@@ -421,7 +422,7 @@ mod tensor_arith_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data }
+        Value::Tensor { shape, data: data.into() }
     }
 
     #[test]
@@ -477,7 +478,7 @@ pub fn tensor_index(v: &Value, i: i64) -> Result<Value, String> {
     let stride: usize = shape[1..].iter().product();
     Ok(Value::Tensor {
         shape: shape[1..].to_vec(),
-        data: data[i * stride..(i + 1) * stride].to_vec(),
+        data: data[i * stride..(i + 1) * stride].to_vec().into(),
     })
 }
 
@@ -489,7 +490,7 @@ mod tensor_index_tests {
     fn rank1_gives_float() {
         let t = Value::Tensor {
             shape: vec![3],
-            data: vec![1.0, 2.0, 3.0],
+            data: vec![1.0, 2.0, 3.0].into(),
         };
         assert_eq!(tensor_index(&t, 1), Ok(Value::Float(2.0)));
     }
@@ -562,7 +563,7 @@ pub fn tensor_matmul(l: &Value, r: &Value) -> Result<Value, String> {
     }
     Ok(Value::Tensor {
         shape: vec![m, p],
-        data: out,
+        data: out.into(),
     })
 }
 
@@ -676,7 +677,7 @@ fn tensor_broadcast(
     }
     Ok(Value::Tensor {
         shape: out_shape,
-        data,
+        data: data.into(),
     })
 }
 
@@ -762,7 +763,7 @@ pub fn tensor_transpose(v: &Value) -> Result<Value, String> {
             }
             Ok(Value::Tensor {
                 shape: vec![c, r],
-                data: out,
+                data: out.into(),
             })
         }
         _ => Err("transpose() supports rank 1 and rank 2 tensors only".to_string()),
