@@ -1,0 +1,5 @@
+fn pair() -> (Int, String):
+    return (7, "seven")
+let (n, s) = pair()
+print(n)
+print(s)
