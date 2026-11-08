@@ -611,6 +611,15 @@ mod tests {
     }
 
     #[test]
+    fn tensor_math_matches() {
+        let src = "let x = Tensor([[-1.0, 0.0], [2.0, 4.0]])\nprint(relu(x))\nprint(sqrt(Tensor([4.0, 9.0, 16.0])))\nprint(exp(Tensor([0.0, 0.0])))\nprint(sigmoid(Tensor([0.0])))\nprint(log(Tensor([1.0])))\n";
+        same(
+            src,
+            "Tensor(shape=[2, 2], [[0.0, 0.0], [2.0, 4.0]])\nTensor(shape=[3], [2.0, 3.0, 4.0])\nTensor(shape=[2], [1.0, 1.0])\nTensor(shape=[1], [0.5])\nTensor(shape=[1], [0.0])\n",
+        );
+    }
+
+    #[test]
     fn fibonacci() {
         let src = "fn fib(n: Int) -> Int:\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\nprint(fib(15))\n";
         same(src, "610\n");
@@ -688,6 +697,18 @@ mod tests {
         let src = "let a = 10\nlet b = 0\nprint(a / b)\n";
         assert_eq!(error_in_vm(src), "division by zero");
         assert_eq!(error_in_tree(src), error_in_vm(src));
+    }
+
+    #[test]
+    fn tensor_math_domain_errors_match() {
+        for (src, msg) in [
+            ("print(log(Tensor([0.0])))\n", "log() needs positive values"),
+            ("print(sqrt(Tensor([-1.0])))\n", "sqrt() needs non-negative values"),
+            ("print(exp(Tensor([1000.0])))\n", "exp() result is not finite"),
+        ] {
+            assert_eq!(error_in_vm(src), msg);
+            assert_eq!(error_in_tree(src), error_in_vm(src));
+        }
     }
 
     #[test]
