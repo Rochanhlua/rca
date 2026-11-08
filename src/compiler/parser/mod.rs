@@ -122,6 +122,12 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Stmt, Diagnostic> {
         let span = self.span();
         let kind = match self.peek().clone() {
+            TokenKind::Let if self.peek_at(1) == &TokenKind::LParen => {
+                self.parse_let_tuple(false)?
+            }
+            TokenKind::Mut if self.peek_at(1) == &TokenKind::LParen => {
+                self.parse_let_tuple(true)?
+            }
             TokenKind::Let => self.parse_let(false, false)?,
             TokenKind::Mut => self.parse_let(true, false)?,
             TokenKind::Const => self.parse_let(false, true)?,
@@ -266,6 +272,35 @@ impl Parser {
             name,
             elements: Vec::new(),
             span,
+        })
+    }
+
+    fn parse_let_tuple(&mut self, mutable: bool) -> Result<StmtKind, Diagnostic> {
+        let span = self.span();
+        self.advance(); // let or mut
+        self.expect(&TokenKind::LParen, "'('")?;
+        let mut names = Vec::new();
+        loop {
+            let (n, _) = self.expect_ident("a variable name")?;
+            names.push(n);
+            if !self.eat(&TokenKind::Comma) || self.check(&TokenKind::RParen) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RParen, "')'")?;
+        if names.len() < 2 {
+            return Err(Diagnostic::new(
+                "a tuple pattern needs at least 2 names",
+                span,
+            ));
+        }
+        self.expect(&TokenKind::Assign, "'='")?;
+        let value = self.parse_expr()?;
+        self.end_simple()?;
+        Ok(StmtKind::LetTuple {
+            names,
+            mutable,
+            value,
         })
     }
 
@@ -1200,5 +1235,48 @@ mod tuple_parse_tests {
     #[test]
     fn one_element_tuple_is_error() {
         assert!(parse_result("let a = (1,)\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod let_tuple_parse_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn parse_result(src: &str) -> Result<Program, Diagnostic> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program()
+    }
+
+    #[test]
+    fn let_tuple_two_names() {
+        let p = parse_result("let (a, b) = (1, 2)\n").unwrap();
+        match &p.statements[0].kind {
+            StmtKind::LetTuple { names, mutable, .. } => {
+                assert_eq!(names, &vec!["a".to_string(), "b".to_string()]);
+                assert!(!*mutable);
+            }
+            other => panic!("expected LetTuple, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mut_tuple_three_names() {
+        let p = parse_result("mut (a, b, c) = (1, 2, 3)\n").unwrap();
+        assert!(matches!(
+            &p.statements[0].kind,
+            StmtKind::LetTuple { mutable: true, .. }
+        ));
+    }
+
+    #[test]
+    fn one_name_is_error() {
+        assert!(parse_result("let (a) = (1, 2)\n").is_err());
+    }
+
+    #[test]
+    fn plain_let_still_works() {
+        let p = parse_result("let a = 1\n").unwrap();
+        assert!(matches!(&p.statements[0].kind, StmtKind::Let { .. }));
     }
 }

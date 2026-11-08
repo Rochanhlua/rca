@@ -147,6 +147,11 @@ pub enum StmtKind {
     Function(FunctionDecl),
     Struct(StructDecl),
     Enum(EnumDecl),
+    LetTuple {
+        names: Vec<String>,
+        mutable: bool,
+        value: Expr,
+    },
     Match {
         subject: Expr,
         arms: Vec<MatchArm>,
@@ -255,4 +260,40 @@ pub fn desugar_match(subject: &Expr, arms: &[MatchArm], span: &Span) -> Stmt {
         },
         span: span.clone(),
     }
+}
+
+/// Rewrites `let (a, b) = p` into plain statements:
+/// `let $t = p`, `let a = $t[0]`, `let b = $t[1]`.
+pub fn desugar_let_tuple(names: &[String], mutable: bool, value: &Expr, span: &Span) -> Vec<Stmt> {
+    let hidden = format!("$tuple_{}_{}", span.line, span.column);
+    let mk = |kind: ExprKind| Expr {
+        kind,
+        span: span.clone(),
+    };
+    let mut out = vec![Stmt {
+        kind: StmtKind::Let {
+            name: hidden.clone(),
+            mutable: false,
+            constant: false,
+            ty: None,
+            value: value.clone(),
+        },
+        span: span.clone(),
+    }];
+    for (i, n) in names.iter().enumerate() {
+        out.push(Stmt {
+            kind: StmtKind::Let {
+                name: n.clone(),
+                mutable,
+                constant: false,
+                ty: None,
+                value: mk(ExprKind::Index {
+                    object: Box::new(mk(ExprKind::Ident(hidden.clone()))),
+                    index: Box::new(mk(ExprKind::Int(i as i64))),
+                }),
+            },
+            span: span.clone(),
+        });
+    }
+    out
 }

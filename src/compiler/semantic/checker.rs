@@ -667,6 +667,9 @@ impl Checker {
             StmtKind::Match { subject, arms } => {
                 self.check_match(subject, arms, &stmt.span);
             }
+            StmtKind::LetTuple { .. } => {
+                self.error("tuple destructuring is not supported yet", &stmt.span);
+            }
             StmtKind::Enum(_) => {
                 self.error(
                     "enums can only be declared at the top level for now",
