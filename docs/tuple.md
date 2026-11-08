@@ -1,40 +1,38 @@
-# RCA Tuple (design)
+# RCA Tuple
 
-Status: DESIGN ONLY. Nothing here is implemented yet.
+Status: IMPLEMENTED (first version). Milestones T1-T3 are done.
+VM and tree interpreter give identical results (tests in vm/mod.rs).
 
-## 1. Scope of the first version
-- Fixed-size, immutable, mixed-type values: `let p = (1, "a")`.
-- At least 2 elements. `(x)` stays plain grouping. `()` and `(x,)` are later.
-- Access by literal index only: `p[0]`, `p[1]`. The checker knows each element type.
+## 1. What works
+- Fixed-size, immutable, mixed-type values with 2 or more elements:
+  `let p = (1, "a", 2.5)`. A trailing comma is allowed.
+- `(x)` is plain grouping, not a tuple.
+- Access by literal index: `p[0]`, `p[1]`. Each element keeps its exact type.
 - `len(p)` returns the element count.
 - `==` and `!=` between tuples of the same type.
-- Printing shows `(1, "a")`.
-- No tuple type annotations yet (`let p: (Int, String)` is a later change,
-  because `parse_type` only reads a single name today).
-- No destructuring (`let (a, b) = p`) yet.
+- Printing shows `(1, "a", 2.5)`.
 
-## 2. Representation
-- Type: `Type::Tuple(Vec<Type>)`, displayed as `(Int, String)`.
-- Value: `Value::Tuple(Vec<Value>)`.
-- Value semantics (copy on assignment), like every RCA value.
-- Immutable: `p[0] = x` is a compile-time error.
+## 2. Checker rules
+- The index must be an Int literal and in range, otherwise a compile-time error
+  (`tuple index N out of range for tuple of length L`,
+  `tuple index must be an Int literal`).
+- `p[i] = x` is an error: `tuples are immutable, cannot assign to an element`.
+- Comparing tuples of different types is an error (`cannot compare (Int, Int) with (Int, String)`).
+- A tuple with fewer than 2 elements, such as `(1,)`, is a parse error.
 
-## 3. Checker rules
-- `p[i]`: `i` must be an Int literal, in range, else a compile-time error
-  naming the tuple length. A non-literal index is an error.
-- Element types are never mixed up: `p[0]` has the exact type of element 0.
+## 3. Implementation notes
+- Type: `Type::Tuple(Vec<Type>)`. Value: `Value::Tuple(Vec<Value>)`.
+- AST: `ExprKind::Tuple(Vec<Expr>)`, parsed in the `LParen` case when a comma follows the first expression.
+- IR: `MakeTuple(n)`. Indexing reuses the existing `Index` instruction.
+- Equality reuses `apply_binary`; no new instruction was needed.
 
-## 4. Parser
-- In the `LParen` case: after the first expression, if a `,` follows, parse
-  the remaining expressions until `)` and build `ExprKind::Tuple(items)`.
-- Otherwise it is grouping, as today.
+## 4. Not implemented yet
+- Tuple type annotations (`let p: (Int, String) = ...`), because `parse_type` reads one name only.
+- Destructuring (`let (a, b) = p`).
+- Empty and one-element tuples.
+- Non-literal indexing.
+- Tuples as function parameter or return types (needs type annotations).
 
-## 5. Milestones (one at a time)
-T1: AST `ExprKind::Tuple` + parser + tests (checker/lowering placeholder).
-T2: checker: `Type::Tuple`, literal indexing, `len`, `==`.
-T3: runtime: `Value::Tuple`, IR `MakeTuple(n)` and `TupleGet(i)`, VM and tree identical.
-T4: examples, docs, tag.
-
-## 6. Rules for future changes
+## 5. Rules for future changes
 - Interpreter and VM must give identical results.
 - Every feature needs tests with known expected values.

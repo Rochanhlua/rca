@@ -84,3 +84,13 @@ Implemented:
 
 Still not implemented:
 - `pub const` and importing constants from other modules
+
+## Current status (v1.2) - tuple
+Implemented (details in tuple.md):
+- Tuple literals with 2 or more elements: `(1, "a")`
+- Literal indexing `p[0]` with exact element types, `len(p)`, `==` / `!=`
+- Tuples are immutable
+
+Still not implemented:
+- Tuple type annotations, destructuring, empty and 1-element tuples
+- Map

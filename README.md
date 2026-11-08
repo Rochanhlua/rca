@@ -56,6 +56,7 @@ More programs are in `examples/`.
 - Runtime checks: list bounds, integer overflow, division by zero, call depth
 - enum and match statement (see `docs/enum.md`)
 - const declarations (top-level, constant values only)
+- tuples: `(1, "a")`, literal indexing, `len`, `==` (see `docs/tuple.md`)
 - Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
   broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
   See `docs/tensor.md`.
@@ -64,7 +65,7 @@ More programs are in `examples/`.
 
 - Native code generation
 - Borrowing and references
-- Map, Tuple, generics, enum payloads, match expressions, pub const
+- Map, generics, enum payloads, match expressions, pub const, tuple type annotations and destructuring
 - Automatic differentiation, tensor method syntax, GPU support
 - Standard library modules
 - Package manager
@@ -77,6 +78,7 @@ More programs are in `examples/`.
 - `docs/modules.md` modules
 - `docs/tensor.md` tensors
 - `docs/enum.md` enum and match
+- `docs/tuple.md` tuples
 
 ## Development
 
