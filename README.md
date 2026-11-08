@@ -83,3 +83,7 @@ More programs are in `examples/`.
 ## Development
 
 Developed on Android (Termux) with Rust and Cargo.
+
+## License
+
+MIT. See `LICENSE`.
