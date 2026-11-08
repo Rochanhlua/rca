@@ -681,12 +681,12 @@ impl Parser {
         if !self.check(&TokenKind::RParen) {
             loop {
                 let mut name = None;
-                if let TokenKind::Identifier(n) = self.peek().clone() {
-                    if *self.peek_at(1) == TokenKind::Assign {
-                        self.advance();
-                        self.advance();
-                        name = Some(n);
-                    }
+                if let TokenKind::Identifier(n) = self.peek().clone()
+                    && *self.peek_at(1) == TokenKind::Assign
+                {
+                    self.advance();
+                    self.advance();
+                    name = Some(n);
                 }
                 let value = self.parse_expr()?;
                 args.push(Argument { name, value });

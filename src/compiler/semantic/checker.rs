@@ -533,13 +533,13 @@ impl Checker {
                                 &object.span,
                             ),
                         }
-                        if let Some(root) = Self::root_ident(object).map(|n| n.to_string()) {
-                            if self.scopes.lookup(&root).map(|s| s.mutable) == Some(false) {
-                                self.error(
+                        if let Some(root) = Self::root_ident(object).map(|n| n.to_string())
+                            && self.scopes.lookup(&root).map(|s| s.mutable) == Some(false)
+                        {
+                            self.error(
                                     format!("cannot push to immutable variable '{}' (declare it with 'mut')", root),
                                     &object.span,
                                 );
-                            }
                         }
                     }
                 }
@@ -832,18 +832,19 @@ impl Checker {
             }
             ExprKind::Call { callee, args } => self.check_call(callee, args, &expr.span),
             ExprKind::Field { object, name } => {
-                if let ExprKind::Ident(en) = &object.kind {
-                    if self.scopes.lookup(en).is_none() && self.enums.contains_key(en) {
-                        let found = self.enums[en].iter().any(|v| v == name);
-                        if found {
-                            return Type::Enum(en.clone());
-                        }
-                        self.error(
-                            format!("enum '{}' has no variant '{}'", en, name),
-                            &expr.span,
-                        );
-                        return Type::Unknown;
+                if let ExprKind::Ident(en) = &object.kind
+                    && self.scopes.lookup(en).is_none()
+                    && self.enums.contains_key(en)
+                {
+                    let found = self.enums[en].iter().any(|v| v == name);
+                    if found {
+                        return Type::Enum(en.clone());
                     }
+                    self.error(
+                        format!("enum '{}' has no variant '{}'", en, name),
+                        &expr.span,
+                    );
+                    return Type::Unknown;
                 }
                 let obj = self.check_expr(object);
                 match obj {
@@ -875,14 +876,12 @@ impl Checker {
     }
 
     fn check_call(&mut self, callee: &Expr, args: &[Argument], span: &Span) -> Type {
-        if let ExprKind::Field { object, name: item } = &callee.kind {
-            if let ExprKind::Ident(m) = &object.kind {
-                if self.scopes.lookup(m).is_none() {
-                    if let Some(module) = self.module_aliases.get(m).cloned() {
-                        return self.check_module_call(&module, item, args, span, &callee.span);
-                    }
-                }
-            }
+        if let ExprKind::Field { object, name: item } = &callee.kind
+            && let ExprKind::Ident(m) = &object.kind
+            && self.scopes.lookup(m).is_none()
+            && let Some(module) = self.module_aliases.get(m).cloned()
+        {
+            return self.check_module_call(&module, item, args, span, &callee.span);
         }
         let name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
@@ -1265,6 +1264,12 @@ impl Checker {
                 }
             }
         }
+    }
+}
+
+impl Default for Checker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1785,7 +1790,7 @@ impl Checker {
             }
         };
         if let Some(sig) = exports.functions.get(item).cloned() {
-            return self.check_function_call(&item.to_string(), &sig, args, span);
+            return self.check_function_call(item, &sig, args, span);
         }
         if let Some(fields) = exports.structs.get(item).cloned() {
             let sig = FuncSig {
@@ -1799,7 +1804,7 @@ impl Checker {
                     .collect(),
                 ret: Type::Struct(item.to_string()),
             };
-            return self.check_function_call(&item.to_string(), &sig, args, span);
+            return self.check_function_call(item, &sig, args, span);
         }
         if exports.private.contains(item) {
             self.error(

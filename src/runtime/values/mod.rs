@@ -102,7 +102,7 @@ impl Value {
             ConvKind::Int => match self {
                 Value::Int(n) => Ok(Value::Int(n)),
                 Value::Float(x) => {
-                    if x.is_finite() && x >= -9.2e18 && x <= 9.2e18 {
+                    if x.is_finite() && (-9.2e18..=9.2e18).contains(&x) {
                         Ok(Value::Int(x as i64))
                     } else {
                         Err(format!("cannot convert {} to Int", x))
@@ -375,10 +375,9 @@ pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
             data: d2,
         },
     ) = (l, r)
+        && s1 != s2
     {
-        if s1 != s2 {
-            return tensor_broadcast(op, s1, d1, s2, d2);
-        }
+        return tensor_broadcast(op, s1, d1, s2, d2);
     }
     let f = |a: f64, b: f64| match op {
         '+' => a + b,

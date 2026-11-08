@@ -48,3 +48,9 @@ impl ScopeStack {
         None
     }
 }
+
+impl Default for ScopeStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
