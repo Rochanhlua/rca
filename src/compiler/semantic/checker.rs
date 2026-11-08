@@ -499,6 +499,12 @@ impl Checker {
                             );
                         }
                     }
+                    ExprKind::Tuple(_) => {
+                        self.error(
+                            "tuple assignment is not supported, use 'let (a, b) = ...' to declare new variables",
+                            &target.span,
+                        );
+                    }
                     _ => {
                         self.error("invalid assignment target", &target.span);
                     }
