@@ -1764,3 +1764,97 @@ fn tensor_elem_ok(t: &Type) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod enum_match_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn check(src: &str) -> Result<(), Vec<Diagnostic>> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program)
+    }
+
+    fn first_error(src: &str) -> String {
+        check(src).unwrap_err()[0].message.clone()
+    }
+
+    const COLOR: &str = "enum Color:\n    Red\n    Green\n";
+
+    #[test]
+    fn enum_values_and_equality_are_ok() {
+        let src = format!(
+            "{}let a = Color.Red\nlet b: Color = Color.Green\nlet s = a == b\n",
+            COLOR
+        );
+        assert!(check(&src).is_ok());
+    }
+
+    #[test]
+    fn unknown_variant() {
+        let src = format!("{}let a = Color.Blue\n", COLOR);
+        assert_eq!(first_error(&src), "enum 'Color' has no variant 'Blue'");
+    }
+
+    #[test]
+    fn duplicate_variant() {
+        assert_eq!(
+            first_error("enum C:\n    A\n    A\n"),
+            "duplicate variant 'A' in enum 'C'"
+        );
+    }
+
+    #[test]
+    fn exhaustive_enum_match_is_ok() {
+        let src = format!(
+            "{}let c = Color.Red\nmatch c:\n    Color.Red:\n        print(1)\n    Color.Green:\n        print(2)\n",
+            COLOR
+        );
+        assert!(check(&src).is_ok());
+    }
+
+    #[test]
+    fn missing_variant_is_error() {
+        let src = format!(
+            "{}let c = Color.Red\nmatch c:\n    Color.Red:\n        print(1)\n",
+            COLOR
+        );
+        assert_eq!(
+            first_error(&src),
+            "match on enum 'Color' is not exhaustive, missing: Green"
+        );
+    }
+
+    #[test]
+    fn int_match_needs_wildcard() {
+        assert_eq!(
+            first_error("let n = 1\nmatch n:\n    1:\n        print(1)\n"),
+            "match on Int needs a '_' arm"
+        );
+    }
+
+    #[test]
+    fn duplicate_pattern() {
+        let src = "let n = 1\nmatch n:\n    1:\n        print(1)\n    1:\n        print(2)\n    _:\n        print(3)\n";
+        assert_eq!(first_error(src), "duplicate match pattern 1");
+    }
+
+    #[test]
+    fn pattern_type_mismatch() {
+        let src = "let n = 1\nmatch n:\n    \"a\":\n        print(1)\n    _:\n        print(2)\n";
+        assert_eq!(
+            first_error(src),
+            "match pattern type mismatch: expected Int, found String"
+        );
+    }
+
+    #[test]
+    fn unreachable_arm_and_float_subject() {
+        let src = "let n = 1\nmatch n:\n    _:\n        print(1)\n    2:\n        print(2)\n";
+        assert_eq!(first_error(src), "unreachable match arm after '_'");
+        let src2 = "let f = 1.5\nmatch f:\n    _:\n        print(1)\n";
+        assert_eq!(first_error(src2), "cannot match on Float");
+    }
+}
