@@ -13,6 +13,8 @@ pub enum Type {
     Tensor,
     /// A user-defined struct, identified by name.
     Struct(String),
+    /// Fixed-size tuple; each element has its own type.
+    Tuple(Vec<Type>),
     /// A user-defined enum, identified by name.
     Enum(String),
     /// Used after an error, or when a type is not yet known.
@@ -52,6 +54,16 @@ impl fmt::Display for Type {
             Type::Range => write!(f, "Range"),
             Type::Tensor => write!(f, "Tensor"),
             Type::Struct(name) => write!(f, "{}", name),
+            Type::Tuple(items) => {
+                write!(f, "(")?;
+                for (i, t) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", t)?;
+                }
+                write!(f, ")")
+            }
             Type::Enum(name) => write!(f, "{}", name),
             Type::Unknown => write!(f, "<unknown>"),
         }

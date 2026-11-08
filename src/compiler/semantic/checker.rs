@@ -708,9 +708,9 @@ impl Checker {
                 let rt = self.check_expr(right);
                 self.check_binary(op, &lt, &rt, &expr.span)
             }
-            ExprKind::Tuple(_) => {
-                self.error("tuples are not supported yet", &expr.span);
-                Type::Unknown
+            ExprKind::Tuple(items) => {
+                let types: Vec<Type> = items.iter().map(|e| self.check_expr(e)).collect();
+                Type::Tuple(types)
             }
             ExprKind::List(items) => {
                 if items.is_empty() {
@@ -743,6 +743,26 @@ impl Checker {
                 }
                 match obj {
                     Type::List(inner) => *inner,
+                    Type::Tuple(items) => match &index.kind {
+                        ExprKind::Int(i) if *i >= 0 && (*i as usize) < items.len() => {
+                            items[*i as usize].clone()
+                        }
+                        ExprKind::Int(i) => {
+                            self.error(
+                                format!(
+                                    "tuple index {} out of range for tuple of length {}",
+                                    i,
+                                    items.len()
+                                ),
+                                &index.span,
+                            );
+                            Type::Unknown
+                        }
+                        _ => {
+                            self.error("tuple index must be an Int literal", &index.span);
+                            Type::Unknown
+                        }
+                    },
                     Type::Tensor => Type::Unknown,
                     Type::Unknown => Type::Unknown,
                     other => {
@@ -975,7 +995,7 @@ impl Checker {
             }
             let t = self.check_expr(&args[0].value);
             match t {
-                Type::String | Type::List(_) | Type::Tensor | Type::Unknown => {}
+                Type::String | Type::List(_) | Type::Tensor | Type::Tuple(_) | Type::Unknown => {}
                 other => self.error(
                     format!("len() needs a String or List, found {}", other),
                     &args[0].value.span,
@@ -1960,6 +1980,64 @@ mod const_check_tests {
         assert_eq!(
             first_error("const A: Int = \"x\"\n"),
             "type mismatch: expected Int, found String"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tuple_check_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn check(src: &str) -> Result<(), Vec<Diagnostic>> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program)
+    }
+
+    fn first_error(src: &str) -> String {
+        check(src).unwrap_err()[0].message.clone()
+    }
+
+    #[test]
+    fn tuple_elements_keep_their_types() {
+        assert!(
+            check("let p = (1, \"a\")\nlet n: Int = p[0]\nlet s: String = p[1]\nprint(len(p))\n")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn wrong_element_type_is_error() {
+        assert_eq!(
+            first_error("let p = (1, \"a\")\nlet n: Int = p[1]\n"),
+            "type mismatch: expected Int, found String"
+        );
+    }
+
+    #[test]
+    fn index_out_of_range() {
+        assert_eq!(
+            first_error("let p = (1, 2)\nlet x = p[2]\n"),
+            "tuple index 2 out of range for tuple of length 2"
+        );
+    }
+
+    #[test]
+    fn index_must_be_literal() {
+        assert_eq!(
+            first_error("let p = (1, 2)\nlet i = 0\nlet x = p[i]\n"),
+            "tuple index must be an Int literal"
+        );
+    }
+
+    #[test]
+    fn tuple_equality_needs_same_type() {
+        assert!(check("let a = (1, 2)\nlet b = (3, 4)\nlet s = a == b\n").is_ok());
+        assert_eq!(
+            first_error("let a = (1, 2)\nlet b = (1, \"x\")\nlet s = a == b\n"),
+            "cannot compare (Int, Int) with (Int, String)"
         );
     }
 }

@@ -1,0 +1,5 @@
+let p = (1, "a")
+let n: Int = p[0]
+let s: String = p[1]
+print(len(p))
+let same = (1, 2) == (1, 2)
