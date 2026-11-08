@@ -1,0 +1,9 @@
+# One step of linear regression: pred = x * w, loss = mean((pred - y)^2)
+let w = track(Tensor([[2.0], [1.0]]))
+let x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+let y = Tensor([[3.0], [6.0]])
+let pred = matmul(x, w)
+let err = pred - y
+let loss = mean(err * err)
+print(loss)
+print(grad(loss, w))

@@ -94,10 +94,11 @@ C. A separate variant `Value::Tracked(Arc<Tracked>)` (RECOMMENDED).
 
 1. `Tracked` value, Add and Mul, `grad` on a one-element tensor.
 2. Sub, Div, and plain tensors / Float scalars mixed in as constants (implemented).
-   Elementwise math, Sum, Mean (next).
-3. Broadcasting backward, MatMul, Transpose, Reshape.
-4. Gradient accumulation across several `grad` calls, `zero_grad`.
-5. Forward-mode differentiation (separate design).
+3. Sum, Mean, MatMul of rank 2 tensors (implemented).
+4. Transpose, Reshape, elementwise math (exp, log, sqrt, tanh, relu, sigmoid),
+   broadcasting backward.
+5. Gradient accumulation across several `grad` calls, `zero_grad`.
+6. Forward-mode differentiation (separate design).
 
 Each milestone is one pull request with tests.
 
@@ -107,6 +108,10 @@ Each milestone is one pull request with tests.
   module system currently resolves user files only.
 - Should `track` be explicit, or should `Tensor(...)` take a `requires_grad` flag?
 - Type system: add a `Type::Tracked`, or treat tracked values as `Tensor`?
+  Known gap: the checker types `sum()` and `mean()` as Float, but on a tracked
+  tensor they return a tracked one-element Tensor so that `grad()` can start from
+  them. `grad()` therefore accepts a Float as its first argument. A `Type::Tracked`
+  would remove this gap.
 - `max` / `min` gradients (ties) and `pow` are deferred until the basics work.
 
 ## 9. Non-goals (for now)
