@@ -460,6 +460,15 @@ impl Checker {
                     }
                     ExprKind::Field { .. } | ExprKind::Index { .. } => {
                         let target_ty = self.check_expr(target);
+                        if let ExprKind::Index { object, .. } = &target.kind {
+                            let obj_ty = self.check_expr(object);
+                            if matches!(obj_ty, Type::Tuple(_)) {
+                                self.error(
+                                    "tuples are immutable, cannot assign to an element",
+                                    &target.span,
+                                );
+                            }
+                        }
                         if let Some(root) = Self::root_ident(target).map(|n| n.to_string()) {
                             let mutable = self.scopes.lookup(&root).map(|s| s.mutable);
                             if mutable == Some(false) {
@@ -2038,6 +2047,29 @@ mod tuple_check_tests {
         assert_eq!(
             first_error("let a = (1, 2)\nlet b = (1, \"x\")\nlet s = a == b\n"),
             "cannot compare (Int, Int) with (Int, String)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tuple_assign_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn first_error(src: &str) -> String {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program).unwrap_err()[0]
+            .message
+            .clone()
+    }
+
+    #[test]
+    fn tuple_element_assignment_is_error() {
+        assert_eq!(
+            first_error("mut p = (1, 2)\np[0] = 5\n"),
+            "tuples are immutable, cannot assign to an element"
         );
     }
 }
