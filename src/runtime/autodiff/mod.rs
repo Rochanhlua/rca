@@ -1,5 +1,6 @@
 //! Reverse-mode automatic differentiation.
-//! Milestone 1: Add and Mul on equal-shaped tensors, grad of a one-element result.
+//! Milestones 1-2: Add, Sub, Mul and Div on equal-shaped tensors, grad of a one-element result.
+//! Plain tensors and Float scalars may be mixed in as constants (see `constant_like`).
 //! Design: docs/autodiff-design.md
 
 use std::collections::HashMap;
@@ -16,7 +17,9 @@ fn next_id() -> u64 {
 pub enum Op {
     Leaf,
     Add,
+    Sub,
     Mul,
+    Div,
 }
 
 /// One operation in the graph. A node's id is always larger than its parents' ids,
@@ -26,7 +29,7 @@ pub struct Node {
     pub id: u64,
     pub op: Op,
     pub parents: Vec<Arc<Node>>,
-    /// Forward values the backward rule needs (Mul saves both inputs).
+    /// Forward values the backward rule needs (Mul and Div save both inputs).
     pub saved: Vec<Arc<Vec<f64>>>,
 }
 
@@ -101,6 +104,57 @@ pub fn mul(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
     })
 }
 
+pub fn sub(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
+    check_same_shape(a, b)?;
+    let data: Vec<f64> = a
+        .data
+        .iter()
+        .zip(b.data.iter())
+        .map(|(x, y)| x - y)
+        .collect();
+    Ok(Tracked {
+        shape: a.shape.clone(),
+        data: Arc::new(data),
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Sub,
+            parents: vec![a.node.clone(), b.node.clone()],
+            saved: vec![],
+        }),
+    })
+}
+
+pub fn div(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
+    check_same_shape(a, b)?;
+    let data: Vec<f64> = a
+        .data
+        .iter()
+        .zip(b.data.iter())
+        .map(|(x, y)| x / y)
+        .collect();
+    Ok(Tracked {
+        shape: a.shape.clone(),
+        data: Arc::new(data),
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Div,
+            parents: vec![a.node.clone(), b.node.clone()],
+            saved: vec![a.data.clone(), b.data.clone()],
+        }),
+    })
+}
+
+/// A plain tensor or Float scalar used together with a tracked tensor `like`.
+/// It becomes a leaf nobody asks a gradient for, so it acts as a constant.
+/// A Float is repeated to the shape of `like`. Shapes of a plain tensor are
+/// checked by the operation itself.
+pub fn constant_like(shape: &[usize], data: &Arc<Vec<f64>>, scalar: Option<f64>) -> Tracked {
+    match scalar {
+        Some(x) => leaf(shape.to_vec(), Arc::new(vec![x; data.len()])),
+        None => leaf(shape.to_vec(), data.clone()),
+    }
+}
+
 fn accumulate(grads: &mut HashMap<u64, Vec<f64>>, id: u64, g: &[f64]) {
     grads
         .entry(id)
@@ -150,6 +204,26 @@ pub fn grad(y: &Tracked, x: &Tracked) -> Result<(Vec<usize>, Vec<f64>), String> 
             Op::Add => {
                 accumulate(&mut grads, node.parents[0].id, &g);
                 accumulate(&mut grads, node.parents[1].id, &g);
+            }
+            Op::Sub => {
+                let neg: Vec<f64> = g.iter().map(|v| -v).collect();
+                accumulate(&mut grads, node.parents[0].id, &g);
+                accumulate(&mut grads, node.parents[1].id, &neg);
+            }
+            Op::Div => {
+                // d(a/b)/da = 1/b, d(a/b)/db = -a/(b*b)
+                let ga: Vec<f64> = g
+                    .iter()
+                    .zip(node.saved[1].iter())
+                    .map(|(g, b)| g / b)
+                    .collect();
+                let gb: Vec<f64> = g
+                    .iter()
+                    .zip(node.saved[0].iter().zip(node.saved[1].iter()))
+                    .map(|(g, (a, b))| -g * a / (b * b))
+                    .collect();
+                accumulate(&mut grads, node.parents[0].id, &ga);
+                accumulate(&mut grads, node.parents[1].id, &gb);
             }
             Op::Mul => {
                 let ga: Vec<f64> = g
@@ -225,6 +299,69 @@ mod tests {
         let h = 1e-5;
         let numeric = (f(1.5 + h) - f(1.5 - h)) / (2.0 * h);
         assert!((g(&y, &x) - numeric).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sub_gradient() {
+        let x = var(5.0);
+        let y = var(3.0);
+        let z = sub(&x, &y).unwrap();
+        assert_eq!(z.data[0], 2.0);
+        assert_eq!(g(&z, &x), 1.0);
+        assert_eq!(g(&z, &y), -1.0);
+    }
+
+    #[test]
+    fn sub_of_itself_is_zero() {
+        let x = var(4.0);
+        let z = sub(&x, &x).unwrap();
+        assert_eq!(g(&z, &x), 0.0);
+    }
+
+    #[test]
+    fn div_gradient() {
+        let a = var(6.0);
+        let b = var(2.0);
+        let z = div(&a, &b).unwrap();
+        assert_eq!(z.data[0], 3.0);
+        assert_eq!(g(&z, &a), 0.5);
+        assert_eq!(g(&z, &b), -1.5);
+    }
+
+    #[test]
+    fn div_by_zero_gradient_is_error() {
+        let a = var(1.0);
+        let b = var(0.0);
+        let z = div(&a, &b).unwrap();
+        assert!(grad(&z, &a).is_err());
+    }
+
+    fn h(v: f64) -> f64 {
+        // (x*x - x) / (x + 2)
+        let x = var(v);
+        let top = sub(&mul(&x, &x).unwrap(), &x).unwrap();
+        let bottom = add(&x, &var(2.0)).unwrap();
+        div(&top, &bottom).unwrap().data[0]
+    }
+
+    #[test]
+    fn sub_div_match_numeric_gradient() {
+        let x = var(1.5);
+        let top = sub(&mul(&x, &x).unwrap(), &x).unwrap();
+        let bottom = add(&x, &var(2.0)).unwrap();
+        let y = div(&top, &bottom).unwrap();
+        let step = 1e-5;
+        let numeric = (h(1.5 + step) - h(1.5 - step)) / (2.0 * step);
+        assert!((g(&y, &x) - numeric).abs() < 1e-6);
+    }
+
+    #[test]
+    fn constant_gets_no_gradient_but_scales_result() {
+        let x = var(3.0);
+        let c = constant_like(&x.shape, &x.data, Some(4.0));
+        let y = mul(&x, &c).unwrap();
+        assert_eq!(y.data[0], 12.0);
+        assert_eq!(g(&y, &x), 4.0);
     }
 
     #[test]

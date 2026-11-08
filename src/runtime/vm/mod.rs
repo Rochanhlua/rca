@@ -749,6 +749,24 @@ mod tests {
     }
 
     #[test]
+    fn autodiff_sub_div_matches() {
+        let src = "let x = track(Tensor([6.0]))\nlet y = track(Tensor([2.0]))\nlet z = x / y - y\nprint(z)\nprint(grad(z, x))\nprint(grad(z, y))\n";
+        same(
+            src,
+            "Tensor(shape=[1], [1.0])\nTensor(shape=[1], [0.5])\nTensor(shape=[1], [-2.5])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_mixed_constants_match() {
+        let src = "let w = track(Tensor([3.0]))\nlet x = Tensor([2.0])\nlet y = w * x + 1.0\nprint(y)\nprint(grad(y, w))\nlet z = 10.0 - w / 2.0\nprint(z)\nprint(grad(z, w))\n";
+        same(
+            src,
+            "Tensor(shape=[1], [7.0])\nTensor(shape=[1], [2.0])\nTensor(shape=[1], [8.5])\nTensor(shape=[1], [-0.5])\n",
+        );
+    }
+
+    #[test]
     fn autodiff_errors_match() {
         for (src, msg) in [
             (
@@ -764,8 +782,12 @@ mod tests {
                 "grad() needs a result with exactly one element",
             ),
             (
-                "let x = track(Tensor([2.0]))\nprint(x - x)\n",
-                "this operator is not supported for tracked tensors yet",
+                "let x = track(Tensor([2.0]))\nprint(x + Tensor([1.0, 2.0]))\n",
+                "tracked tensors need equal shapes (broadcasting is not supported yet)",
+            ),
+            (
+                "let x = track(Tensor([2.0]))\nlet y = x / 0.0\nprint(grad(y, x))\n",
+                "grad(): gradient is not finite",
             ),
         ] {
             assert_eq!(error_in_vm(src), msg);

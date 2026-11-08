@@ -1,0 +1,7 @@
+# loss = (w * x - target) / 2, with w tracked and x, target plain
+let w = track(Tensor([3.0]))
+let x = Tensor([2.0])
+let target = Tensor([5.0])
+let loss = (w * x - target) / 2.0
+print(loss)
+print(grad(loss, w))
