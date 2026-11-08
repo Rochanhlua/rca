@@ -60,14 +60,14 @@ More programs are in `examples/`.
 - Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
   broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
   See `docs/tensor.md`.
-- Automatic differentiation (reverse-mode, CPU): `track(t)` and `grad(y, x)`. Tracked tensors support `+ - * /`, also mixed with plain tensors or Floats (treated as constants). See `docs/autodiff-design.md`.
+- Automatic differentiation (reverse-mode, CPU): `track(t)` and `grad(y, x)`. Tracked tensors support `+ - * /`, `sum`, `mean` and rank 2 `matmul`, also mixed with plain tensors or Floats (treated as constants). `sum` and `mean` of a tracked tensor give a one-element Tensor, not a Float. See `docs/autodiff-design.md`.
 
 ## Not implemented yet
 
 - Native code generation
 - Borrowing and references
 - Map, generics, enum payloads, match expressions, pub const
-- Autodiff for matmul, sum, mean, transpose, reshape and elementwise math; broadcasting in autodiff; tensor method syntax; GPU support
+- Autodiff for max, min, transpose, reshape and elementwise math; broadcasting in autodiff; tensor method syntax; GPU support
 - Standard library modules
 - Package manager
 - Benchmarks (no performance claims are made)

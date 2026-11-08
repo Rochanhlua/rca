@@ -1,5 +1,5 @@
 //! Reverse-mode automatic differentiation.
-//! Milestones 1-2: Add, Sub, Mul and Div on equal-shaped tensors, grad of a one-element result.
+//! Milestones 1-3: Add, Sub, Mul, Div, Sum, Mean and MatMul (rank 2), grad of a one-element result.
 //! Plain tensors and Float scalars may be mixed in as constants (see `constant_like`).
 //! Design: docs/autodiff-design.md
 
@@ -20,6 +20,9 @@ pub enum Op {
     Sub,
     Mul,
     Div,
+    Sum,
+    Mean,
+    MatMul,
 }
 
 /// One operation in the graph. A node's id is always larger than its parents' ids,
@@ -29,8 +32,11 @@ pub struct Node {
     pub id: u64,
     pub op: Op,
     pub parents: Vec<Arc<Node>>,
-    /// Forward values the backward rule needs (Mul and Div save both inputs).
+    /// Forward values the backward rule needs (Mul, Div and MatMul save both inputs).
     pub saved: Vec<Arc<Vec<f64>>>,
+    /// Sizes the backward rule needs: Sum and Mean store [element count],
+    /// MatMul stores [m, k, n] for [m, k] x [k, n]. Empty for other ops.
+    pub dims: Vec<usize>,
 }
 
 /// A tensor value that remembers how it was computed.
@@ -51,6 +57,7 @@ pub fn leaf(shape: Vec<usize>, data: Arc<Vec<f64>>) -> Tracked {
             op: Op::Leaf,
             parents: vec![],
             saved: vec![],
+            dims: vec![],
         }),
     }
 }
@@ -80,6 +87,7 @@ pub fn add(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
             op: Op::Add,
             parents: vec![a.node.clone(), b.node.clone()],
             saved: vec![],
+            dims: vec![],
         }),
     })
 }
@@ -100,6 +108,7 @@ pub fn mul(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
             op: Op::Mul,
             parents: vec![a.node.clone(), b.node.clone()],
             saved: vec![a.data.clone(), b.data.clone()],
+            dims: vec![],
         }),
     })
 }
@@ -120,6 +129,7 @@ pub fn sub(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
             op: Op::Sub,
             parents: vec![a.node.clone(), b.node.clone()],
             saved: vec![],
+            dims: vec![],
         }),
     })
 }
@@ -140,8 +150,63 @@ pub fn div(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
             op: Op::Div,
             parents: vec![a.node.clone(), b.node.clone()],
             saved: vec![a.data.clone(), b.data.clone()],
+            dims: vec![],
         }),
     })
+}
+
+/// Sum of every element, as a tracked one-element tensor.
+pub fn sum(a: &Tracked) -> Tracked {
+    let total: f64 = a.data.iter().sum();
+    Tracked {
+        shape: vec![1],
+        data: Arc::new(vec![total]),
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Sum,
+            parents: vec![a.node.clone()],
+            saved: vec![],
+            dims: vec![a.data.len()],
+        }),
+    }
+}
+
+/// Mean of every element, as a tracked one-element tensor.
+pub fn mean(a: &Tracked) -> Result<Tracked, String> {
+    if a.data.is_empty() {
+        return Err("cannot take mean, max or min of an empty tensor".to_string());
+    }
+    let n = a.data.len();
+    let total: f64 = a.data.iter().sum();
+    Ok(Tracked {
+        shape: vec![1],
+        data: Arc::new(vec![total / n as f64]),
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Mean,
+            parents: vec![a.node.clone()],
+            saved: vec![],
+            dims: vec![n],
+        }),
+    })
+}
+
+/// Matrix product node. The caller computes and validates the forward result
+/// (shapes, size limits) with the plain `tensor_matmul`, so both paths agree.
+/// `a` is [m, k] and `b` is [k, n]; `shape` and `data` are the [m, n] result.
+pub fn matmul(a: &Tracked, b: &Tracked, shape: Vec<usize>, data: Arc<Vec<f64>>) -> Tracked {
+    let dims = vec![a.shape[0], a.shape[1], b.shape[1]];
+    Tracked {
+        shape,
+        data,
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::MatMul,
+            parents: vec![a.node.clone(), b.node.clone()],
+            saved: vec![a.data.clone(), b.data.clone()],
+            dims,
+        }),
+    }
 }
 
 /// A plain tensor or Float scalar used together with a tracked tensor `like`.
@@ -204,6 +269,35 @@ pub fn grad(y: &Tracked, x: &Tracked) -> Result<(Vec<usize>, Vec<f64>), String> 
             Op::Add => {
                 accumulate(&mut grads, node.parents[0].id, &g);
                 accumulate(&mut grads, node.parents[1].id, &g);
+            }
+            Op::Sum => {
+                let ga = vec![g[0]; node.dims[0]];
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Mean => {
+                let n = node.dims[0];
+                let ga = vec![g[0] / n as f64; n];
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::MatMul => {
+                // C = A x B with A [m, k], B [k, n], G [m, n]:
+                // dA = G x B^T, dB = A^T x G
+                let (m, k, n) = (node.dims[0], node.dims[1], node.dims[2]);
+                let a = &node.saved[0];
+                let b = &node.saved[1];
+                let mut ga = vec![0.0; m * k];
+                let mut gb = vec![0.0; k * n];
+                for i in 0..m {
+                    for j in 0..n {
+                        let gij = g[i * n + j];
+                        for kk in 0..k {
+                            ga[i * k + kk] += gij * b[kk * n + j];
+                            gb[kk * n + j] += a[i * k + kk] * gij;
+                        }
+                    }
+                }
+                accumulate(&mut grads, node.parents[0].id, &ga);
+                accumulate(&mut grads, node.parents[1].id, &gb);
             }
             Op::Sub => {
                 let neg: Vec<f64> = g.iter().map(|v| -v).collect();
@@ -362,6 +456,28 @@ mod tests {
         let y = mul(&x, &c).unwrap();
         assert_eq!(y.data[0], 12.0);
         assert_eq!(g(&y, &x), 4.0);
+    }
+
+    #[test]
+    fn sum_gradient() {
+        let x = leaf(vec![3], Arc::new(vec![1.0, 2.0, 3.0]));
+        let y = sum(&mul(&x, &x).unwrap());
+        assert_eq!(y.data[0], 14.0);
+        assert_eq!(grad(&y, &x).unwrap().1, vec![2.0, 4.0, 6.0]);
+    }
+
+    #[test]
+    fn mean_gradient() {
+        let x = leaf(vec![2], Arc::new(vec![2.0, 4.0]));
+        let y = mean(&mul(&x, &x).unwrap()).unwrap();
+        assert_eq!(y.data[0], 10.0);
+        assert_eq!(grad(&y, &x).unwrap().1, vec![2.0, 4.0]);
+    }
+
+    #[test]
+    fn mean_of_empty_is_error() {
+        let x = leaf(vec![0], Arc::new(vec![]));
+        assert!(mean(&x).is_err());
     }
 
     #[test]

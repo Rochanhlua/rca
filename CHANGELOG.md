@@ -7,3 +7,4 @@
 - MIT license, CI (fmt, clippy, test).
 - Reverse-mode autodiff (track, grad) for + and *.
 - Autodiff: subtraction, division, and plain tensors or Floats mixed with tracked tensors.
+- Autodiff: sum, mean and matmul (rank 2) for tracked tensors, with a linear regression example.

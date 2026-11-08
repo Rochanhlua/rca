@@ -767,6 +767,45 @@ mod tests {
     }
 
     #[test]
+    fn autodiff_sum_mean_matches() {
+        let src = "let x = track(Tensor([1.0, 2.0, 3.0]))\nprint(grad(sum(x * x), x))\nprint(grad(mean(x * x), x))\nprint(sum(x))\n";
+        same(
+            src,
+            "Tensor(shape=[3], [2.0, 4.0, 6.0])\nTensor(shape=[3], [0.6666666666666666, 1.3333333333333333, 2.0])\nTensor(shape=[1], [6.0])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_regression_example_matches() {
+        let src = include_str!("../../../examples/autodiff_regression.rca");
+        same(
+            src,
+            "Tensor(shape=[1], [8.5])\nTensor(shape=[2, 1], [[13.0], [18.0]])\n",
+        );
+    }
+
+    #[test]
+    fn autodiff_matmul_errors_match() {
+        for (src, msg) in [
+            (
+                "let a = track(Tensor([[1.0, 2.0]]))\nlet b = Tensor([[1.0, 2.0]])\nprint(matmul(a, b))\n",
+                "matmul shapes do not match: [1, 2] and [1, 2]",
+            ),
+            (
+                "let a = track(Tensor([1.0, 2.0]))\nprint(max(a))\n",
+                "max() and min() are not supported for tracked tensors yet",
+            ),
+            (
+                "let a = Tensor([1.0, 2.0])\nprint(grad(sum(a), a))\n",
+                "grad() needs two tracked Tensors (use track())",
+            ),
+        ] {
+            assert_eq!(error_in_vm(src), msg);
+            assert_eq!(error_in_tree(src), error_in_vm(src));
+        }
+    }
+
+    #[test]
     fn autodiff_errors_match() {
         for (src, msg) in [
             (

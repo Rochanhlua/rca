@@ -986,9 +986,11 @@ impl Checker {
                 self.check_arg_exprs(args);
                 return Type::Tensor;
             }
-            for a in args.iter() {
+            for (i, a) in args.iter().enumerate() {
                 let t = self.check_expr(&a.value);
-                if !matches!(t, Type::Tensor | Type::Unknown) {
+                // The result may come from sum() or mean(), which the checker types as Float.
+                let ok = matches!(t, Type::Tensor | Type::Unknown) || (i == 0 && t == Type::Float);
+                if !ok {
                     self.error(
                         format!("grad() needs Tensor arguments, found {}", t),
                         &a.value.span,
@@ -1448,6 +1450,13 @@ mod tests {
             first_error("print(relu(Tensor([1.0]), 2))\n")
                 .contains("relu() takes exactly 1 argument")
         );
+    }
+
+    #[test]
+    fn grad_accepts_float_result_from_sum() {
+        let src = "let x = track(Tensor([1.0]))\nprint(grad(sum(x), x))\n";
+        assert!(check(src).is_ok());
+        assert!(first_error("print(grad(1, Tensor([1.0])))\n").contains("found Int"));
     }
 
     #[test]

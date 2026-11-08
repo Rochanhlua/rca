@@ -552,6 +552,9 @@ mod tensor_index_tests {
 
 /// matmul(a, b): [m, n] x [n, p] = [m, p]. Rank 2 only for now.
 pub fn tensor_matmul(l: &Value, r: &Value) -> Result<Value, String> {
+    if matches!(l, Value::Tracked(_)) || matches!(r, Value::Tracked(_)) {
+        return tracked_matmul(l, r);
+    }
     let (s1, d1, s2, d2) = match (l, r) {
         (
             Value::Tensor {
@@ -763,6 +766,9 @@ mod tensor_broadcast_tests {
 
 /// sum / mean / max / min of every element. kind: 's', 'a' (mean), 'x' (max), 'n' (min).
 pub fn tensor_reduce(v: &Value, kind: char) -> Result<Value, String> {
+    if let Value::Tracked(t) = v {
+        return tracked_reduce(t, kind);
+    }
     let data = match v {
         Value::Tensor { data, .. } => data,
         _ => return Err("this function needs a Tensor".to_string()),
@@ -946,6 +952,127 @@ fn tracked_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
         _ => return Err("this operator is not supported for tracked tensors yet".to_string()),
     };
     Ok(Value::Tracked(Arc::new(t)))
+}
+
+/// matmul where at least one operand is tracked. A plain Tensor on the other
+/// side is a constant. The forward result comes from the plain `tensor_matmul`.
+fn tracked_matmul(l: &Value, r: &Value) -> Result<Value, String> {
+    use crate::runtime::autodiff;
+    let operand = |v: &Value| -> Result<Arc<autodiff::Tracked>, String> {
+        match v {
+            Value::Tracked(t) => Ok(t.clone()),
+            Value::Tensor { shape, data } => {
+                Ok(Arc::new(autodiff::constant_like(shape, data, None)))
+            }
+            _ => Err("matmul() needs two Tensors".to_string()),
+        }
+    };
+    let a = operand(l)?;
+    let b = operand(r)?;
+    let plain = |t: &autodiff::Tracked| Value::Tensor {
+        shape: t.shape.clone(),
+        data: t.data.clone(),
+    };
+    match tensor_matmul(&plain(&a), &plain(&b))? {
+        Value::Tensor { shape, data } => Ok(Value::Tracked(Arc::new(autodiff::matmul(
+            &a, &b, shape, data,
+        )))),
+        _ => Err("matmul() needs two Tensors".to_string()),
+    }
+}
+
+/// sum / mean of a tracked tensor gives a tracked one-element Tensor (not a Float),
+/// so that grad() can start from it. max and min are not differentiable yet.
+fn tracked_reduce(t: &Arc<crate::runtime::autodiff::Tracked>, kind: char) -> Result<Value, String> {
+    use crate::runtime::autodiff;
+    match kind {
+        's' => Ok(Value::Tracked(Arc::new(autodiff::sum(t)))),
+        'a' => Ok(Value::Tracked(Arc::new(autodiff::mean(t)?))),
+        _ => Err("max() and min() are not supported for tracked tensors yet".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tracked_matmul_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
+    }
+
+    /// sum(matmul(a, b)) computed with plain tensors only (the reference).
+    fn plain_total(a: &[f64], b: &[f64]) -> f64 {
+        let c = tensor_matmul(&t(vec![2, 3], a.to_vec()), &t(vec![3, 2], b.to_vec())).unwrap();
+        match tensor_reduce(&c, 's').unwrap() {
+            Value::Float(x) => x,
+            _ => unreachable!(),
+        }
+    }
+
+    fn tracked(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        tensor_track(&t(shape, data)).unwrap()
+    }
+
+    fn grad_data(y: &Value, x: &Value) -> Vec<f64> {
+        match tensor_grad(y, x).unwrap() {
+            Value::Tensor { data, .. } => data.to_vec(),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn matmul_gradient_matches_numeric() {
+        let a = vec![1.0, -2.0, 0.5, 3.0, 4.0, -1.5];
+        let b = vec![2.0, 1.0, -1.0, 0.5, 3.0, -2.0];
+        let ta = tracked(vec![2, 3], a.clone());
+        let tb = tracked(vec![3, 2], b.clone());
+        let y = tensor_reduce(&tensor_matmul(&ta, &tb).unwrap(), 's').unwrap();
+        let ga = grad_data(&y, &ta);
+        let gb = grad_data(&y, &tb);
+        let h = 1e-6;
+        for i in 0..6 {
+            let mut hi = a.clone();
+            let mut lo = a.clone();
+            hi[i] += h;
+            lo[i] -= h;
+            let numeric = (plain_total(&hi, &b) - plain_total(&lo, &b)) / (2.0 * h);
+            assert!((ga[i] - numeric).abs() < 1e-5, "dA[{}]", i);
+            let mut hi = b.clone();
+            let mut lo = b.clone();
+            hi[i] += h;
+            lo[i] -= h;
+            let numeric = (plain_total(&a, &hi) - plain_total(&a, &lo)) / (2.0 * h);
+            assert!((gb[i] - numeric).abs() < 1e-5, "dB[{}]", i);
+        }
+    }
+
+    #[test]
+    fn matmul_with_plain_operand_is_constant() {
+        let w = tracked(vec![2, 1], vec![2.0, 1.0]);
+        let x = t(vec![1, 2], vec![3.0, 4.0]);
+        let y = tensor_matmul(&x, &w).unwrap();
+        assert_eq!(grad_data(&y, &w), vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn matmul_shape_errors_match_plain() {
+        let a = tracked(vec![2, 3], vec![0.0; 6]);
+        let b = tracked(vec![2, 2], vec![0.0; 4]);
+        assert_eq!(
+            tensor_matmul(&a, &b).unwrap_err(),
+            tensor_matmul(&t(vec![2, 3], vec![0.0; 6]), &t(vec![2, 2], vec![0.0; 4])).unwrap_err()
+        );
+    }
+
+    #[test]
+    fn max_min_of_tracked_are_errors() {
+        let a = tracked(vec![2], vec![1.0, 2.0]);
+        assert!(tensor_reduce(&a, 'x').is_err());
+        assert!(tensor_reduce(&a, 'n').is_err());
+    }
 }
 
 /// track(t): turn a Tensor into a differentiable leaf.
