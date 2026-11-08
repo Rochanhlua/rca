@@ -73,4 +73,14 @@ Implemented (details in enum.md):
 
 Still not implemented:
 - enum payloads, match expressions, guards, nested patterns
-- const, private, type aliases, generics
+- private, type aliases, generics, pub const
+
+## Current status (v1.1) - const
+Implemented:
+- `const NAME: Type = value` or `const NAME = value`
+- Top-level only; the value must be a literal or other constants (operators allowed)
+- Assigning to a constant is an error: `cannot assign to constant 'NAME'`
+- Constants can be read inside functions
+
+Still not implemented:
+- `pub const` and importing constants from other modules

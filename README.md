@@ -55,6 +55,7 @@ More programs are in `examples/`.
 - Bytecode compiler, optimizer, validator and VM
 - Runtime checks: list bounds, integer overflow, division by zero, call depth
 - enum and match statement (see `docs/enum.md`)
+- const declarations (top-level, constant values only)
 - Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
   broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
   See `docs/tensor.md`.
@@ -63,7 +64,7 @@ More programs are in `examples/`.
 
 - Native code generation
 - Borrowing and references
-- Map, Tuple, const, generics, enum payloads, match expressions
+- Map, Tuple, generics, enum payloads, match expressions, pub const
 - Automatic differentiation, tensor method syntax, GPU support
 - Standard library modules
 - Package manager
