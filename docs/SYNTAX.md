@@ -94,3 +94,7 @@ Implemented (details in tuple.md):
 Still not implemented:
 - Tuple type annotations, destructuring, empty and 1-element tuples
 - Map
+
+## Current status (v1.3) - tuple type annotations
+- `(Int, String)` works in let annotations, function parameters and return types.
+- Still not implemented: destructuring, Map.

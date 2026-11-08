@@ -65,7 +65,7 @@ More programs are in `examples/`.
 
 - Native code generation
 - Borrowing and references
-- Map, generics, enum payloads, match expressions, pub const, tuple type annotations and destructuring
+- Map, generics, enum payloads, match expressions, pub const, tuple destructuring
 - Automatic differentiation, tensor method syntax, GPU support
 - Standard library modules
 - Package manager

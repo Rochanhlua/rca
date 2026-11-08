@@ -27,12 +27,17 @@ VM and tree interpreter give identical results (tests in vm/mod.rs).
 - Equality reuses `apply_binary`; no new instruction was needed.
 
 ## 4. Not implemented yet
-- Tuple type annotations (`let p: (Int, String) = ...`), because `parse_type` reads one name only.
+- Tuple types in struct fields and nested tuple types are untested.
 - Destructuring (`let (a, b) = p`).
 - Empty and one-element tuples.
 - Non-literal indexing.
-- Tuples as function parameter or return types (needs type annotations).
+
 
 ## 5. Rules for future changes
 - Interpreter and VM must give identical results.
 - Every feature needs tests with known expected values.
+
+## 6. Type annotations (v1.3)
+- `let p: (Int, String) = (1, "a")`
+- `fn swap(a: Int, b: String) -> (String, Int)` works for parameters and return types.
+- A tuple type needs at least 2 elements: `(Int)` is a parse error.
