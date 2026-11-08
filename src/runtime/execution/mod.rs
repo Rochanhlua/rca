@@ -323,6 +323,17 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => Ok(Flow::Normal),
+            StmtKind::LetTuple {
+                names,
+                mutable,
+                value,
+            } => {
+                for s in crate::compiler::ast::desugar_let_tuple(names, *mutable, value, &stmt.span)
+                {
+                    self.exec_stmt(&s)?;
+                }
+                Ok(Flow::Normal)
+            }
             StmtKind::Match { subject, arms } => {
                 let desugared = crate::compiler::ast::desugar_match(subject, arms, &stmt.span);
                 self.exec_stmt(&desugared)

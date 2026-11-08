@@ -1,0 +1,10 @@
+fn swap(p: (Int, Int)) -> (Int, Int):
+    let (a, b) = p
+    return (b, a)
+
+let (x, y) = swap((1, 2))
+print(x)
+print(y)
+if true:
+    let (m, n) = (3, 4)
+    print(m + n)

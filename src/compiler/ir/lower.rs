@@ -450,6 +450,15 @@ impl Compiler {
             }
             // Already handled when the program was scanned.
             StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => {}
+            StmtKind::LetTuple {
+                names,
+                mutable,
+                value,
+            } => {
+                for s in crate::compiler::ast::desugar_let_tuple(names, *mutable, value, span) {
+                    self.compile_stmt(&s)?;
+                }
+            }
             StmtKind::Match { subject, arms } => {
                 let desugared = crate::compiler::ast::desugar_match(subject, arms, span);
                 self.compile_stmt(&desugared)?;

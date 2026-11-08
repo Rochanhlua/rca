@@ -92,9 +92,13 @@ Implemented (details in tuple.md):
 - Tuples are immutable
 
 Still not implemented:
-- Tuple type annotations, destructuring, empty and 1-element tuples
+- Empty and 1-element tuples
 - Map
 
 ## Current status (v1.3) - tuple type annotations
 - `(Int, String)` works in let annotations, function parameters and return types.
-- Still not implemented: destructuring, Map.
+- Still not implemented: Map.
+
+## Current status (v1.4) - tuple destructuring
+- `let (a, b) = p` and `mut (a, b) = p` are implemented (see `docs/tuple.md`).
+- Still not implemented: nested patterns, Map.

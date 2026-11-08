@@ -28,7 +28,6 @@ VM and tree interpreter give identical results (tests in vm/mod.rs).
 
 ## 4. Not implemented yet
 - Tuple types in struct fields and nested tuple types are untested.
-- Destructuring (`let (a, b) = p`).
 - Empty and one-element tuples.
 - Non-literal indexing.
 
@@ -41,3 +40,13 @@ VM and tree interpreter give identical results (tests in vm/mod.rs).
 - `let p: (Int, String) = (1, "a")`
 - `fn swap(a: Int, b: String) -> (String, Int)` works for parameters and return types.
 - A tuple type needs at least 2 elements: `(Int)` is a parse error.
+
+## 7. Destructuring (v1.4)
+- `let (a, b) = p` and `mut (a, b) = p` declare one variable per element, each with its exact element type.
+- Works at top level, inside functions and inside blocks.
+- Checker errors (exactly one error, no follow-up errors):
+  - `cannot destructure a tuple of N elements into M names`
+  - `cannot destructure T as a tuple`
+  - `'a' is already declared in this scope`
+- Implementation: the checker declares the names; the VM and the tree interpreter use `desugar_let_tuple` (`let $tuple_L_C = p`, then `let a = $tuple_L_C[0]`, ...).
+- Not supported: nested patterns such as `let ((a, b), c) = p`, type annotations on the pattern, destructuring in assignment or function parameters.
