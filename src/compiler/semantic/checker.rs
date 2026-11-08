@@ -1408,6 +1408,15 @@ mod tests {
     }
 
     #[test]
+    fn tensor_math_checks_argument() {
+        assert!(first_error("print(exp(5))\n").contains("exp() needs a Tensor, found Int"));
+        assert!(
+            first_error("print(relu(Tensor([1.0]), 2))\n")
+                .contains("relu() takes exactly 1 argument")
+        );
+    }
+
+    #[test]
     fn wrong_argument_type() {
         assert!(
             first_error("fn f(a: Int) -> Int:\n    return a\nlet r = f(\"x\")\n")
