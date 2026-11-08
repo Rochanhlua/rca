@@ -658,7 +658,10 @@ impl Compiler {
             return Ok(());
         }
 
-        if matches!(name.as_str(), "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid") {
+        if matches!(
+            name.as_str(),
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+        ) {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));
             }

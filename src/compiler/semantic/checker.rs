@@ -945,7 +945,10 @@ impl Checker {
             return ret;
         }
 
-        if matches!(name.as_str(), "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid") {
+        if matches!(
+            name.as_str(),
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+        ) {
             if args.len() != 1 {
                 self.error(format!("{}() takes exactly 1 argument", name), span);
                 self.check_arg_exprs(args);

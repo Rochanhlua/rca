@@ -202,7 +202,10 @@ pub fn tensor_from_value(v: &Value) -> Result<Value, String> {
     if total != data.len() {
         return Err("tensor rows must all have the same length".to_string());
     }
-    Ok(Value::Tensor { shape, data: data.into() })
+    Ok(Value::Tensor {
+        shape,
+        data: data.into(),
+    })
 }
 
 #[cfg(test)]
@@ -402,7 +405,12 @@ pub fn tensor_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
             }
             Ok(Value::Tensor {
                 shape: s1.clone(),
-                data: d1.iter().zip(d2.iter()).map(|(a, b)| f(*a, *b)).collect::<Vec<f64>>().into(),
+                data: d1
+                    .iter()
+                    .zip(d2.iter())
+                    .map(|(a, b)| f(*a, *b))
+                    .collect::<Vec<f64>>()
+                    .into(),
             })
         }
         (Value::Tensor { shape, data }, Value::Float(x)) => Ok(Value::Tensor {
@@ -422,7 +430,10 @@ mod tensor_arith_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data: data.into() }
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
     }
 
     #[test]
@@ -572,7 +583,10 @@ mod tensor_matmul_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data: data.into() }
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
     }
 
     #[test]
@@ -686,7 +700,10 @@ mod tensor_broadcast_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data: data.into() }
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
     }
 
     #[test]
@@ -813,7 +830,10 @@ mod tensor_numeric_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data: data.into() }
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
     }
 
     #[test]
@@ -937,7 +957,10 @@ pub fn tensor_map(v: &Value, kind: char) -> Result<Value, String> {
         }
         out.push(y);
     }
-    Ok(Value::Tensor { shape: shape.clone(), data: out.into() })
+    Ok(Value::Tensor {
+        shape: shape.clone(),
+        data: out.into(),
+    })
 }
 
 #[cfg(test)]
@@ -945,7 +968,10 @@ mod tensor_map_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data: data.into() }
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
     }
     fn data_of(v: &Value) -> Vec<f64> {
         match v {
@@ -956,21 +982,36 @@ mod tensor_map_tests {
 
     #[test]
     fn exp_log_sqrt_basic() {
-        assert_eq!(data_of(&tensor_map(&t(vec![2], vec![0.0, 0.0]), 'e').unwrap()), vec![1.0, 1.0]);
-        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![1.0]), 'l').unwrap()), vec![0.0]);
-        assert_eq!(data_of(&tensor_map(&t(vec![2], vec![4.0, 9.0]), 'q').unwrap()), vec![2.0, 3.0]);
+        assert_eq!(
+            data_of(&tensor_map(&t(vec![2], vec![0.0, 0.0]), 'e').unwrap()),
+            vec![1.0, 1.0]
+        );
+        assert_eq!(
+            data_of(&tensor_map(&t(vec![1], vec![1.0]), 'l').unwrap()),
+            vec![0.0]
+        );
+        assert_eq!(
+            data_of(&tensor_map(&t(vec![2], vec![4.0, 9.0]), 'q').unwrap()),
+            vec![2.0, 3.0]
+        );
     }
 
     #[test]
     fn relu_and_tanh() {
         let r = tensor_map(&t(vec![3], vec![-1.0, 0.0, 2.0]), 'r').unwrap();
         assert_eq!(data_of(&r), vec![0.0, 0.0, 2.0]);
-        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![0.0]), 't').unwrap()), vec![0.0]);
+        assert_eq!(
+            data_of(&tensor_map(&t(vec![1], vec![0.0]), 't').unwrap()),
+            vec![0.0]
+        );
     }
 
     #[test]
     fn sigmoid_is_stable() {
-        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![0.0]), 's').unwrap()), vec![0.5]);
+        assert_eq!(
+            data_of(&tensor_map(&t(vec![1], vec![0.0]), 's').unwrap()),
+            vec![0.5]
+        );
         let big = data_of(&tensor_map(&t(vec![2], vec![-1000.0, 1000.0]), 's').unwrap());
         assert_eq!(big, vec![0.0, 1.0]);
     }
