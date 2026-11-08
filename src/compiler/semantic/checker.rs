@@ -24,6 +24,8 @@ pub struct Checker {
     loop_depth: usize,
     structs: HashMap<String, Vec<(String, Type)>>,
     enums: HashMap<String, Vec<String>>,
+    consts: HashSet<String>,
+    block_depth: usize,
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
     imports: HashMap<String, ModuleExports>,
@@ -38,6 +40,8 @@ impl Checker {
             loop_depth: 0,
             structs: HashMap::new(),
             enums: HashMap::new(),
+            consts: HashSet::new(),
+            block_depth: 0,
             functions: HashMap::new(),
             current_return: None,
             imports: HashMap::new(),
@@ -50,7 +54,11 @@ impl Checker {
         self.collect_declarations(program);
         for stmt in &program.statements {
             match &stmt.kind {
-                StmtKind::Function(f) => self.check_function(f, &stmt.span),
+                StmtKind::Function(f) => {
+                    self.block_depth += 1;
+                    self.check_function(f, &stmt.span);
+                    self.block_depth -= 1;
+                }
                 StmtKind::Struct(_) => {}
                 StmtKind::Enum(_) => {}
                 _ => self.check_stmt(stmt),
@@ -323,7 +331,25 @@ impl Checker {
         }
     }
 
+    fn is_const_expr(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Bool(_) => true,
+            ExprKind::Unary { operand, .. } => self.is_const_expr(operand),
+            ExprKind::Binary { left, right, .. } => {
+                self.is_const_expr(left) && self.is_const_expr(right)
+            }
+            ExprKind::Ident(n) => self.consts.contains(n),
+            _ => false,
+        }
+    }
+
     fn check_block(&mut self, stmts: &[Stmt]) {
+        self.block_depth += 1;
+        self.check_block_inner(stmts);
+        self.block_depth -= 1;
+    }
+
+    fn check_block_inner(&mut self, stmts: &[Stmt]) {
         self.scopes.push();
         for s in stmts {
             self.check_stmt(s);
@@ -353,10 +379,26 @@ impl Checker {
             StmtKind::Let {
                 name,
                 mutable,
+                constant,
                 ty,
                 value,
             } => {
                 let value_ty = self.check_expr(value);
+                if *constant {
+                    if self.block_depth > 0 {
+                        self.error(
+                            "constants can only be declared at the top level",
+                            &stmt.span,
+                        );
+                    }
+                    if !self.is_const_expr(value) {
+                        self.error(
+                            "a constant value must be a literal or other constants",
+                            &value.span,
+                        );
+                    }
+                    self.consts.insert(name.clone());
+                }
                 let var_ty = match ty {
                     Some(annotation) => {
                         let declared = self.resolve_type(annotation, true);
@@ -391,7 +433,12 @@ impl Checker {
                                 self.error(format!("undefined variable '{}'", name), &target.span);
                             }
                             Some((var_ty, mutable)) => {
-                                if !mutable {
+                                if !mutable && self.consts.contains(name) {
+                                    self.error(
+                                        format!("cannot assign to constant '{}'", name),
+                                        &target.span,
+                                    );
+                                } else if !mutable {
                                     self.error(
                                         format!(
                                             "cannot assign to immutable variable '{}' (declare it with 'mut')",
@@ -1856,5 +1903,59 @@ mod enum_match_tests {
         assert_eq!(first_error(src), "unreachable match arm after '_'");
         let src2 = "let f = 1.5\nmatch f:\n    _:\n        print(1)\n";
         assert_eq!(first_error(src2), "cannot match on Float");
+    }
+}
+
+#[cfg(test)]
+mod const_check_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn check(src: &str) -> Result<(), Vec<Diagnostic>> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program)
+    }
+
+    fn first_error(src: &str) -> String {
+        check(src).unwrap_err()[0].message.clone()
+    }
+
+    #[test]
+    fn valid_constants() {
+        assert!(check("const A: Int = 2\nconst B = A * 3\nconst S = \"x\"\nprint(B)\n").is_ok());
+    }
+
+    #[test]
+    fn assign_to_constant() {
+        assert_eq!(
+            first_error("const A = 1\nA = 2\n"),
+            "cannot assign to constant 'A'"
+        );
+    }
+
+    #[test]
+    fn constant_must_be_top_level() {
+        assert_eq!(
+            first_error("fn f() -> Int:\n    const X = 1\n    return X\n"),
+            "constants can only be declared at the top level"
+        );
+    }
+
+    #[test]
+    fn constant_value_must_be_constant() {
+        assert_eq!(
+            first_error("let a = 1\nconst Z = a\n"),
+            "a constant value must be a literal or other constants"
+        );
+    }
+
+    #[test]
+    fn constant_type_mismatch() {
+        assert_eq!(
+            first_error("const A: Int = \"x\"\n"),
+            "type mismatch: expected Int, found String"
+        );
     }
 }

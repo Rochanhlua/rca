@@ -1,0 +1,9 @@
+const MAX: Int = 100
+const DOUBLE = MAX * 2
+const NAME = "rca"
+print(MAX)
+print(DOUBLE)
+print(NAME)
+fn f() -> Int:
+    return MAX + 1
+print(f())

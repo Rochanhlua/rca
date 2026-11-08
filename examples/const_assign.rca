@@ -1,0 +1,2 @@
+const MAX: Int = 1
+MAX = 2

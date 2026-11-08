@@ -122,8 +122,9 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Stmt, Diagnostic> {
         let span = self.span();
         let kind = match self.peek().clone() {
-            TokenKind::Let => self.parse_let(false)?,
-            TokenKind::Mut => self.parse_let(true)?,
+            TokenKind::Let => self.parse_let(false, false)?,
+            TokenKind::Mut => self.parse_let(true, false)?,
+            TokenKind::Const => self.parse_let(false, true)?,
             TokenKind::Fn => StmtKind::Function(self.parse_function()?),
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
             TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
@@ -242,7 +243,7 @@ impl Parser {
         Ok(TypeExpr { name, span })
     }
 
-    fn parse_let(&mut self, mutable: bool) -> Result<StmtKind, Diagnostic> {
+    fn parse_let(&mut self, mutable: bool, constant: bool) -> Result<StmtKind, Diagnostic> {
         self.advance(); // let or mut
         let (name, _) = self.expect_ident("a variable name")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -256,6 +257,7 @@ impl Parser {
         Ok(StmtKind::Let {
             name,
             mutable,
+            constant,
             ty,
             value,
         })
@@ -1051,5 +1053,57 @@ mod match_parse_tests {
     #[test]
     fn match_arm_needs_a_colon() {
         assert!(parse_result("match n:\n    0\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod const_parse_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn parse_result(src: &str) -> Result<Program, Diagnostic> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program()
+    }
+
+    #[test]
+    fn const_with_type() {
+        let p = parse_result("const MAX: Int = 100\n").unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Let {
+                name,
+                mutable,
+                constant,
+                ty,
+                ..
+            } => {
+                assert_eq!(name, "MAX");
+                assert!(!*mutable);
+                assert!(*constant);
+                assert!(ty.is_some());
+            }
+            other => panic!("expected Let, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn const_without_type_and_let_is_not_const() {
+        let p = parse_result("const A = 1\nlet b = 2\n").unwrap();
+        assert!(matches!(
+            &p.statements[0].kind,
+            StmtKind::Let { constant: true, .. }
+        ));
+        assert!(matches!(
+            &p.statements[1].kind,
+            StmtKind::Let {
+                constant: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn const_needs_a_value() {
+        assert!(parse_result("const A: Int\n").is_err());
     }
 }

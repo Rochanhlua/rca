@@ -115,6 +115,7 @@ pub enum StmtKind {
     Let {
         name: String,
         mutable: bool,
+        constant: bool,
         ty: Option<TypeExpr>,
         value: Expr,
     },
@@ -236,6 +237,7 @@ pub fn desugar_match(subject: &Expr, arms: &[MatchArm], span: &Span) -> Stmt {
         kind: StmtKind::Let {
             name: hidden,
             mutable: false,
+            constant: false,
             ty: None,
             value: subject.clone(),
         },
