@@ -547,7 +547,12 @@ impl Compiler {
                     self.emit(ins, span);
                 }
             },
-            ExprKind::Tuple(_) => return Err(err("tuples are not supported yet", span)),
+            ExprKind::Tuple(items) => {
+                for item in items {
+                    self.compile_expr(item)?;
+                }
+                self.emit(Instruction::MakeTuple(items.len()), span);
+            }
             ExprKind::List(items) => {
                 for item in items {
                     self.compile_expr(item)?;

@@ -65,6 +65,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         I::Return | I::Throw => (1, 0),
         I::StoreIndex => (3, 1),
         I::MakeList(n) => (*n, 1),
+        I::MakeTuple(n) => (*n, 1),
         I::Print(n) => (*n, 1),
         I::MakeStruct(id) => match program.structs.get(*id) {
             Some(s) => (s.fields.len(), 1),

@@ -68,6 +68,8 @@ pub enum Instruction {
 
     // lists
     MakeList(usize),
+    /// Pops n values, pushes a Tuple.
+    MakeTuple(usize),
     Index,
     /// Stack: [value, list, index] -> new list
     StoreIndex,

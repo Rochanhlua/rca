@@ -374,7 +374,13 @@ impl Interpreter {
                     Self::apply_binary(op, l, r, &expr.span)
                 }
             },
-            ExprKind::Tuple(_) => Err(err("tuples are not supported yet", &expr.span)),
+            ExprKind::Tuple(items) => {
+                let mut out = Vec::new();
+                for item in items {
+                    out.push(self.eval_expr(item)?);
+                }
+                Ok(Value::Tuple(out))
+            }
             ExprKind::List(items) => {
                 let mut out = Vec::new();
                 for item in items {
@@ -403,6 +409,10 @@ impl Interpreter {
                     (t @ Value::Tensor { .. }, Value::Int(i)) => {
                         crate::runtime::values::tensor_index(&t, i).map_err(|m| err(m, &expr.span))
                     }
+                    (Value::Tuple(items), Value::Int(i)) => match items.get(i as usize) {
+                        Some(v) if i >= 0 => Ok(v.clone()),
+                        _ => Err(err("tuple index out of range", &expr.span)),
+                    },
                     _ => Err(err("invalid index operation", &expr.span)),
                 }
             }
@@ -624,6 +634,7 @@ impl Interpreter {
             return match self.eval_expr(&first.value)? {
                 Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
                 Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Tuple(items) => Ok(Value::Int(items.len() as i64)),
                 Value::Tensor { shape, .. } => Ok(Value::Int(shape[0] as i64)),
                 _ => Err(err("len() needs a String or List", span)),
             };

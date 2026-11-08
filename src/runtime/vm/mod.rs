@@ -260,6 +260,11 @@ impl<'a> Vm<'a> {
                 }
 
                 // lists
+                Instruction::MakeTuple(n) => {
+                    let start = self.stack.len() - *n;
+                    let items = self.stack.split_off(start);
+                    self.stack.push(Value::Tuple(items));
+                }
                 Instruction::MakeList(n) => {
                     let start = self.stack.len() - *n;
                     let items = self.stack.split_off(start);
@@ -288,6 +293,10 @@ impl<'a> Vm<'a> {
                                 Err(m) => return Err(err(m, span)),
                             }
                         }
+                        (Value::Tuple(items), Value::Int(i)) => match items.get(i as usize) {
+                            Some(v) if i >= 0 => self.stack.push(v.clone()),
+                            _ => return Err(err("tuple index out of range", span)),
+                        },
                         _ => return Err(err("invalid index operation", span)),
                     }
                 }
@@ -460,6 +469,7 @@ impl<'a> Vm<'a> {
                     match v {
                         Value::Str(s) => self.stack.push(Value::Int(s.chars().count() as i64)),
                         Value::List(items) => self.stack.push(Value::Int(items.len() as i64)),
+                        Value::Tuple(items) => self.stack.push(Value::Int(items.len() as i64)),
                         Value::Tensor { shape, .. } => self.stack.push(Value::Int(shape[0] as i64)),
                         _ => return Err(err("len() needs a String or List", span)),
                     }
@@ -820,6 +830,24 @@ mod tests {
         same(
             "mut n = 0\nfn next() -> Int:\n    return 1\nmatch next():\n    0:\n        print(0)\n    1:\n        print(1)\n    _:\n        print(2)\n",
             "1\n",
+        );
+    }
+
+    // ----- tuples: VM and tree interpreter must agree -----
+
+    #[test]
+    fn tuple_print_index_len() {
+        same(
+            "let p = (1, \"a\", true)\nprint(p)\nprint(p[0])\nprint(p[1])\nprint(len(p))\n",
+            "(1, \"a\", true)\n1\na\n3\n",
+        );
+    }
+
+    #[test]
+    fn tuple_equality_and_function() {
+        same(
+            "fn pair(a: Int) -> Int:\n    let t = (a, a + 1)\n    return t[1]\nprint(pair(4))\nprint((1, 2) == (1, 2))\nprint((1, 2) != (1, 3))\n",
+            "5\ntrue\ntrue\n",
         );
     }
 }

@@ -1,0 +1,6 @@
+let p = (1, "a", 2.5)
+print(p)
+print(p[0])
+print(p[2])
+print(len(p))
+print(p == (1, "a", 2.5))

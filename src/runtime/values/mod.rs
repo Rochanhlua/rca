@@ -10,6 +10,7 @@ pub enum Value {
     Str(String),
     None,
     List(Vec<Value>),
+    Tuple(Vec<Value>),
     /// Start (inclusive) and end (exclusive), like `0..10`.
     Range(i64, i64),
     /// Row-major flat storage. Invariant: shape.iter().product() == data.len().
@@ -45,6 +46,16 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::None => write!(f, "none"),
+            Value::Tuple(items) => {
+                write!(f, "(")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item.repr())?;
+                }
+                write!(f, ")")
+            }
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
