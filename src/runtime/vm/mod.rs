@@ -448,6 +448,13 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::TensorMap(kind) => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_map(&v, *kind) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::TensorReshape => {
                     let s = self.pop();
                     let v = self.pop();

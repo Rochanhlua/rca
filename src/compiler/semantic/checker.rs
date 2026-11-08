@@ -945,6 +945,25 @@ impl Checker {
             return ret;
         }
 
+        if matches!(
+            name.as_str(),
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+        ) {
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("{}() needs a Tensor, found {}", name, t),
+                    &args[0].value.span,
+                );
+            }
+            return Type::Tensor;
+        }
+
         if name == "reshape" {
             if args.len() != 2 {
                 self.error("reshape() takes exactly 2 arguments".to_string(), span);

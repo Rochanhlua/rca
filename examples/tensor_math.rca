@@ -1,0 +1,6 @@
+let x = Tensor([[-1.0, 0.0], [2.0, 4.0]])
+print(relu(x))
+print(sqrt(Tensor([4.0, 9.0, 16.0])))
+print(exp(Tensor([0.0, 0.0])))
+print(sigmoid(Tensor([0.0])))
+print(log(Tensor([1.0])))

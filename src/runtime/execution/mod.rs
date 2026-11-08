@@ -620,6 +620,25 @@ impl Interpreter {
             return r.map_err(|m| err(m, span));
         }
 
+        if matches!(
+            name.as_str(),
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+        ) {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            let kind = match name.as_str() {
+                "exp" => 'e',
+                "log" => 'l',
+                "sqrt" => 'q',
+                "tanh" => 't',
+                "relu" => 'r',
+                _ => 's',
+            };
+            return crate::runtime::values::tensor_map(&v, kind).map_err(|m| err(m, span));
+        }
+
         if name == "reshape" {
             if args.len() != 2 {
                 return Err(err("reshape() takes exactly 2 arguments", span));

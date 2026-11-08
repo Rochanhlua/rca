@@ -114,6 +114,9 @@ pub enum Instruction {
     TensorMin,
     /// Pops a Tensor, pushes its transpose.
     TensorTranspose,
+    /// Pops a Tensor, pushes it with an elementwise function applied.
+    /// kind: 'e' exp, 'l' log, 'q' sqrt, 't' tanh, 'r' relu, 's' sigmoid.
+    TensorMap(char),
     /// Pops a shape List then a Tensor, pushes the reshaped Tensor.
     TensorReshape,
     /// Pops a value, converts it, pushes the result.

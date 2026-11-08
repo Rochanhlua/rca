@@ -658,6 +658,26 @@ impl Compiler {
             return Ok(());
         }
 
+        if matches!(
+            name.as_str(),
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+        ) {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let kind = match name.as_str() {
+                "exp" => 'e',
+                "log" => 'l',
+                "sqrt" => 'q',
+                "tanh" => 't',
+                "relu" => 'r',
+                _ => 's',
+            };
+            self.emit(Instruction::TensorMap(kind), span);
+            return Ok(());
+        }
+
         if name == "reshape" {
             if args.len() != 2 {
                 return Err(err("reshape() takes exactly 2 arguments", span));
