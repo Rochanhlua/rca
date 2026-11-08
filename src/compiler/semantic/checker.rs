@@ -78,6 +78,14 @@ impl Checker {
     // ---------- declarations (structs and functions) ----------
 
     fn resolve_type(&mut self, t: &TypeExpr, report: bool) -> Type {
+        if !t.elements.is_empty() {
+            let items: Vec<Type> = t
+                .elements
+                .iter()
+                .map(|e| self.resolve_type(e, report))
+                .collect();
+            return Type::Tuple(items);
+        }
         if let Some(ty) = Type::from_name(&t.name) {
             return ty;
         }
@@ -2071,5 +2079,44 @@ mod tuple_assign_tests {
             first_error("mut p = (1, 2)\np[0] = 5\n"),
             "tuples are immutable, cannot assign to an element"
         );
+    }
+}
+
+#[cfg(test)]
+mod tuple_annotation_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn check(src: &str) -> Result<(), Vec<Diagnostic>> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program)
+    }
+
+    #[test]
+    fn annotated_tuple_is_ok() {
+        assert!(check("let p: (Int, String) = (1, \"a\")\nlet n: Int = p[0]\n").is_ok());
+    }
+
+    #[test]
+    fn annotation_mismatch_is_error() {
+        let e = check("let p: (Int, String) = (1, 2)\n").unwrap_err();
+        assert_eq!(
+            e[0].message,
+            "type mismatch: expected (Int, String), found (Int, Int)"
+        );
+    }
+
+    #[test]
+    fn tuple_function_param_and_return() {
+        let src = "fn swap(a: Int, b: String) -> (String, Int):\n    return (b, a)\nlet q = swap(1, \"x\")\nlet s: String = q[0]\n";
+        assert!(check(src).is_ok());
+    }
+
+    #[test]
+    fn wrong_return_tuple_is_error() {
+        let src = "fn f() -> (Int, Int):\n    return (1, \"x\")\n";
+        assert!(check(src).is_err());
     }
 }

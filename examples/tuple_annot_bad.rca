@@ -1,0 +1,1 @@
+let p: (Int, String) = (1, 2)

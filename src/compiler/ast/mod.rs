@@ -3,6 +3,8 @@ use crate::compiler::lexer::token::Span;
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeExpr {
     pub name: String,
+    /// Non-empty only for tuple types such as `(Int, String)`.
+    pub elements: Vec<TypeExpr>,
     pub span: Span,
 }
 

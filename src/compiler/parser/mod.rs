@@ -239,8 +239,34 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<TypeExpr, Diagnostic> {
+        let span = self.span();
+        if self.eat(&TokenKind::LParen) {
+            let mut elements = vec![self.parse_type()?];
+            while self.eat(&TokenKind::Comma) {
+                if self.check(&TokenKind::RParen) {
+                    break;
+                }
+                elements.push(self.parse_type()?);
+            }
+            self.expect(&TokenKind::RParen, "')'")?;
+            if elements.len() < 2 {
+                return Err(Diagnostic::new(
+                    "a tuple type needs at least 2 elements",
+                    span,
+                ));
+            }
+            return Ok(TypeExpr {
+                name: String::new(),
+                elements,
+                span,
+            });
+        }
         let (name, span) = self.expect_ident("a type name")?;
-        Ok(TypeExpr { name, span })
+        Ok(TypeExpr {
+            name,
+            elements: Vec::new(),
+            span,
+        })
     }
 
     fn parse_let(&mut self, mutable: bool, constant: bool) -> Result<StmtKind, Diagnostic> {

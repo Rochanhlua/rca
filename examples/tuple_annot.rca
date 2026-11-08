@@ -1,0 +1,7 @@
+fn swap(a: Int, b: String) -> (String, Int):
+    return (b, a)
+
+let p: (Int, String) = (1, "a")
+let q = swap(p[0], p[1])
+print(q)
+print(q[0])
