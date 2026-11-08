@@ -499,13 +499,13 @@ mod tensor_index_tests {
     fn rank2_gives_row() {
         let t = Value::Tensor {
             shape: vec![2, 3],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0].into(),
         };
         assert_eq!(
             tensor_index(&t, 1),
             Ok(Value::Tensor {
                 shape: vec![3],
-                data: vec![4.0, 5.0, 6.0]
+                data: vec![4.0, 5.0, 6.0].into()
             })
         );
     }
@@ -514,7 +514,7 @@ mod tensor_index_tests {
     fn bad_index_is_error() {
         let t = Value::Tensor {
             shape: vec![2, 3],
-            data: vec![0.0; 6],
+            data: vec![0.0; 6].into(),
         };
         assert!(tensor_index(&t, 2).is_err());
         assert!(tensor_index(&t, -1).is_err());
@@ -572,7 +572,7 @@ mod tensor_matmul_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data }
+        Value::Tensor { shape, data: data.into() }
     }
 
     #[test]
@@ -686,7 +686,7 @@ mod tensor_broadcast_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data }
+        Value::Tensor { shape, data: data.into() }
     }
 
     #[test]
@@ -813,7 +813,7 @@ mod tensor_numeric_tests {
     use super::*;
 
     fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
-        Value::Tensor { shape, data }
+        Value::Tensor { shape, data: data.into() }
     }
 
     #[test]
