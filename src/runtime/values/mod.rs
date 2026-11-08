@@ -883,3 +883,112 @@ mod enum_value_tests {
         assert_ne!(a, b);
     }
 }
+
+/// Elementwise math on a Tensor.
+/// kind: 'e' exp, 'l' log, 'q' sqrt, 't' tanh, 'r' relu, 's' sigmoid.
+pub fn tensor_map(v: &Value, kind: char) -> Result<Value, String> {
+    let (shape, data) = match v {
+        Value::Tensor { shape, data } => (shape, data),
+        _ => return Err("this function needs a Tensor".to_string()),
+    };
+    let name = match kind {
+        'e' => "exp",
+        'l' => "log",
+        'q' => "sqrt",
+        't' => "tanh",
+        'r' => "relu",
+        _ => "sigmoid",
+    };
+    let mut out = Vec::with_capacity(data.len());
+    for &x in data.iter() {
+        let y = match kind {
+            'e' => x.exp(),
+            'l' => {
+                if x <= 0.0 {
+                    return Err("log() needs positive values".to_string());
+                }
+                x.ln()
+            }
+            'q' => {
+                if x < 0.0 {
+                    return Err("sqrt() needs non-negative values".to_string());
+                }
+                x.sqrt()
+            }
+            't' => x.tanh(),
+            'r' => {
+                if x > 0.0 {
+                    x
+                } else {
+                    0.0
+                }
+            }
+            _ => {
+                if x >= 0.0 {
+                    1.0 / (1.0 + (-x).exp())
+                } else {
+                    let e = x.exp();
+                    e / (1.0 + e)
+                }
+            }
+        };
+        if !y.is_finite() {
+            return Err(format!("{}() result is not finite", name));
+        }
+        out.push(y);
+    }
+    Ok(Value::Tensor { shape: shape.clone(), data: out.into() })
+}
+
+#[cfg(test)]
+mod tensor_map_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor { shape, data: data.into() }
+    }
+    fn data_of(v: &Value) -> Vec<f64> {
+        match v {
+            Value::Tensor { data, .. } => data.to_vec(),
+            _ => panic!("not a tensor"),
+        }
+    }
+
+    #[test]
+    fn exp_log_sqrt_basic() {
+        assert_eq!(data_of(&tensor_map(&t(vec![2], vec![0.0, 0.0]), 'e').unwrap()), vec![1.0, 1.0]);
+        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![1.0]), 'l').unwrap()), vec![0.0]);
+        assert_eq!(data_of(&tensor_map(&t(vec![2], vec![4.0, 9.0]), 'q').unwrap()), vec![2.0, 3.0]);
+    }
+
+    #[test]
+    fn relu_and_tanh() {
+        let r = tensor_map(&t(vec![3], vec![-1.0, 0.0, 2.0]), 'r').unwrap();
+        assert_eq!(data_of(&r), vec![0.0, 0.0, 2.0]);
+        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![0.0]), 't').unwrap()), vec![0.0]);
+    }
+
+    #[test]
+    fn sigmoid_is_stable() {
+        assert_eq!(data_of(&tensor_map(&t(vec![1], vec![0.0]), 's').unwrap()), vec![0.5]);
+        let big = data_of(&tensor_map(&t(vec![2], vec![-1000.0, 1000.0]), 's').unwrap());
+        assert_eq!(big, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn shape_is_kept() {
+        let r = tensor_map(&t(vec![2, 2], vec![1.0, 4.0, 9.0, 16.0]), 'q').unwrap();
+        match r {
+            Value::Tensor { shape, .. } => assert_eq!(shape, vec![2, 2]),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn domain_and_overflow_errors() {
+        assert!(tensor_map(&t(vec![1], vec![0.0]), 'l').is_err());
+        assert!(tensor_map(&t(vec![1], vec![-1.0]), 'q').is_err());
+        assert!(tensor_map(&t(vec![1], vec![1000.0]), 'e').is_err());
+        assert!(tensor_map(&Value::Float(1.0), 'e').is_err());
+    }
+}
