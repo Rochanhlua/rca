@@ -667,8 +667,47 @@ impl Checker {
             StmtKind::Match { subject, arms } => {
                 self.check_match(subject, arms, &stmt.span);
             }
-            StmtKind::LetTuple { .. } => {
-                self.error("tuple destructuring is not supported yet", &stmt.span);
+            StmtKind::LetTuple {
+                names,
+                mutable,
+                value,
+            } => {
+                let value_ty = self.check_expr(value);
+                let unknowns = vec![Type::Unknown; names.len()];
+                let elem_tys: Vec<Type> = match &value_ty {
+                    Type::Tuple(elems) if elems.len() == names.len() => elems.clone(),
+                    Type::Tuple(elems) => {
+                        self.error(
+                            format!(
+                                "cannot destructure a tuple of {} elements into {} names",
+                                elems.len(),
+                                names.len()
+                            ),
+                            &value.span,
+                        );
+                        unknowns
+                    }
+                    Type::Unknown => unknowns,
+                    other => {
+                        self.error(
+                            format!("cannot destructure {} as a tuple", other),
+                            &value.span,
+                        );
+                        unknowns
+                    }
+                };
+                for (name, ty) in names.iter().zip(elem_tys) {
+                    let symbol = Symbol {
+                        ty,
+                        mutable: *mutable,
+                    };
+                    if !self.scopes.declare(name, symbol) {
+                        self.error(
+                            format!("'{}' is already declared in this scope", name),
+                            &stmt.span,
+                        );
+                    }
+                }
             }
             StmtKind::Enum(_) => {
                 self.error(
@@ -2121,5 +2160,82 @@ mod tuple_annotation_tests {
     fn wrong_return_tuple_is_error() {
         let src = "fn f() -> (Int, Int):\n    return (1, \"x\")\n";
         assert!(check(src).is_err());
+    }
+}
+
+#[cfg(test)]
+mod tuple_destructure_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    fn check(src: &str) -> Result<(), Vec<Diagnostic>> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        Checker::new().check_program(&program)
+    }
+
+    fn errors(src: &str) -> Vec<String> {
+        match check(src) {
+            Ok(()) => Vec::new(),
+            Err(v) => v.iter().map(|d| d.message.clone()).collect(),
+        }
+    }
+
+    #[test]
+    fn valid_destructure_is_ok() {
+        assert!(check("let (a, b) = (1, \"x\")\nlet n: Int = a\nlet s: String = b\n").is_ok());
+    }
+
+    #[test]
+    fn size_mismatch_is_one_error() {
+        assert_eq!(
+            errors("let (a, b) = (1, 2, 3)\nprint(a)\nprint(b)\n"),
+            vec!["cannot destructure a tuple of 3 elements into 2 names"]
+        );
+    }
+
+    #[test]
+    fn non_tuple_is_one_error() {
+        assert_eq!(
+            errors("let (a, b) = 5\nprint(a)\nprint(b)\n"),
+            vec!["cannot destructure Int as a tuple"]
+        );
+    }
+
+    #[test]
+    fn duplicate_name_is_error() {
+        assert_eq!(
+            errors("let (a, a) = (1, 2)\n"),
+            vec!["'a' is already declared in this scope"]
+        );
+    }
+
+    #[test]
+    fn mut_destructure_can_be_assigned() {
+        assert!(check("mut (a, b) = (1, 2)\na = 10\nprint(a)\nprint(b)\n").is_ok());
+    }
+
+    #[test]
+    fn immutable_destructure_cannot_be_assigned() {
+        let errs = errors("let (a, b) = (1, 2)\na = 5\nprint(b)\n");
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0].contains("cannot assign to immutable variable 'a'"));
+    }
+
+    #[test]
+    fn element_types_are_checked() {
+        assert_eq!(
+            errors("let (a, b) = (1, \"x\")\nlet c: Int = b\n"),
+            vec!["type mismatch: expected Int, found String"]
+        );
+    }
+
+    #[test]
+    fn mut_destructure_checks_assigned_type() {
+        assert_eq!(
+            errors("mut (a, b) = (1, 2)\na = \"s\"\nprint(b)\n"),
+            vec!["type mismatch: expected Int, found String"]
+        );
     }
 }
