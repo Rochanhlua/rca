@@ -1289,3 +1289,30 @@ mod let_tuple_parse_tests {
         assert!(matches!(&p.statements[0].kind, StmtKind::Let { .. }));
     }
 }
+
+#[cfg(test)]
+mod tuple_pattern_error_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn first_message(src: &str) -> String {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program().unwrap_err().message
+    }
+
+    #[test]
+    fn nested_tuple_pattern_is_error() {
+        assert_eq!(
+            first_message("let ((a, b), c) = (1, 2)\n"),
+            "expected a variable name, found '(' (tuple patterns are not supported here)"
+        );
+    }
+
+    #[test]
+    fn tuple_parameter_is_error() {
+        assert_eq!(
+            first_message("fn f((a, b): Int) -> Int:\n    return 1\n"),
+            "expected a parameter name, found '(' (tuple patterns are not supported here)"
+        );
+    }
+}

@@ -2250,3 +2250,22 @@ mod tuple_destructure_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod tuple_assignment_error_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+    use crate::compiler::parser::Parser;
+
+    #[test]
+    fn tuple_assignment_is_error() {
+        let src = "mut a = 1\nmut b = 2\n(a, b) = (3, 4)\n";
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let errors = Checker::new().check_program(&program).unwrap_err();
+        assert_eq!(
+            errors[0].message,
+            "tuple assignment is not supported, use 'let (a, b) = ...' to declare new variables"
+        );
+    }
+}
