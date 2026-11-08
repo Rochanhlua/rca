@@ -772,4 +772,54 @@ mod tests {
             "[1, 2, 3]\n3\n"
         );
     }
+
+    // ----- enum and match: VM and tree interpreter must agree -----
+
+    #[test]
+    fn enum_print_and_equality() {
+        same(
+            "enum Color:\n    Red\n    Green\nlet a = Color.Red\nprint(a)\nprint(a == Color.Red)\nprint(a != Color.Green)\nprint(a == Color.Green)\n",
+            "Color.Red\ntrue\ntrue\nfalse\n",
+        );
+    }
+
+    #[test]
+    fn match_on_enum() {
+        same(
+            "enum C:\n    A\n    B\n    D\nfn f(c: C) -> Int:\n    mut r = 0\n    match c:\n        C.A:\n            r = 1\n        C.B:\n            r = 2\n        C.D:\n            r = 3\n    return r\nprint(f(C.A))\nprint(f(C.B))\nprint(f(C.D))\n",
+            "1\n2\n3\n",
+        );
+    }
+
+    #[test]
+    fn match_int_with_wildcard() {
+        same(
+            "for i in 0..3:\n    match i:\n        0:\n            print(\"zero\")\n        _:\n            print(\"other\")\n",
+            "zero\nother\nother\n",
+        );
+    }
+
+    #[test]
+    fn match_string_and_bool() {
+        same(
+            "match \"hi\":\n    \"hi\":\n        print(1)\n    _:\n        print(2)\nmatch false:\n    true:\n        print(3)\n    false:\n        print(4)\n",
+            "1\n4\n",
+        );
+    }
+
+    #[test]
+    fn match_nested_and_arm_scope() {
+        same(
+            "match 1:\n    1:\n        let x = 10\n        match 2:\n            2:\n                print(x)\n            _:\n                print(0)\n    _:\n        print(-1)\nlet x = 5\nprint(x)\n",
+            "10\n5\n",
+        );
+    }
+
+    #[test]
+    fn match_subject_evaluated_once() {
+        same(
+            "mut n = 0\nfn next() -> Int:\n    return 1\nmatch next():\n    0:\n        print(0)\n    1:\n        print(1)\n    _:\n        print(2)\n",
+            "1\n",
+        );
+    }
 }
