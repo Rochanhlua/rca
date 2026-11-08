@@ -54,6 +54,7 @@ More programs are in `examples/`.
 - Modules: import, import as, from-import, pub, module-qualified calls
 - Bytecode compiler, optimizer, validator and VM
 - Runtime checks: list bounds, integer overflow, division by zero, call depth
+- enum and match statement (see `docs/enum.md`)
 - Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
   broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
   See `docs/tensor.md`.
@@ -62,7 +63,7 @@ More programs are in `examples/`.
 
 - Native code generation
 - Borrowing and references
-- enum, match, Map, Tuple, const, generics
+- Map, Tuple, const, generics, enum payloads, match expressions
 - Automatic differentiation, tensor method syntax, GPU support
 - Standard library modules
 - Package manager
@@ -74,6 +75,7 @@ More programs are in `examples/`.
 - `docs/memory-model.md` memory model
 - `docs/modules.md` modules
 - `docs/tensor.md` tensors
+- `docs/enum.md` enum and match
 
 ## Development
 

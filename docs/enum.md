@@ -1,15 +1,15 @@
-# RCA enum and match (design)
+# RCA enum and match
 
-Status: DESIGN ONLY. Nothing here is implemented yet.
-Tokens `enum` and `match` already exist in the lexer. The parser, AST,
-checker, IR, VM and interpreter do not support them yet.
+Status: IMPLEMENTED (first version). Milestones E1-E7 are done.
+VM and tree interpreter give identical results (tests in vm/mod.rs).
 
-## 1. Scope of the first version
-- Simple enums only: variants have NO payload data.
-- `match` is a statement (not an expression) in this version.
-- Patterns: enum variant, `_` (wildcard), Int literal, String literal, Bool literal.
-- No guards, no nested patterns, no payload variants, no generics.
-  These come in later milestones.
+## 1. What works
+- Simple enums (variants carry no data), `pub enum`.
+- Variants are always written qualified: `Color.Red`.
+- Enum names are types: `let c: Color = Color.Green`, `fn f(c: Color)`.
+- `==` and `!=` between values of the same enum type.
+- Printing shows `Color.Green`.
+- `match` statement with patterns: enum variant, Int / String / Bool literal, `_`.
 
 ## 2. Syntax
     enum Color:
@@ -17,60 +17,48 @@ checker, IR, VM and interpreter do not support them yet.
         Green
         Blue
 
-    let c = Color.Green
-
     match c:
         Color.Red:
             print("red")
         Color.Green:
             print("green")
-        _:
-            print("other")
+        Color.Blue:
+            print("blue")
 
     match n:
         0:
             print("zero")
-        1:
-            print("one")
         _:
-            print("many")
+            print("other")
 
-- Indentation defines blocks, as everywhere in RCA.
-- Variants are written `EnumName.Variant` (qualified), never bare.
-- Enum name is a new type: `let c: Color = Color.Red`.
-
-## 3. Representation
-- Runtime: `Value::Enum { name: String, variant: String }`.
-- Type: `Type::Enum(String)`, like `Type::Struct(String)`.
-- Value semantics (copy on assignment), like all RCA values.
-- Equality `==` and `!=` work between values of the same enum type.
-- Printing shows `Color.Green`.
-
-## 4. Checker rules
+## 3. Checker rules
 - Variant names inside one enum must be unique.
-- Enum names must not clash with struct, function or other enum names.
-- `match` subject must be Int, String, Bool or an enum type.
-- Each pattern must have the same type as the subject.
+- An enum name must not clash with a struct, function or other enum.
+- Match subject must be Int, String, Bool or an enum. Float is an error.
+- Every pattern must have the subject's type.
 - Duplicate patterns are an error.
-- Exhaustiveness: matching on an enum without `_` must list every variant,
-  otherwise a compile-time error naming the missing variants.
-- Int and String matches need a `_` arm (they cannot be exhaustive), else error.
+- Enum match without `_` must list every variant (missing ones are named).
+- Bool match must cover true and false, or use `_`.
+- Int and String match need a `_` arm.
+- Arms after `_` are an error (unreachable).
+- Enums can only be declared at the top level.
 
-## 5. Implementation milestones (one at a time)
-E1: AST nodes + parser for `enum` declaration, with tests.
-E2: checker: enum type, `Color.Red` expression, `==`.
-E3: runtime value + print + equality (VM and interpreter identical).
-E4: AST + parser for `match` statement, with tests.
-E5: checker for match: pattern types, duplicates, exhaustiveness.
-E6: IR lowering, VM and interpreter for match.
-E7: examples, docs update, tag.
+## 4. Implementation notes
+- Type: `Type::Enum(name)`. Value: `Value::Enum { name, variant }`.
+- IR: `PushEnum(name, variant)`.
+- `Color.Red` parses as field access; the checker, compiler and interpreter
+  treat `Ident.Name` as a variant when `Ident` is an enum and not a variable.
+- `match` is desugared (`ast::desugar_match`) into an if/else chain with a
+  hidden variable, so the subject is evaluated once and VM and interpreter
+  share one definition. No new jump instructions were needed.
 
-## 6. Open questions (decide before E1)
-- Qualified `Color.Red` parses today as Field access on an Ident `Color`.
-  Plan: the checker resolves `Ident.Name` as an enum variant when `Ident`
-  is an enum name (no new expression node needed).
-- Should `match` later become an expression? Deferred.
+## 5. Not implemented yet
+- Variants with payload data.
+- `match` as an expression.
+- Guards and nested patterns.
+- Importing enums across modules (`from utils import Color`) is untested.
+- "Must return on all paths" does not treat `match` as returning.
 
-## 7. Rules for future changes
+## 6. Rules for future changes
 - Interpreter and VM must give identical results.
 - Every feature needs tests with known expected values.

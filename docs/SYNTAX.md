@@ -64,3 +64,13 @@ Implemented since v0.5 (details in tensor.md):
 Still not implemented:
 - Method syntax on tensors (`a.matmul(b)`), `a[i, j]`, `a[i] = x`
 - Automatic differentiation
+
+## Current status (v1.0) - enum and match
+Implemented (details in enum.md):
+- `enum Name:` with simple variants, `pub enum`, `Name.Variant`
+- `match` statement: enum variants, Int/String/Bool literals, `_`
+- Exhaustiveness, duplicate and unreachable-arm checks
+
+Still not implemented:
+- enum payloads, match expressions, guards, nested patterns
+- const, private, type aliases, generics
