@@ -787,6 +787,19 @@ pub fn tensor_reduce(v: &Value, kind: char) -> Result<Value, String> {
 
 /// transpose(t): rank 1 is unchanged, rank 2 swaps rows and columns.
 pub fn tensor_transpose(v: &Value) -> Result<Value, String> {
+    if let Value::Tracked(t) = v {
+        // The plain call validates the rank and gives the forward result.
+        let plain = tensor_transpose(&plain_of(t))?;
+        if t.shape.len() == 1 {
+            return Ok(v.clone());
+        }
+        return match plain {
+            Value::Tensor { shape, data } => Ok(Value::Tracked(Arc::new(
+                crate::runtime::autodiff::transpose(t, shape, data),
+            ))),
+            _ => Err("transpose() needs a Tensor".to_string()),
+        };
+    }
     let (shape, data) = match v {
         Value::Tensor { shape, data } => (shape, data),
         _ => return Err("transpose() needs a Tensor".to_string()),
@@ -812,6 +825,14 @@ pub fn tensor_transpose(v: &Value) -> Result<Value, String> {
 
 /// reshape(t, [..]): same elements, new shape. Element count must stay equal.
 pub fn tensor_reshape(v: &Value, new_shape: &Value) -> Result<Value, String> {
+    if let Value::Tracked(t) = v {
+        return match tensor_reshape(&plain_of(t), new_shape)? {
+            Value::Tensor { shape, .. } => Ok(Value::Tracked(Arc::new(
+                crate::runtime::autodiff::reshape(t, shape),
+            ))),
+            _ => Err("reshape() needs a Tensor".to_string()),
+        };
+    }
     let data = match v {
         Value::Tensor { data, .. } => data,
         _ => return Err("reshape() needs a Tensor".to_string()),
@@ -954,6 +975,14 @@ fn tracked_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
     Ok(Value::Tracked(Arc::new(t)))
 }
 
+/// The plain Tensor holding the forward value of a tracked tensor.
+fn plain_of(t: &crate::runtime::autodiff::Tracked) -> Value {
+    Value::Tensor {
+        shape: t.shape.clone(),
+        data: t.data.clone(),
+    }
+}
+
 /// matmul where at least one operand is tracked. A plain Tensor on the other
 /// side is a constant. The forward result comes from the plain `tensor_matmul`.
 fn tracked_matmul(l: &Value, r: &Value) -> Result<Value, String> {
@@ -969,11 +998,7 @@ fn tracked_matmul(l: &Value, r: &Value) -> Result<Value, String> {
     };
     let a = operand(l)?;
     let b = operand(r)?;
-    let plain = |t: &autodiff::Tracked| Value::Tensor {
-        shape: t.shape.clone(),
-        data: t.data.clone(),
-    };
-    match tensor_matmul(&plain(&a), &plain(&b))? {
+    match tensor_matmul(&plain_of(&a), &plain_of(&b))? {
         Value::Tensor { shape, data } => Ok(Value::Tracked(Arc::new(autodiff::matmul(
             &a, &b, shape, data,
         )))),
@@ -1075,6 +1100,102 @@ mod tracked_matmul_tests {
     }
 }
 
+#[cfg(test)]
+mod tracked_elementwise_tests {
+    use super::*;
+
+    fn t(shape: Vec<usize>, data: Vec<f64>) -> Value {
+        Value::Tensor {
+            shape,
+            data: data.into(),
+        }
+    }
+
+    /// sum(map(x)) computed with plain tensors only (the reference).
+    fn plain_total(kind: char, x: &[f64]) -> f64 {
+        let y = tensor_map(&t(vec![x.len()], x.to_vec()), kind).unwrap();
+        match tensor_reduce(&y, 's').unwrap() {
+            Value::Float(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn elementwise_gradients_match_numeric() {
+        // Values avoid the kink of relu at 0 and are valid for log and sqrt when positive.
+        let cases: [(char, [f64; 3]); 6] = [
+            ('e', [0.3, -1.7, 2.5]),
+            ('l', [0.3, 1.7, 2.5]),
+            ('q', [0.3, 1.7, 2.5]),
+            ('t', [0.3, -1.7, 2.5]),
+            ('r', [-0.5, 0.4, 1.2]),
+            ('s', [0.3, -1.7, 2.5]),
+        ];
+        for (kind, x) in cases {
+            let tx = tensor_track(&t(vec![3], x.to_vec())).unwrap();
+            let y = tensor_reduce(&tensor_map(&tx, kind).unwrap(), 's').unwrap();
+            let g = match tensor_grad(&y, &tx).unwrap() {
+                Value::Tensor { data, .. } => data.to_vec(),
+                _ => unreachable!(),
+            };
+            let h = 1e-6;
+            for i in 0..3 {
+                let mut hi = x.to_vec();
+                let mut lo = x.to_vec();
+                hi[i] += h;
+                lo[i] -= h;
+                let numeric = (plain_total(kind, &hi) - plain_total(kind, &lo)) / (2.0 * h);
+                assert!(
+                    (g[i] - numeric).abs() < 1e-5,
+                    "kind {} element {}: {} vs {}",
+                    kind,
+                    i,
+                    g[i],
+                    numeric
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn domain_errors_match_plain() {
+        let x = tensor_track(&t(vec![1], vec![-1.0])).unwrap();
+        assert_eq!(
+            tensor_map(&x, 'l').unwrap_err(),
+            "log() needs positive values"
+        );
+        assert_eq!(
+            tensor_map(&x, 'q').unwrap_err(),
+            "sqrt() needs non-negative values"
+        );
+    }
+
+    #[test]
+    fn sqrt_at_zero_gradient_is_error() {
+        let x = tensor_track(&t(vec![1], vec![0.0])).unwrap();
+        let y = tensor_reduce(&tensor_map(&x, 'q').unwrap(), 's').unwrap();
+        assert!(tensor_grad(&y, &x).is_err());
+    }
+
+    #[test]
+    fn transpose_of_rank_1_is_same_tracked_value() {
+        let x = tensor_track(&t(vec![2], vec![1.0, 2.0])).unwrap();
+        assert_eq!(tensor_transpose(&x).unwrap(), x);
+    }
+
+    #[test]
+    fn reshape_and_transpose_errors_match_plain() {
+        let x = tensor_track(&t(vec![4], vec![0.0; 4])).unwrap();
+        let bad = Value::List(vec![Value::Int(3)]);
+        assert_eq!(
+            tensor_reshape(&x, &bad).unwrap_err(),
+            tensor_reshape(&t(vec![4], vec![0.0; 4]), &bad).unwrap_err()
+        );
+        let cube = tensor_track(&t(vec![1, 1, 1], vec![0.0])).unwrap();
+        assert!(tensor_transpose(&cube).is_err());
+    }
+}
+
 /// track(t): turn a Tensor into a differentiable leaf.
 pub fn tensor_track(v: &Value) -> Result<Value, String> {
     match v {
@@ -1103,6 +1224,14 @@ pub fn tensor_grad(y: &Value, x: &Value) -> Result<Value, String> {
 /// Elementwise math on a Tensor.
 /// kind: 'e' exp, 'l' log, 'q' sqrt, 't' tanh, 'r' relu, 's' sigmoid.
 pub fn tensor_map(v: &Value, kind: char) -> Result<Value, String> {
+    if let Value::Tracked(t) = v {
+        return match tensor_map(&plain_of(t), kind)? {
+            Value::Tensor { data, .. } => Ok(Value::Tracked(Arc::new(
+                crate::runtime::autodiff::map(kind, t, data),
+            ))),
+            _ => Err("this function needs a Tensor".to_string()),
+        };
+    }
     let (shape, data) = match v {
         Value::Tensor { shape, data } => (shape, data),
         _ => return Err("this function needs a Tensor".to_string()),

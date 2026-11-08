@@ -1,5 +1,6 @@
 //! Reverse-mode automatic differentiation.
-//! Milestones 1-3: Add, Sub, Mul, Div, Sum, Mean and MatMul (rank 2), grad of a one-element result.
+//! Milestones 1-4: Add, Sub, Mul, Div, Sum, Mean, MatMul (rank 2), Transpose, Reshape and
+//! elementwise math (exp, log, sqrt, tanh, relu, sigmoid); grad of a one-element result.
 //! Plain tensors and Float scalars may be mixed in as constants (see `constant_like`).
 //! Design: docs/autodiff-design.md
 
@@ -23,6 +24,14 @@ pub enum Op {
     Sum,
     Mean,
     MatMul,
+    Transpose,
+    Reshape,
+    Exp,
+    Log,
+    Sqrt,
+    Tanh,
+    Relu,
+    Sigmoid,
 }
 
 /// One operation in the graph. A node's id is always larger than its parents' ids,
@@ -32,10 +41,12 @@ pub struct Node {
     pub id: u64,
     pub op: Op,
     pub parents: Vec<Arc<Node>>,
-    /// Forward values the backward rule needs (Mul, Div and MatMul save both inputs).
+    /// Forward values the backward rule needs. Mul, Div and MatMul save both inputs;
+    /// Log and Relu save their input; Exp, Sqrt, Tanh and Sigmoid save their output.
     pub saved: Vec<Arc<Vec<f64>>>,
     /// Sizes the backward rule needs: Sum and Mean store [element count],
-    /// MatMul stores [m, k, n] for [m, k] x [k, n]. Empty for other ops.
+    /// MatMul stores [m, k, n] for [m, k] x [k, n], Transpose stores [rows, cols]
+    /// of its input. Empty for other ops.
     pub dims: Vec<usize>,
 }
 
@@ -209,6 +220,62 @@ pub fn matmul(a: &Tracked, b: &Tracked, shape: Vec<usize>, data: Arc<Vec<f64>>) 
     }
 }
 
+/// Transpose of a rank 2 tensor. The caller computes the forward result with the
+/// plain `tensor_transpose`; `shape` and `data` are that result.
+pub fn transpose(a: &Tracked, shape: Vec<usize>, data: Arc<Vec<f64>>) -> Tracked {
+    Tracked {
+        shape,
+        data,
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Transpose,
+            parents: vec![a.node.clone()],
+            saved: vec![],
+            dims: vec![a.shape[0], a.shape[1]],
+        }),
+    }
+}
+
+/// Reshape: same elements in the same order, so the gradient passes straight through.
+pub fn reshape(a: &Tracked, shape: Vec<usize>) -> Tracked {
+    Tracked {
+        shape,
+        data: a.data.clone(),
+        node: Arc::new(Node {
+            id: next_id(),
+            op: Op::Reshape,
+            parents: vec![a.node.clone()],
+            saved: vec![],
+            dims: vec![],
+        }),
+    }
+}
+
+/// Elementwise math. kind: 'e' exp, 'l' log, 'q' sqrt, 't' tanh, 'r' relu, 's' sigmoid
+/// (the same letters as `tensor_map`). `data` is the forward result, computed and
+/// validated (domain, finiteness) by the plain `tensor_map`.
+pub fn map(kind: char, a: &Tracked, data: Arc<Vec<f64>>) -> Tracked {
+    let (op, saved) = match kind {
+        'e' => (Op::Exp, data.clone()),
+        'l' => (Op::Log, a.data.clone()),
+        'q' => (Op::Sqrt, data.clone()),
+        't' => (Op::Tanh, data.clone()),
+        'r' => (Op::Relu, a.data.clone()),
+        _ => (Op::Sigmoid, data.clone()),
+    };
+    Tracked {
+        shape: a.shape.clone(),
+        data,
+        node: Arc::new(Node {
+            id: next_id(),
+            op,
+            parents: vec![a.node.clone()],
+            saved: vec![saved],
+            dims: vec![],
+        }),
+    }
+}
+
 /// A plain tensor or Float scalar used together with a tracked tensor `like`.
 /// It becomes a leaf nobody asks a gradient for, so it acts as a constant.
 /// A Float is repeated to the shape of `like`. Shapes of a plain tensor are
@@ -229,6 +296,14 @@ fn accumulate(grads: &mut HashMap<u64, Vec<f64>>, id: u64, g: &[f64]) {
             }
         })
         .or_insert_with(|| g.to_vec());
+}
+
+/// g[i] * local(g[i], saved[i]) for each element (the chain rule for one input).
+fn scale(g: &[f64], saved: &[f64], local: impl Fn(f64, f64) -> f64) -> Vec<f64> {
+    g.iter()
+        .zip(saved.iter())
+        .map(|(g, s)| g * local(*g, *s))
+        .collect()
 }
 
 /// Gradient of `y` with respect to `x`. Returns (shape of x, gradient values).
@@ -298,6 +373,44 @@ pub fn grad(y: &Tracked, x: &Tracked) -> Result<(Vec<usize>, Vec<f64>), String> 
                 }
                 accumulate(&mut grads, node.parents[0].id, &ga);
                 accumulate(&mut grads, node.parents[1].id, &gb);
+            }
+            Op::Transpose => {
+                // The gradient has the output shape [c, r]; move it back to [r, c].
+                let (r, c) = (node.dims[0], node.dims[1]);
+                let mut ga = vec![0.0; r * c];
+                for i in 0..r {
+                    for j in 0..c {
+                        ga[i * c + j] = g[j * r + i];
+                    }
+                }
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Reshape => {
+                accumulate(&mut grads, node.parents[0].id, &g);
+            }
+            Op::Exp => {
+                let ga = scale(&g, &node.saved[0], |_, y| y);
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Log => {
+                let ga = scale(&g, &node.saved[0], |_, x| 1.0 / x);
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Sqrt => {
+                let ga = scale(&g, &node.saved[0], |_, y| 0.5 / y);
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Tanh => {
+                let ga = scale(&g, &node.saved[0], |_, y| 1.0 - y * y);
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Relu => {
+                let ga = scale(&g, &node.saved[0], |_, x| if x > 0.0 { 1.0 } else { 0.0 });
+                accumulate(&mut grads, node.parents[0].id, &ga);
+            }
+            Op::Sigmoid => {
+                let ga = scale(&g, &node.saved[0], |_, y| y * (1.0 - y));
+                accumulate(&mut grads, node.parents[0].id, &ga);
             }
             Op::Sub => {
                 let neg: Vec<f64> = g.iter().map(|v| -v).collect();
