@@ -708,6 +708,10 @@ impl Checker {
                 let rt = self.check_expr(right);
                 self.check_binary(op, &lt, &rt, &expr.span)
             }
+            ExprKind::Tuple(_) => {
+                self.error("tuples are not supported yet", &expr.span);
+                Type::Unknown
+            }
             ExprKind::List(items) => {
                 if items.is_empty() {
                     self.error("cannot infer the type of an empty list", &expr.span);

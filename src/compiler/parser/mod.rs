@@ -695,9 +695,29 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.advance();
-                let inner = self.parse_expr()?;
+                let first = self.parse_expr()?;
+                if self.check(&TokenKind::Comma) {
+                    let mut items = vec![first];
+                    while self.eat(&TokenKind::Comma) {
+                        if self.check(&TokenKind::RParen) {
+                            break;
+                        }
+                        items.push(self.parse_expr()?);
+                    }
+                    self.expect(&TokenKind::RParen, "')'")?;
+                    if items.len() < 2 {
+                        return Err(Diagnostic::new(
+                            "a tuple needs at least 2 elements",
+                            span.clone(),
+                        ));
+                    }
+                    return Ok(Expr {
+                        kind: ExprKind::Tuple(items),
+                        span,
+                    });
+                }
                 self.expect(&TokenKind::RParen, "')'")?;
-                Ok(inner)
+                Ok(first)
             }
             TokenKind::LBracket => {
                 self.advance();
@@ -1105,5 +1125,54 @@ mod const_parse_tests {
     #[test]
     fn const_needs_a_value() {
         assert!(parse_result("const A: Int\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod tuple_parse_tests {
+    use super::*;
+    use crate::compiler::lexer::Lexer;
+
+    fn parse_result(src: &str) -> Result<Program, Diagnostic> {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_program()
+    }
+
+    fn let_value(src: &str) -> Expr {
+        let p = parse_result(src).unwrap();
+        match &p.statements[0].kind {
+            StmtKind::Let { value, .. } => value.clone(),
+            other => panic!("expected Let, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn two_element_tuple() {
+        match let_value("let p = (1, \"a\")\n").kind {
+            ExprKind::Tuple(items) => assert_eq!(items.len(), 2),
+            other => panic!("expected Tuple, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn three_elements_with_trailing_comma() {
+        match let_value("let p = (1, 2, 3,)\n").kind {
+            ExprKind::Tuple(items) => assert_eq!(items.len(), 3),
+            other => panic!("expected Tuple, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parentheses_without_comma_are_grouping() {
+        assert!(matches!(let_value("let a = (1)\n").kind, ExprKind::Int(1)));
+        assert!(matches!(
+            let_value("let a = (1 + 2)\n").kind,
+            ExprKind::Binary { .. }
+        ));
+    }
+
+    #[test]
+    fn one_element_tuple_is_error() {
+        assert!(parse_result("let a = (1,)\n").is_err());
     }
 }

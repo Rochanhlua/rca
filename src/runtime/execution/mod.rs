@@ -374,6 +374,7 @@ impl Interpreter {
                     Self::apply_binary(op, l, r, &expr.span)
                 }
             },
+            ExprKind::Tuple(_) => Err(err("tuples are not supported yet", &expr.span)),
             ExprKind::List(items) => {
                 let mut out = Vec::new();
                 for item in items {

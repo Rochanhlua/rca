@@ -72,6 +72,7 @@ pub enum ExprKind {
         index: Box<Expr>,
     },
     List(Vec<Expr>),
+    Tuple(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
