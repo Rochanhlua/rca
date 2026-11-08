@@ -703,8 +703,14 @@ mod tests {
     fn tensor_math_domain_errors_match() {
         for (src, msg) in [
             ("print(log(Tensor([0.0])))\n", "log() needs positive values"),
-            ("print(sqrt(Tensor([-1.0])))\n", "sqrt() needs non-negative values"),
-            ("print(exp(Tensor([1000.0])))\n", "exp() result is not finite"),
+            (
+                "print(sqrt(Tensor([-1.0])))\n",
+                "sqrt() needs non-negative values",
+            ),
+            (
+                "print(exp(Tensor([1000.0])))\n",
+                "exp() result is not finite",
+            ),
         ] {
             assert_eq!(error_in_vm(src), msg);
             assert_eq!(error_in_tree(src), error_in_vm(src));
