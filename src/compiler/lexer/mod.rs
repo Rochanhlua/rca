@@ -1,4 +1,4 @@
-pub mod lexer;
+pub mod scanner;
 pub mod token;
 
-pub use lexer::Lexer;
+pub use scanner::Lexer;

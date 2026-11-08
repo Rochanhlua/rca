@@ -224,8 +224,8 @@ fn remove_unreachable(chunk: &mut Chunk) -> bool {
 
     let mut new_code = Vec::with_capacity(kept);
     let mut new_spans = Vec::with_capacity(kept);
-    for i in 0..n {
-        if reachable[i] {
+    for (i, &keep) in reachable.iter().enumerate().take(n) {
+        if keep {
             new_code.push(chunk.code[i].clone());
             new_spans.push(chunk.spans[i].clone());
         }

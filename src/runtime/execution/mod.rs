@@ -30,6 +30,12 @@ pub struct Interpreter {
     output: String,
 }
 
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interpreter {
     /// Interpreter that prints to the terminal.
     pub fn new() -> Self {
