@@ -322,10 +322,11 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            StmtKind::Function(_)
-            | StmtKind::Struct(_)
-            | StmtKind::Enum(_)
-            | StmtKind::Match { .. } => Ok(Flow::Normal),
+            StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => Ok(Flow::Normal),
+            StmtKind::Match { subject, arms } => {
+                let desugared = crate::compiler::ast::desugar_match(subject, arms, &stmt.span);
+                self.exec_stmt(&desugared)
+            }
         }
     }
 

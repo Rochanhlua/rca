@@ -449,10 +449,11 @@ impl Compiler {
                 self.end_scope();
             }
             // Already handled when the program was scanned.
-            StmtKind::Function(_)
-            | StmtKind::Struct(_)
-            | StmtKind::Enum(_)
-            | StmtKind::Match { .. } => {}
+            StmtKind::Function(_) | StmtKind::Struct(_) | StmtKind::Enum(_) => {}
+            StmtKind::Match { subject, arms } => {
+                let desugared = crate::compiler::ast::desugar_match(subject, arms, span);
+                self.compile_stmt(&desugared)?;
+            }
             StmtKind::Import { .. } | StmtKind::FromImport { .. } => {}
         }
         Ok(())

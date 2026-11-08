@@ -202,3 +202,52 @@ pub struct MatchArm {
     pub body: Vec<Stmt>,
     pub span: Span,
 }
+
+/// Rewrites `match` into plain statements:
+/// `if true: let $m = subject; if $m == p1: ... else: if $m == p2: ... else: ...`
+/// The compiler and the interpreter both run this form, so they cannot disagree.
+pub fn desugar_match(subject: &Expr, arms: &[MatchArm], span: &Span) -> Stmt {
+    let hidden = format!("$match_{}_{}", span.line, span.column);
+    let mk = |kind: ExprKind| Expr {
+        kind,
+        span: span.clone(),
+    };
+    let mut chain: Option<Vec<Stmt>> = None;
+    for arm in arms.iter().rev() {
+        let condition = match &arm.pattern {
+            Pattern::Wildcard => mk(ExprKind::Bool(true)),
+            Pattern::Value(p) => mk(ExprKind::Binary {
+                op: BinaryOp::Eq,
+                left: Box::new(mk(ExprKind::Ident(hidden.clone()))),
+                right: Box::new(p.clone()),
+            }),
+        };
+        let stmt = Stmt {
+            kind: StmtKind::If {
+                condition,
+                then_block: arm.body.clone(),
+                else_block: chain.take(),
+            },
+            span: arm.span.clone(),
+        };
+        chain = Some(vec![stmt]);
+    }
+    let mut body = vec![Stmt {
+        kind: StmtKind::Let {
+            name: hidden,
+            mutable: false,
+            ty: None,
+            value: subject.clone(),
+        },
+        span: span.clone(),
+    }];
+    body.extend(chain.unwrap_or_default());
+    Stmt {
+        kind: StmtKind::If {
+            condition: mk(ExprKind::Bool(true)),
+            then_block: body,
+            else_block: None,
+        },
+        span: span.clone(),
+    }
+}

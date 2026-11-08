@@ -1,0 +1,43 @@
+enum Color:
+    Red
+    Green
+    Blue
+
+fn name(c: Color) -> String:
+    mut s = "?"
+    match c:
+        Color.Red:
+            s = "red"
+        Color.Green:
+            s = "green"
+        Color.Blue:
+            s = "blue"
+    return s
+
+print(name(Color.Red))
+print(name(Color.Blue))
+
+for i in 0..4:
+    match i:
+        0:
+            print("zero")
+        1:
+            print("one")
+        _:
+            print("many")
+
+match "hi":
+    "hi":
+        print("greeting")
+    _:
+        print("other")
+
+match true:
+    true:
+        match 2:
+            2:
+                print("nested")
+            _:
+                print("no")
+    false:
+        print("false")
