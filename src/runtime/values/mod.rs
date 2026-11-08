@@ -921,25 +921,31 @@ mod enum_value_tests {
     }
 }
 
+/// Arithmetic where at least one operand is tracked. A plain Tensor or a Float
+/// on the other side is treated as a constant (it gets no gradient).
 fn tracked_arith(op: char, l: &Value, r: &Value) -> Result<Value, String> {
     use crate::runtime::autodiff;
-    match (l, r) {
-        (Value::Tracked(a), Value::Tracked(b)) => {
-            let t = match op {
-                '+' => autodiff::add(a, b)?,
-                '*' => autodiff::mul(a, b)?,
-                _ => {
-                    return Err(
-                        "this operator is not supported for tracked tensors yet".to_string()
-                    );
-                }
-            };
-            Ok(Value::Tracked(Arc::new(t)))
+    let constant = |other: &Value, like: &autodiff::Tracked| -> Result<autodiff::Tracked, String> {
+        match other {
+            Value::Tensor { shape, data } => Ok(autodiff::constant_like(shape, data, None)),
+            Value::Float(x) => Ok(autodiff::constant_like(&like.shape, &like.data, Some(*x))),
+            _ => Err("tracked tensors can only be combined with a Tensor or a Float".to_string()),
         }
-        _ => Err(
-            "tracked tensors can only be combined with other tracked tensors (for now)".to_string(),
-        ),
-    }
+    };
+    let (a, b) = match (l, r) {
+        (Value::Tracked(a), Value::Tracked(b)) => (a.clone(), b.clone()),
+        (Value::Tracked(a), other) => (a.clone(), Arc::new(constant(other, a)?)),
+        (other, Value::Tracked(b)) => (Arc::new(constant(other, b)?), b.clone()),
+        _ => return Err("tracked arithmetic needs a tracked tensor".to_string()),
+    };
+    let t = match op {
+        '+' => autodiff::add(&a, &b)?,
+        '-' => autodiff::sub(&a, &b)?,
+        '*' => autodiff::mul(&a, &b)?,
+        '/' => autodiff::div(&a, &b)?,
+        _ => return Err("this operator is not supported for tracked tensors yet".to_string()),
+    };
+    Ok(Value::Tracked(Arc::new(t)))
 }
 
 /// track(t): turn a Tensor into a differentiable leaf.

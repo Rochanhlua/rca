@@ -93,7 +93,8 @@ C. A separate variant `Value::Tracked(Arc<Tracked>)` (RECOMMENDED).
 ## 7. Milestones
 
 1. `Tracked` value, Add and Mul, `grad` on a one-element tensor.
-2. Sub, Div, elementwise math, Sum, Mean.
+2. Sub, Div, and plain tensors / Float scalars mixed in as constants (implemented).
+   Elementwise math, Sum, Mean (next).
 3. Broadcasting backward, MatMul, Transpose, Reshape.
 4. Gradient accumulation across several `grad` calls, `zero_grad`.
 5. Forward-mode differentiation (separate design).
