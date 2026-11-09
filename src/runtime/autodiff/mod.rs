@@ -1,5 +1,5 @@
 //! Reverse-mode automatic differentiation.
-//! Milestones 1-4: Add, Sub, Mul, Div, Sum, Mean, MatMul (rank 2), Transpose, Reshape and
+//! Milestones 1-5 (5: broadcasting in + - * /): Add, Sub, Mul, Div, Sum, Mean, MatMul (rank 2), Transpose, Reshape and
 //! elementwise math (exp, log, sqrt, tanh, relu, sigmoid); grad of a one-element result.
 //! Plain tensors and Float scalars may be mixed in as constants (see `constant_like`).
 //! Design: docs/autodiff-design.md
@@ -73,97 +73,103 @@ pub fn leaf(shape: Vec<usize>, data: Arc<Vec<f64>>) -> Tracked {
     }
 }
 
-fn check_same_shape(a: &Tracked, b: &Tracked) -> Result<(), String> {
-    if a.shape != b.shape {
-        return Err(
-            "tracked tensors need equal shapes (broadcasting is not supported yet)".to_string(),
-        );
+fn broadcast_shape(s1: &[usize], s2: &[usize]) -> Result<Vec<usize>, String> {
+    let rank = s1.len().max(s2.len());
+    let mut out = vec![0usize; rank];
+    for i in 0..rank {
+        let a = if i + s1.len() >= rank {
+            s1[i + s1.len() - rank]
+        } else {
+            1
+        };
+        let b = if i + s2.len() >= rank {
+            s2[i + s2.len() - rank]
+        } else {
+            1
+        };
+        out[i] = if a == b || b == 1 {
+            a
+        } else if a == 1 {
+            b
+        } else {
+            return Err(format!("cannot broadcast shapes {:?} and {:?}", s1, s2));
+        };
     }
-    Ok(())
+    Ok(out)
+}
+
+fn broadcast_map(shape: &[usize], out_shape: &[usize]) -> Vec<usize> {
+    let rank = out_shape.len();
+    let total: usize = out_shape.iter().product();
+    let mut strides = vec![0usize; rank];
+    let mut acc = 1usize;
+    for d in (0..shape.len()).rev() {
+        let od = d + rank - shape.len();
+        strides[od] = if shape[d] == 1 { 0 } else { acc };
+        acc *= shape[d];
+    }
+    let mut map = Vec::with_capacity(total);
+    for flat in 0..total {
+        let mut rem = flat;
+        let mut idx = 0usize;
+        for d in (0..rank).rev() {
+            let i = rem % out_shape[d];
+            rem /= out_shape[d];
+            idx += i * strides[d];
+        }
+        map.push(idx);
+    }
+    map
+}
+
+fn binary(
+    op: Op,
+    a: &Tracked,
+    b: &Tracked,
+    f: impl Fn(f64, f64) -> f64,
+) -> Result<Tracked, String> {
+    let out_shape = broadcast_shape(&a.shape, &b.shape)?;
+    let ma = broadcast_map(&a.shape, &out_shape);
+    let mb = broadcast_map(&b.shape, &out_shape);
+    let data: Vec<f64> = ma
+        .iter()
+        .zip(mb.iter())
+        .map(|(&i, &j)| f(a.data[i], b.data[j]))
+        .collect();
+    let saved = match op {
+        Op::Mul | Op::Div => vec![a.data.clone(), b.data.clone()],
+        _ => vec![],
+    };
+    let mut dims = vec![a.shape.len(), b.shape.len()];
+    dims.extend(&a.shape);
+    dims.extend(&b.shape);
+    Ok(Tracked {
+        shape: out_shape,
+        data: Arc::new(data),
+        node: Arc::new(Node {
+            id: next_id(),
+            op,
+            parents: vec![a.node.clone(), b.node.clone()],
+            saved,
+            dims,
+        }),
+    })
 }
 
 pub fn add(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
-    check_same_shape(a, b)?;
-    let data: Vec<f64> = a
-        .data
-        .iter()
-        .zip(b.data.iter())
-        .map(|(x, y)| x + y)
-        .collect();
-    Ok(Tracked {
-        shape: a.shape.clone(),
-        data: Arc::new(data),
-        node: Arc::new(Node {
-            id: next_id(),
-            op: Op::Add,
-            parents: vec![a.node.clone(), b.node.clone()],
-            saved: vec![],
-            dims: vec![],
-        }),
-    })
-}
-
-pub fn mul(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
-    check_same_shape(a, b)?;
-    let data: Vec<f64> = a
-        .data
-        .iter()
-        .zip(b.data.iter())
-        .map(|(x, y)| x * y)
-        .collect();
-    Ok(Tracked {
-        shape: a.shape.clone(),
-        data: Arc::new(data),
-        node: Arc::new(Node {
-            id: next_id(),
-            op: Op::Mul,
-            parents: vec![a.node.clone(), b.node.clone()],
-            saved: vec![a.data.clone(), b.data.clone()],
-            dims: vec![],
-        }),
-    })
+    binary(Op::Add, a, b, |x, y| x + y)
 }
 
 pub fn sub(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
-    check_same_shape(a, b)?;
-    let data: Vec<f64> = a
-        .data
-        .iter()
-        .zip(b.data.iter())
-        .map(|(x, y)| x - y)
-        .collect();
-    Ok(Tracked {
-        shape: a.shape.clone(),
-        data: Arc::new(data),
-        node: Arc::new(Node {
-            id: next_id(),
-            op: Op::Sub,
-            parents: vec![a.node.clone(), b.node.clone()],
-            saved: vec![],
-            dims: vec![],
-        }),
-    })
+    binary(Op::Sub, a, b, |x, y| x - y)
+}
+
+pub fn mul(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
+    binary(Op::Mul, a, b, |x, y| x * y)
 }
 
 pub fn div(a: &Tracked, b: &Tracked) -> Result<Tracked, String> {
-    check_same_shape(a, b)?;
-    let data: Vec<f64> = a
-        .data
-        .iter()
-        .zip(b.data.iter())
-        .map(|(x, y)| x / y)
-        .collect();
-    Ok(Tracked {
-        shape: a.shape.clone(),
-        data: Arc::new(data),
-        node: Arc::new(Node {
-            id: next_id(),
-            op: Op::Div,
-            parents: vec![a.node.clone(), b.node.clone()],
-            saved: vec![a.data.clone(), b.data.clone()],
-            dims: vec![],
-        }),
-    })
+    binary(Op::Div, a, b, |x, y| x / y)
 }
 
 /// Sum of every element, as a tracked one-element tensor.
@@ -306,6 +312,54 @@ fn scale(g: &[f64], saved: &[f64], local: impl Fn(f64, f64) -> f64) -> Vec<f64> 
         .collect()
 }
 
+/// Sum a gradient of the broadcast shape back to the operand's own size.
+fn unbroadcast(g: &[f64], map: &[usize], n: usize) -> Vec<f64> {
+    let mut out = vec![0.0; n];
+    for (i, &idx) in map.iter().enumerate() {
+        out[idx] += g[i];
+    }
+    out
+}
+
+/// Backward rule for + - * / with broadcasting.
+/// node.dims = [rank_a, rank_b, shape_a.., shape_b..].
+fn binary_backward(node: &Node, g: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let ra = node.dims[0];
+    let rb = node.dims[1];
+    let sa = &node.dims[2..2 + ra];
+    let sb = &node.dims[2 + ra..2 + ra + rb];
+    let out_shape = broadcast_shape(sa, sb).expect("shapes were checked in the forward pass");
+    let ma = broadcast_map(sa, &out_shape);
+    let mb = broadcast_map(sb, &out_shape);
+    let (ga, gb): (Vec<f64>, Vec<f64>) = match node.op {
+        Op::Add => (g.to_vec(), g.to_vec()),
+        Op::Sub => (g.to_vec(), g.iter().map(|v| -v).collect()),
+        Op::Mul => {
+            let a = &node.saved[0];
+            let b = &node.saved[1];
+            (
+                g.iter().enumerate().map(|(i, v)| v * b[mb[i]]).collect(),
+                g.iter().enumerate().map(|(i, v)| v * a[ma[i]]).collect(),
+            )
+        }
+        Op::Div => {
+            let a = &node.saved[0];
+            let b = &node.saved[1];
+            (
+                g.iter().enumerate().map(|(i, v)| v / b[mb[i]]).collect(),
+                g.iter()
+                    .enumerate()
+                    .map(|(i, v)| -v * a[ma[i]] / (b[mb[i]] * b[mb[i]]))
+                    .collect(),
+            )
+        }
+        _ => unreachable!(),
+    };
+    let na: usize = sa.iter().product();
+    let nb: usize = sb.iter().product();
+    (unbroadcast(&ga, &ma, na), unbroadcast(&gb, &mb, nb))
+}
+
 /// Gradient of `y` with respect to `x`. Returns (shape of x, gradient values).
 pub fn grad(y: &Tracked, x: &Tracked) -> Result<(Vec<usize>, Vec<f64>), String> {
     if y.data.len() != 1 {
@@ -339,6 +393,12 @@ pub fn grad(y: &Tracked, x: &Tracked) -> Result<(Vec<usize>, Vec<f64>), String> 
             None => continue,
         };
         let node = &nodes[&id];
+        if matches!(node.op, Op::Add | Op::Sub | Op::Mul | Op::Div) {
+            let (ga, gb) = binary_backward(node, &g);
+            accumulate(&mut grads, node.parents[0].id, &ga);
+            accumulate(&mut grads, node.parents[1].id, &gb);
+            continue;
+        }
         match node.op {
             Op::Leaf => {}
             Op::Add => {
@@ -617,7 +677,7 @@ mod tests {
     #[test]
     fn shape_mismatch_is_error() {
         let a = leaf(vec![2], Arc::new(vec![1.0, 2.0]));
-        let b = leaf(vec![1], Arc::new(vec![1.0]));
+        let b = leaf(vec![3], Arc::new(vec![1.0, 2.0, 3.0]));
         assert!(add(&a, &b).is_err());
         assert!(mul(&a, &b).is_err());
     }
@@ -629,7 +689,7 @@ mod tests {
 mod gradcheck {
     use super::*;
 
-    fn t(shape: &[usize], data: &[f64]) -> Tracked {
+    pub(super) fn t(shape: &[usize], data: &[f64]) -> Tracked {
         leaf(shape.to_vec(), Arc::new(data.to_vec()))
     }
 
@@ -674,7 +734,12 @@ mod gradcheck {
     }
 
     /// Compares grad() with central finite differences for every element of x.
-    fn check(label: &str, shape: &[usize], data: &[f64], f: impl Fn(&Tracked) -> Tracked) {
+    pub(super) fn check(
+        label: &str,
+        shape: &[usize],
+        data: &[f64],
+        f: impl Fn(&Tracked) -> Tracked,
+    ) {
         let x = t(shape, data);
         let y = f(&x);
         assert_eq!(y.data.len(), 1, "{label}: f must return one element");
@@ -776,5 +841,87 @@ mod gradcheck {
             let err = sub(&mm(&xs, w), &ys).unwrap();
             mean(&mul(&err, &err).unwrap()).unwrap()
         });
+    }
+}
+
+/// Finite-difference checks for broadcasting in + - * /.
+#[cfg(test)]
+mod broadcast_gradcheck {
+    use super::gradcheck::{check, t};
+    use super::*;
+
+    const M: [f64; 6] = [1.0, 2.0, 3.0, -4.0, 5.0, 0.5];
+
+    fn sq(z: &Tracked) -> Tracked {
+        sum(&mul(z, z).unwrap())
+    }
+
+    #[test]
+    fn add_row_bias() {
+        let m = t(&[2, 3], &M);
+        let bias = t(&[3], &[0.5, -1.0, 2.0]);
+        check(
+            "bias",
+            &[3],
+            &[0.5, -1.0, 2.0],
+            |b| sq(&add(&m, b).unwrap()),
+        );
+        check("matrix", &[2, 3], &M, |x| sq(&add(x, &bias).unwrap()));
+    }
+
+    #[test]
+    fn sub_both_dims_broadcast() {
+        let col = t(&[2, 1], &[1.5, -0.7]);
+        let row = t(&[1, 3], &[2.0, 3.0, 4.0]);
+        check("col", &[2, 1], &[1.5, -0.7], |x| sq(&sub(x, &row).unwrap()));
+        check("row", &[1, 3], &[2.0, 3.0, 4.0], |x| {
+            sq(&sub(&col, x).unwrap())
+        });
+    }
+
+    #[test]
+    fn mul_column_and_scalar() {
+        let m = t(&[2, 3], &M);
+        let col = t(&[2, 1], &[1.5, -0.7]);
+        check("matrix", &[2, 3], &M, |x| sq(&mul(x, &col).unwrap()));
+        check("col", &[2, 1], &[1.5, -0.7], |x| sq(&mul(&m, x).unwrap()));
+        check("scalar", &[1], &[2.0], |x| sq(&mul(&m, x).unwrap()));
+    }
+
+    #[test]
+    fn div_row_by_matrix() {
+        let den = t(&[2, 3], &[1.5, 2.5, 0.5, 3.0, 2.0, 1.2]);
+        let num = t(&[3], &[1.0, -2.0, 3.0]);
+        check("num", &[3], &[1.0, -2.0, 3.0], |x| {
+            sq(&div(x, &den).unwrap())
+        });
+        check("den", &[2, 3], &[1.5, 2.5, 0.5, 3.0, 2.0, 1.2], |x| {
+            sq(&div(&num, x).unwrap())
+        });
+    }
+
+    #[test]
+    fn lower_rank_into_rank3() {
+        let d: Vec<f64> = (1..=12).map(|v| v as f64 * 0.5).collect();
+        let m3 = t(&[2, 2, 3], &d);
+        check("rank3", &[2, 3], &M, |x| sq(&mul(&m3, x).unwrap()));
+    }
+
+    #[test]
+    fn forward_values_follow_numpy_rule() {
+        let a = t(&[2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b = t(&[3], &[10.0, 20.0, 30.0]);
+        let y = add(&a, &b).unwrap();
+        assert_eq!(y.shape, vec![2, 3]);
+        assert_eq!(*y.data, vec![11.0, 22.0, 33.0, 14.0, 25.0, 36.0]);
+        let c = t(&[2, 1], &[100.0, 200.0]);
+        let z = mul(&a, &c).unwrap();
+        assert_eq!(*z.data, vec![100.0, 200.0, 300.0, 800.0, 1000.0, 1200.0]);
+    }
+
+    #[test]
+    fn incompatible_shapes_error() {
+        let e = add(&t(&[2], &[1.0, 2.0]), &t(&[3], &[1.0, 2.0, 3.0])).unwrap_err();
+        assert_eq!(e, "cannot broadcast shapes [2] and [3]");
     }
 }

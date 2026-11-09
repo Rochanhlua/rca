@@ -868,8 +868,8 @@ mod tests {
                 "grad() needs a result with exactly one element",
             ),
             (
-                "let x = track(Tensor([2.0]))\nprint(x + Tensor([1.0, 2.0]))\n",
-                "tracked tensors need equal shapes (broadcasting is not supported yet)",
+                "let x = track(Tensor([1.0, 2.0]))\nprint(x + Tensor([1.0, 2.0, 3.0]))\n",
+                "cannot broadcast shapes [2] and [3]",
             ),
             (
                 "let x = track(Tensor([2.0]))\nlet y = x / 0.0\nprint(grad(y, x))\n",
