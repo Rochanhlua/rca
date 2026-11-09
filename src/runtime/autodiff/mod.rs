@@ -622,3 +622,159 @@ mod tests {
         assert!(mul(&a, &b).is_err());
     }
 }
+
+/// Finite-difference gradient checks for every backward rule.
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)]
+mod gradcheck {
+    use super::*;
+
+    fn t(shape: &[usize], data: &[f64]) -> Tracked {
+        leaf(shape.to_vec(), Arc::new(data.to_vec()))
+    }
+
+    fn mm(a: &Tracked, b: &Tracked) -> Tracked {
+        let (m, k, n) = (a.shape[0], a.shape[1], b.shape[1]);
+        let mut out = vec![0.0; m * n];
+        for i in 0..m {
+            for j in 0..n {
+                for p in 0..k {
+                    out[i * n + j] += a.data[i * k + p] * b.data[p * n + j];
+                }
+            }
+        }
+        matmul(a, b, vec![m, n], Arc::new(out))
+    }
+
+    fn tr(a: &Tracked) -> Tracked {
+        let (r, c) = (a.shape[0], a.shape[1]);
+        let mut out = vec![0.0; r * c];
+        for i in 0..r {
+            for j in 0..c {
+                out[j * r + i] = a.data[i * c + j];
+            }
+        }
+        transpose(a, vec![c, r], Arc::new(out))
+    }
+
+    fn ew(kind: char, a: &Tracked) -> Tracked {
+        let data: Vec<f64> = a
+            .data
+            .iter()
+            .map(|v| match kind {
+                'e' => v.exp(),
+                'l' => v.ln(),
+                'q' => v.sqrt(),
+                't' => v.tanh(),
+                'r' => v.max(0.0),
+                _ => 1.0 / (1.0 + (-v).exp()),
+            })
+            .collect();
+        map(kind, a, Arc::new(data))
+    }
+
+    /// Compares grad() with central finite differences for every element of x.
+    fn check(label: &str, shape: &[usize], data: &[f64], f: impl Fn(&Tracked) -> Tracked) {
+        let x = t(shape, data);
+        let y = f(&x);
+        assert_eq!(y.data.len(), 1, "{label}: f must return one element");
+        let (gshape, analytic) = grad(&y, &x).unwrap();
+        assert_eq!(gshape, shape.to_vec(), "{label}: gradient shape");
+        let h = 1e-5;
+        for i in 0..data.len() {
+            let mut plus = data.to_vec();
+            let mut minus = data.to_vec();
+            plus[i] += h;
+            minus[i] -= h;
+            let fp = f(&t(shape, &plus)).data[0];
+            let fm = f(&t(shape, &minus)).data[0];
+            let numeric = (fp - fm) / (2.0 * h);
+            let tol = 1e-6 * analytic[i].abs().max(numeric.abs()).max(1.0);
+            assert!(
+                (analytic[i] - numeric).abs() < tol,
+                "{label}[{i}]: analytic {} vs numeric {}",
+                analytic[i],
+                numeric
+            );
+        }
+    }
+
+    const V: [f64; 4] = [1.5, 2.5, -0.7, 3.0];
+    const P: [f64; 4] = [0.5, 1.5, 2.5, 4.0];
+
+    #[test]
+    fn check_add_sub_mul_div() {
+        let c = t(&[4], &[2.0, 3.0, 4.0, 5.0]);
+        check("arith", &[4], &V, |x| {
+            let num = sub(&mul(x, x).unwrap(), &c).unwrap();
+            let den = add(&mul(x, x).unwrap(), &c).unwrap();
+            sum(&div(&num, &den).unwrap())
+        });
+    }
+
+    #[test]
+    fn check_sum_and_mean() {
+        check("sum", &[4], &V, |x| sum(&mul(x, x).unwrap()));
+        check("mean", &[4], &V, |x| mean(&mul(x, x).unwrap()).unwrap());
+    }
+
+    #[test]
+    fn check_elementwise_math() {
+        check("exp", &[4], &V, |x| sum(&ew('e', x)));
+        check("log", &[4], &P, |x| sum(&ew('l', x)));
+        check("sqrt", &[4], &P, |x| sum(&ew('q', x)));
+        check("tanh", &[4], &V, |x| sum(&ew('t', x)));
+        check("sigmoid", &[4], &V, |x| sum(&ew('s', x)));
+        check("relu", &[4], &[-1.3, 0.7, 2.2, -0.4], |x| {
+            sum(&mul(&ew('r', x), x).unwrap())
+        });
+    }
+
+    #[test]
+    fn check_chain_of_ops() {
+        check("chain", &[4], &P, |x| {
+            let a = ew('e', &ew('s', x));
+            let b = ew('l', &add(&mul(x, x).unwrap(), &a).unwrap());
+            mean(&mul(&b, &ew('t', x)).unwrap()).unwrap()
+        });
+    }
+
+    #[test]
+    fn check_matmul_left_right_and_both() {
+        let w = t(&[2, 2], &[1.0, -2.0, 3.0, 0.5]);
+        let b = t(&[3, 2], &[1.0, 2.0, -1.0, 0.5, 2.0, -3.0]);
+        let a = t(&[2, 3], &[0.5, -1.0, 2.0, 1.5, 0.3, -0.8]);
+        let m23 = [1.0, 2.0, 3.0, -4.0, 5.0, 0.5];
+        check("matmul left", &[2, 3], &m23, |x| {
+            sum(&mul(&mm(x, &b), &w).unwrap())
+        });
+        check("matmul right", &[3, 2], &m23, |x| {
+            sum(&mul(&mm(&a, x), &w).unwrap())
+        });
+        check("matmul both", &[2, 3], &m23, |x| {
+            sum(&mul(&mm(x, &tr(x)), &w).unwrap())
+        });
+    }
+
+    #[test]
+    fn check_transpose_and_reshape() {
+        let w = t(&[3, 2], &[1.0, 2.0, 3.0, -4.0, 5.0, 6.0]);
+        check("transpose", &[2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], |x| {
+            sum(&mul(&tr(x), &w).unwrap())
+        });
+        let m = t(&[2, 2], &[1.0, 2.0, 3.0, 4.0]);
+        check("reshape", &[4], &V, |x| {
+            sum(&mul(&reshape(x, vec![2, 2]), &m).unwrap())
+        });
+    }
+
+    #[test]
+    fn check_linear_regression_loss() {
+        let xs = t(&[2, 2], &[1.0, 2.0, 3.0, 4.0]);
+        let ys = t(&[2, 1], &[3.0, 6.0]);
+        check("regression", &[2, 1], &[2.0, 1.0], |w| {
+            let err = sub(&mm(&xs, w), &ys).unwrap();
+            mean(&mul(&err, &err).unwrap()).unwrap()
+        });
+    }
+}
