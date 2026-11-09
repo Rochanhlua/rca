@@ -96,7 +96,7 @@ C. A separate variant `Value::Tracked(Arc<Tracked>)` (RECOMMENDED).
 2. Sub, Div, and plain tensors / Float scalars mixed in as constants (implemented).
 3. Sum, Mean, MatMul of rank 2 tensors (implemented).
 4. Transpose, Reshape, elementwise math: exp, log, sqrt, tanh, relu, sigmoid (implemented).
-5. Broadcasting backward (tracked tensors of different shapes).
+5. Broadcasting backward (tracked tensors of different shapes) (implemented).
 6. Gradient accumulation across several `grad` calls, `zero_grad`.
 7. Forward-mode differentiation (separate design).
 

@@ -1,0 +1,11 @@
+# Linear layer with bias: pred = x * w + b, loss = mean((pred - y)^2)
+let w = track(Tensor([[1.0], [2.0]]))
+let b = track(Tensor([0.5]))
+let x = Tensor([[1.0, 2.0], [3.0, 4.0]])
+let y = Tensor([[3.0], [6.0]])
+let pred = matmul(x, w) + b
+let err = pred - y
+let loss = mean(err * err)
+print(loss)
+print(grad(loss, w))
+print(grad(loss, b))
