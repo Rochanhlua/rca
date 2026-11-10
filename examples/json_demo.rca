@@ -1,0 +1,7 @@
+let json_str = "{\"name\": \"RCA\", \"version\": 1, \"features\": [\"AI\", \"Fast\"]}"
+let parsed = json_parse(json_str)
+print(map_get(parsed, "name"))
+print(map_get(parsed, "version"))
+
+let out_str = json_stringify(parsed)
+print(out_str)

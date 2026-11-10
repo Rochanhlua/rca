@@ -745,6 +745,23 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "json_parse" {
+            if args.len() != 1 {
+                return Err(err("json_parse() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::JsonParse, span);
+            return Ok(());
+        }
+        if name == "json_stringify" {
+            if args.len() != 1 {
+                return Err(err("json_stringify() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::JsonStringify, span);
+            return Ok(());
+        }
+
         let fkey = self.item_key(&name);
 
         if name == "abs" {
