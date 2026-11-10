@@ -1,0 +1,8 @@
+let text = "  RCA is great  "
+print(trim(text))
+
+let csv = "apple,banana,cherry"
+print(split(csv, ","))
+
+let replaced = replace(csv, ",", " | ")
+print(replaced)

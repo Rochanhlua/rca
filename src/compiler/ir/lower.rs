@@ -780,6 +780,33 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "trim" {
+            if args.len() != 1 {
+                return Err(err("trim() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::StrTrim, span);
+            return Ok(());
+        }
+        if name == "split" {
+            if args.len() != 2 {
+                return Err(err("split() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::StrSplit, span);
+            return Ok(());
+        }
+        if name == "replace" {
+            if args.len() != 3 {
+                return Err(err("replace() takes exactly 3 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.compile_expr(&args[2].value)?;
+            self.emit(Instruction::StrReplace, span);
+            return Ok(());
+        }
         if name == "now" {
             if !args.is_empty() {
                 return Err(err("now() takes exactly 0 arguments", span));

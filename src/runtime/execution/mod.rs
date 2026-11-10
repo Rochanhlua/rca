@@ -790,6 +790,50 @@ impl Interpreter {
             return Ok(Value::Float(r));
         }
 
+        if name == "trim" {
+            if args.len() != 1 {
+                return Err(err("trim() takes exactly 1 argument", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("trim() needs a String", span)),
+            };
+            return Ok(Value::Str(s.trim().to_string()));
+        }
+        if name == "split" {
+            if args.len() != 2 {
+                return Err(err("split() takes exactly 2 arguments", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("split() needs a String", span)),
+            };
+            let sep = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("split() needs a separator", span)),
+            };
+            return Ok(Value::List(
+                s.split(&sep).map(|p| Value::Str(p.to_string())).collect(),
+            ));
+        }
+        if name == "replace" {
+            if args.len() != 3 {
+                return Err(err("replace() takes exactly 3 arguments", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("replace() needs a String", span)),
+            };
+            let target = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("replace() needs a String", span)),
+            };
+            let rep = match self.eval_expr(&args[2].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("replace() needs a String", span)),
+            };
+            return Ok(Value::Str(s.replace(&target, &rep)));
+        }
         if name == "now" {
             if !args.is_empty() {
                 return Err(err("now() takes exactly 0 arguments", span));

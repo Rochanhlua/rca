@@ -1219,6 +1219,45 @@ impl Checker {
             return Type::Float;
         }
 
+        if matches!(name.as_str(), "trim" | "split" | "replace") {
+            if name == "trim" {
+                if args.len() != 1 {
+                    self.error("trim() takes exactly 1 argument".to_string(), span);
+                }
+                let t = self.check_expr(&args[0].value);
+                if !matches!(t, Type::String | Type::Unknown) {
+                    self.error("trim() needs a String".to_string(), &args[0].value.span);
+                }
+                return Type::String;
+            }
+            if name == "split" {
+                if args.len() != 2 {
+                    self.error("split() takes exactly 2 arguments".to_string(), span);
+                }
+                let t = self.check_expr(&args[0].value);
+                let s = self.check_expr(&args[1].value);
+                if !matches!(t, Type::String | Type::Unknown) {
+                    self.error("split() needs a String".to_string(), &args[0].value.span);
+                }
+                if !matches!(s, Type::String | Type::Unknown) {
+                    self.error(
+                        "split() needs a String separator".to_string(),
+                        &args[1].value.span,
+                    );
+                }
+                return Type::List(Box::new(Type::String));
+            }
+            if args.len() != 3 {
+                self.error("replace() takes exactly 3 arguments".to_string(), span);
+            }
+            for a in args.iter() {
+                let t = self.check_expr(&a.value);
+                if !matches!(t, Type::String | Type::Unknown) {
+                    self.error("replace() needs Strings".to_string(), &a.value.span);
+                }
+            }
+            return Type::String;
+        }
         if name == "now" {
             if !args.is_empty() {
                 self.error("now() takes exactly 0 arguments".to_string(), span);
