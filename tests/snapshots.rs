@@ -47,7 +47,9 @@ fn check_snapshot(name: &str, command: &str, file: &str) {
         file,
         String::from_utf8_lossy(&out.stderr)
     );
-    let actual = String::from_utf8_lossy(&out.stdout).to_string();
+    let actual = String::from_utf8_lossy(&out.stdout)
+        .replace("\r\n", "\n")
+        .to_string();
     let path = golden_path(name);
 
     if update_mode() {
