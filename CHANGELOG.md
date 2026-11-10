@@ -17,3 +17,5 @@
 - **Planned:** module-qualified `fs.read()`, `fs.write()`, `fs.exists()` via `import fs` (blueprint §8, §13). Requires a `src/stdlib/fs/` module system and module-method call syntax.
 - **Implemented:** time builtins `now()` (Unix timestamp in ms) and `sleep(ms)` — flat functions matching the existing style. Both VM and tree-walking interpreter use `std::time`.
 - **Planned:** module-qualified `time.now()`, `time.sleep()` via `import time` (blueprint §8, §13).
+- **Implemented:** math builtins `abs()`, `pow()`, `floor()`, `ceil()`, `round()` — flat functions matching the existing style.
+- **Planned:** module-qualified `math.abs()`, `math.pow()` etc. via `import math` (blueprint §8, §13).
