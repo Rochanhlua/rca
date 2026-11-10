@@ -26,3 +26,5 @@
 - **Planned:** proper Map literal syntax (e.g. `{"key": value}`) and direct iteration.
 - **Implemented:** JSON builtins `json_parse()`, `json_stringify()` — pure Rust parser (no external dependencies).
 - **Planned:** native JSON integration with `Map` literal syntax.
+- **Implemented:** TCP networking builtins `tcp_connect()`, `tcp_send()`, `tcp_recv()`, `tcp_close()` — pure Rust using `std::net`.
+- **Planned:** UDP sockets and HTTP wrappers.
