@@ -731,6 +731,29 @@ impl Interpreter {
             };
         }
 
+        if name == "now" {
+            if !args.is_empty() {
+                return Err(err("now() takes exactly 0 arguments", span));
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            return Ok(Value::Int(now as i64));
+        }
+
+        if name == "sleep" {
+            if args.len() != 1 {
+                return Err(err("sleep() takes exactly 1 argument", span));
+            }
+            let ms = match self.eval_expr(&args[0].value)? {
+                Value::Int(n) if n >= 0 => n as u64,
+                _ => return Err(err("sleep() needs a non-negative Int (ms)", span)),
+            };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            return Ok(Value::None);
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }

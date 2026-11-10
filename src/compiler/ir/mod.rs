@@ -133,6 +133,10 @@ pub enum Instruction {
     WriteFile,
     /// Pops a String path, pushes a Bool (true if the file exists).
     FileExists,
+    /// Pushes the current Unix timestamp in milliseconds.
+    TimeNow,
+    /// Pops an Int (milliseconds) and sleeps.
+    TimeSleep,
 }
 
 #[derive(Debug, Clone, Default)]

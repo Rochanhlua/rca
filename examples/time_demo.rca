@@ -1,0 +1,4 @@
+let start = now()
+sleep(100)
+let end = now()
+print(end - start >= 100)

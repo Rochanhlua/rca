@@ -1170,6 +1170,30 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "now" {
+            if !args.is_empty() {
+                self.error("now() takes exactly 0 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+            }
+            return Type::Int;
+        }
+
+        if name == "sleep" {
+            if args.len() != 1 {
+                self.error("sleep() takes exactly 1 argument".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::None;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Int | Type::Unknown) {
+                self.error(
+                    format!("sleep() needs an Int (ms), found {}", t),
+                    &args[0].value.span,
+                );
+            }
+            return Type::None;
+        }
+
         if let Some(sig) = self.functions.get(&name).cloned() {
             return self.check_function_call(&name, &sig, args, span);
         }
