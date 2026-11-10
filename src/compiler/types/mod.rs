@@ -19,6 +19,8 @@ pub enum Type {
     Map(Box<Type>, Box<Type>),
     /// A user-defined enum, identified by name.
     Enum(String),
+    /// A network socket.
+    Socket,
     /// Used after an error, or when a type is not yet known.
     /// It never causes further errors (prevents cascades).
     Unknown,
@@ -67,6 +69,7 @@ impl fmt::Display for Type {
                 write!(f, ")")
             }
             Type::Enum(name) => write!(f, "{}", name),
+            Type::Socket => write!(f, "Socket"),
             Type::Unknown => write!(f, "<unknown>"),
             Type::Map(k, v) => write!(f, "Map<{}, {}>", k, v),
         }

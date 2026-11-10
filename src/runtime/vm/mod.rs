@@ -369,6 +369,66 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(format!("json_stringify(): {}", m), span)),
                     }
                 }
+                Instruction::TcpConnect => {
+                    let port = match self.pop() {
+                        Value::Int(i) => i as u16,
+                        _ => return Err(err("tcp_connect() needs an Int port", span)),
+                    };
+                    let host = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("tcp_connect() needs a String host", span)),
+                    };
+                    let addr = format!("{}:{}", host, port);
+                    match std::net::TcpStream::connect(&addr) {
+                        Ok(stream) => self.stack.push(Value::Socket(crate::runtime::net::Socket {
+                            stream: std::sync::Arc::new(std::sync::Mutex::new(stream)),
+                        })),
+                        Err(e) => return Err(err(format!("tcp_connect failed: {}", e), span)),
+                    }
+                }
+                Instruction::TcpSend => {
+                    let data = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("tcp_send() needs a String", span)),
+                    };
+                    let sock = match self.pop() {
+                        Value::Socket(s) => s,
+                        _ => return Err(err("tcp_send() needs a Socket", span)),
+                    };
+                    use std::io::Write;
+                    let mut stream = sock.stream.lock().unwrap();
+                    match stream.write(data.as_bytes()) {
+                        Ok(n) => self.stack.push(Value::Int(n as i64)),
+                        Err(e) => return Err(err(format!("tcp_send failed: {}", e), span)),
+                    }
+                }
+                Instruction::TcpRecv => {
+                    let max_bytes = match self.pop() {
+                        Value::Int(i) => i as usize,
+                        _ => return Err(err("tcp_recv() needs an Int", span)),
+                    };
+                    let sock = match self.pop() {
+                        Value::Socket(s) => s,
+                        _ => return Err(err("tcp_recv() needs a Socket", span)),
+                    };
+                    use std::io::Read;
+                    let mut buf = vec![0u8; max_bytes];
+                    let mut stream = sock.stream.lock().unwrap();
+                    match stream.read(&mut buf) {
+                        Ok(n) => self
+                            .stack
+                            .push(Value::Str(String::from_utf8_lossy(&buf[..n]).to_string())),
+                        Err(e) => return Err(err(format!("tcp_recv failed: {}", e), span)),
+                    }
+                }
+                Instruction::TcpClose => {
+                    let _sock = match self.pop() {
+                        Value::Socket(s) => s,
+                        _ => return Err(err("tcp_close() needs a Socket", span)),
+                    };
+                    self.stack.push(Value::None);
+                }
+
                 Instruction::MapNew => {
                     self.stack.push(Value::Map(Vec::new()));
                 }

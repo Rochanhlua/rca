@@ -762,6 +762,42 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "tcp_connect" {
+            if args.len() != 2 {
+                return Err(err("tcp_connect() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::TcpConnect, span);
+            return Ok(());
+        }
+        if name == "tcp_send" {
+            if args.len() != 2 {
+                return Err(err("tcp_send() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::TcpSend, span);
+            return Ok(());
+        }
+        if name == "tcp_recv" {
+            if args.len() != 2 {
+                return Err(err("tcp_recv() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::TcpRecv, span);
+            return Ok(());
+        }
+        if name == "tcp_close" {
+            if args.len() != 1 {
+                return Err(err("tcp_close() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::TcpClose, span);
+            return Ok(());
+        }
+
         let fkey = self.item_key(&name);
 
         if name == "abs" {

@@ -933,6 +933,76 @@ impl Interpreter {
                 .map_err(|m| err(format!("json_stringify(): {}", m), span));
         }
 
+        if name == "tcp_connect" {
+            if args.len() != 2 {
+                return Err(err("tcp_connect() takes exactly 2 arguments", span));
+            }
+            let host = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("tcp_connect() needs a String host", span)),
+            };
+            let port = match self.eval_expr(&args[1].value)? {
+                Value::Int(i) => i as u16,
+                _ => return Err(err("tcp_connect() needs an Int port", span)),
+            };
+            let addr = format!("{}:{}", host, port);
+            return match std::net::TcpStream::connect(&addr) {
+                Ok(stream) => Ok(Value::Socket(crate::runtime::net::Socket {
+                    stream: std::sync::Arc::new(std::sync::Mutex::new(stream)),
+                })),
+                Err(e) => Err(err(format!("tcp_connect failed: {}", e), span)),
+            };
+        }
+        if name == "tcp_send" {
+            if args.len() != 2 {
+                return Err(err("tcp_send() takes exactly 2 arguments", span));
+            }
+            let sock = match self.eval_expr(&args[0].value)? {
+                Value::Socket(s) => s,
+                _ => return Err(err("tcp_send() needs a Socket", span)),
+            };
+            let data = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("tcp_send() needs a String", span)),
+            };
+            use std::io::Write;
+            let mut stream = sock.stream.lock().unwrap();
+            return match stream.write(data.as_bytes()) {
+                Ok(n) => Ok(Value::Int(n as i64)),
+                Err(e) => Err(err(format!("tcp_send failed: {}", e), span)),
+            };
+        }
+        if name == "tcp_recv" {
+            if args.len() != 2 {
+                return Err(err("tcp_recv() takes exactly 2 arguments", span));
+            }
+            let sock = match self.eval_expr(&args[0].value)? {
+                Value::Socket(s) => s,
+                _ => return Err(err("tcp_recv() needs a Socket", span)),
+            };
+            let max_bytes = match self.eval_expr(&args[1].value)? {
+                Value::Int(i) => i as usize,
+                _ => return Err(err("tcp_recv() needs an Int", span)),
+            };
+            use std::io::Read;
+            let mut buf = vec![0u8; max_bytes];
+            let mut stream = sock.stream.lock().unwrap();
+            return match stream.read(&mut buf) {
+                Ok(n) => Ok(Value::Str(String::from_utf8_lossy(&buf[..n]).to_string())),
+                Err(e) => Err(err(format!("tcp_recv failed: {}", e), span)),
+            };
+        }
+        if name == "tcp_close" {
+            if args.len() != 1 {
+                return Err(err("tcp_close() takes exactly 1 argument", span));
+            }
+            let _sock = match self.eval_expr(&args[0].value)? {
+                Value::Socket(s) => s,
+                _ => return Err(err("tcp_close() needs a Socket", span)),
+            };
+            return Ok(Value::None);
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }

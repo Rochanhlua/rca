@@ -27,6 +27,8 @@ pub enum Value {
         name: String,
         variant: String,
     },
+    /// A TCP socket.
+    Socket(crate::runtime::net::Socket),
     Struct {
         name: String,
         fields: Vec<(String, Value)>,
@@ -38,6 +40,7 @@ impl Value {
     fn repr(&self) -> String {
         match self {
             Value::Str(s) => format!("{:?}", s),
+            Value::Socket(_) => "<socket>".to_string(),
             _ => self.to_string(),
         }
     }
@@ -98,6 +101,7 @@ impl fmt::Display for Value {
                 write!(f, ")")
             }
             Value::Enum { name, variant } => write!(f, "{}.{}", name, variant),
+            Value::Socket(_) => write!(f, "<socket>"),
             Value::Struct { name, fields } => {
                 write!(f, "{}(", name)?;
                 for (i, (n, v)) in fields.iter().enumerate() {
