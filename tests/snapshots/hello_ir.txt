@@ -1,0 +1,31 @@
+== main (locals: 3, globals: 2) ==
+0000  PushStr("RCA")               ; line 2
+0001  StoreGlobal(0)               ; line 2
+0002  PushInt(0)                   ; line 3
+0003  StoreGlobal(1)               ; line 3
+0004  LoadGlobal(1)                ; line 4
+0005  PushInt(1)                   ; line 4
+0006  Add                          ; line 4
+0007  StoreGlobal(1)               ; line 4
+0008  PushInt(0)                   ; line 9
+0009  PushInt(10)                  ; line 9
+0010  MakeRange                    ; line 9
+0011  StoreLocal(0)                ; line 9
+0012  PushInt(0)                   ; line 9
+0013  StoreLocal(1)                ; line 9
+0014  ForNext { iter: 0, idx: 1, var: 2, exit: 19 } ; line 9
+0015  LoadLocal(2)                 ; line 10
+0016  Print(1)                     ; line 10
+0017  Pop                          ; line 10
+0018  Jump(14)                     ; line 9
+0019  PushNone                     ; line 1
+0020  Return                       ; line 1
+
+== fn add (arity: 2, locals: 2) ==
+0000  LoadLocal(0)                 ; line 7
+0001  LoadLocal(1)                 ; line 7
+0002  Add                          ; line 7
+0003  Return                       ; line 7
+0004  PushNone                     ; line 6
+0005  Return                       ; line 6
+
