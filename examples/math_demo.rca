@@ -1,0 +1,7 @@
+print(abs(-5))
+print(abs(-2.5))
+print(pow(2, 3))
+print(pow(2.0, 0.5))
+print(floor(3.7))
+print(ceil(3.1))
+print(round(3.5))
