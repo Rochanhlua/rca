@@ -40,3 +40,5 @@
 - **Planned:** native codegen for arithmetic, strings, functions, and control flow.
 - **Implemented:** native codegen for integer arithmetic (`+`, `-`, `*`, `/`, `%`).
 - **Planned:** native codegen for strings, floats, comparisons, functions, and control flow.
+- **Implemented:** native codegen for comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) and booleans.
+- **Planned:** native codegen for control flow (`if`/`else`, loops) and strings.
