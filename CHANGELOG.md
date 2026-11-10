@@ -38,3 +38,5 @@
 - **Planned:** full IR-to-Cranelift translation (PushInt, Add, Print) and final executable linking.
 - **Implemented:** native codegen for `PushInt` and `Print` — RCA can now compile simple integer programs to native executables via `rca build`.
 - **Planned:** native codegen for arithmetic, strings, functions, and control flow.
+- **Implemented:** native codegen for integer arithmetic (`+`, `-`, `*`, `/`, `%`).
+- **Planned:** native codegen for strings, floats, comparisons, functions, and control flow.
