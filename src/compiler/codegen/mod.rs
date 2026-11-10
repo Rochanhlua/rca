@@ -1,10 +1,12 @@
 //! Cranelift backend for generating native machine code.
 //! See blueprint §5.2: native compilation must ultimately be supported.
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags, StackSlotData, StackSlotKind, types};
+use cranelift_codegen::ir::{
+    AbiParam, FuncRef, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind, types,
+};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::{DataDescription, Linkage, Module, default_libcall_names};
+use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::compiler::ir::{Instruction, IrProgram};
@@ -55,43 +57,43 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_str_id, &fmt_str_data)
         .map_err(|e| e.to_string())?;
 
-    let mut sig = module.make_signature();
-    sig.returns.push(AbiParam::new(types::I32));
+    // 1. Declare all RCA functions
+    let mut func_ids: Vec<FuncId> = Vec::new();
+    for f in &program.functions {
+        let mut sig = module.make_signature();
+        for _ in 0..f.arity {
+            sig.params.push(AbiParam::new(types::I64)); // For now, only Int args
+        }
+        sig.returns.push(AbiParam::new(types::I64)); // For now, only Int returns
+
+        let id = module
+            .declare_function(&f.name, Linkage::Export, &sig)
+            .map_err(|e| e.to_string())?;
+        func_ids.push(id);
+    }
+
+    // 2. Declare main function
+    let mut main_sig = module.make_signature();
+    main_sig.returns.push(AbiParam::new(types::I32));
     let main_id = module
-        .declare_function("main", Linkage::Export, &sig)
+        .declare_function("main", Linkage::Export, &main_sig)
         .map_err(|e| e.to_string())?;
 
-    let mut ctx = module.make_context();
-    ctx.func.signature = sig.clone();
-    let mut builder_ctx = FunctionBuilderContext::new();
-
-    {
-        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
-        let entry_block = builder.create_block();
-        builder.append_block_params_for_function_params(entry_block);
-        builder.switch_to_block(entry_block);
-
-        let stack_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-        let locals_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-        let globals_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-
-        let sp_var = Variable::new(0);
-        builder.declare_var(sp_var, types::I64);
-        let zero = builder.ins().iconst(types::I64, 0);
-        builder.def_var(sp_var, zero);
-
-        let fmt_int_gv = module.declare_data_in_func(fmt_int_id, builder.func);
-        let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
-        let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
-        let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
-        let printf_ref = module.declare_func_in_func(printf_func, builder.func);
-
+    // Helper to compile a chunk (used for both main and RCA functions)
+    let compile_chunk = |module: &mut ObjectModule,
+                         builder: &mut FunctionBuilder,
+                         chunk: &crate::compiler::ir::Chunk,
+                         stack_slot: StackSlot,
+                         locals_slot: StackSlot,
+                         globals_slot: StackSlot,
+                         sp_var: Variable,
+                         printf_ref: FuncRef,
+                         fmt_int_ptr: Value,
+                         fmt_str_ptr: Value,
+                         is_main: bool|
+     -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
-
-        let code = &program.main.chunk.code;
+        let code = &chunk.code;
         let mut blocks = Vec::new();
         for _ in 0..code.len() + 1 {
             blocks.push(builder.create_block());
@@ -231,7 +233,6 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::MakeRange => {
-                    // Pop end, pop start; pack as (start << 32) | (end & 0xffffffff)
                     let sp = builder.use_var(sp_var);
                     let sp_end = builder.ins().iadd_imm(sp, -1);
                     let sp_off_end = builder.ins().imul_imm(sp_end, 8);
@@ -343,6 +344,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::Call(id) => {
+                    let f_id = func_ids[*id];
+                    let sig = module
+                        .declarations()
+                        .get_function_decl(f_id)
+                        .signature
+                        .clone();
+                    let mut args = Vec::new();
+                    for _ in 0..sig.params.len() {
+                        let sp = builder.use_var(sp_var);
+                        let new_sp = builder.ins().iadd_imm(sp, -1);
+                        builder.def_var(sp_var, new_sp);
+                        let sp_off = builder.ins().imul_imm(new_sp, 8);
+                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let arg_addr = builder.ins().iadd(sp_addr, sp_off);
+                        let arg = builder.ins().load(types::I64, MemFlags::new(), arg_addr, 0);
+                        args.push(arg);
+                        type_stack.pop();
+                    }
+                    args.reverse(); // Arguments must be in order
+                    let f_ref = module.declare_func_in_func(f_id, builder.func);
+                    let call = builder.ins().call(f_ref, &args);
+                    let ret_val = builder.inst_results(call)[0];
+
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), ret_val, dest_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::Jump(target) => {
                     builder.ins().jump(blocks[*target], &[]);
                 }
@@ -362,8 +397,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.pop();
                 }
                 Instruction::Return => {
-                    let ret = builder.ins().iconst(types::I32, 0);
-                    builder.ins().return_(&[ret]);
+                    if is_main {
+                        let ret = builder.ins().iconst(types::I32, 0);
+                        builder.ins().return_(&[ret]);
+                    } else {
+                        let sp = builder.use_var(sp_var);
+                        let new_sp = builder.ins().iadd_imm(sp, -1);
+                        builder.def_var(sp_var, new_sp);
+                        let sp_off = builder.ins().imul_imm(new_sp, 8);
+                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src_addr = builder.ins().iadd(sp_addr, sp_off);
+                        let ret_val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                        builder.ins().return_(&[ret_val]);
+                    }
                 }
                 _ => {
                     builder.ins().jump(blocks[ip + 1], &[]);
@@ -372,19 +418,130 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         }
 
         builder.switch_to_block(blocks[code.len()]);
-        let ret = builder.ins().iconst(types::I32, 0);
-        builder.ins().return_(&[ret]);
+        if is_main {
+            let ret = builder.ins().iconst(types::I32, 0);
+            builder.ins().return_(&[ret]);
+        } else {
+            let zero = builder.ins().iconst(types::I64, 0);
+            builder.ins().return_(&[zero]);
+        }
 
         for block in &blocks {
             builder.seal_block(*block);
         }
+        Ok(())
+    };
+
+    // 3. Compile main function
+    let mut ctx = module.make_context();
+    ctx.func.signature = main_sig.clone();
+    let mut builder_ctx = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
+
+        let stack_slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+        let locals_slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+        let globals_slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+        let sp_var = Variable::new(0);
+        builder.declare_var(sp_var, types::I64);
+        let zero = builder.ins().iconst(types::I64, 0);
+        builder.def_var(sp_var, zero);
+
+        let fmt_int_gv = module.declare_data_in_func(fmt_int_id, builder.func);
+        let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
+        let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
+        let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+        let printf_ref = module.declare_func_in_func(printf_func, builder.func);
+
+        compile_chunk(
+            &mut module,
+            &mut builder,
+            &program.main.chunk,
+            stack_slot,
+            locals_slot,
+            globals_slot,
+            sp_var,
+            printf_ref,
+            fmt_int_ptr,
+            fmt_str_ptr,
+            true,
+        )?;
         builder.finalize();
     }
-
     module
         .define_function(main_id, &mut ctx)
         .map_err(|e| e.to_string())?;
+
+    // 4. Compile RCA user functions
+    for (i, f) in program.functions.iter().enumerate() {
+        let mut f_ctx = module.make_context();
+        let mut f_sig = module.make_signature();
+        for _ in 0..f.arity {
+            f_sig.params.push(AbiParam::new(types::I64));
+        }
+        f_sig.returns.push(AbiParam::new(types::I64));
+        f_ctx.func.signature = f_sig.clone();
+
+        let mut f_builder_ctx = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut f_ctx.func, &mut f_builder_ctx);
+            let entry_block = builder.create_block();
+            builder.append_block_params_for_function_params(entry_block);
+            builder.switch_to_block(entry_block);
+            builder.seal_block(entry_block);
+
+            let stack_slot = builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+            let locals_slot = builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+            let globals_slot = builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+            let sp_var = Variable::new(0);
+            builder.declare_var(sp_var, types::I64);
+            let zero = builder.ins().iconst(types::I64, 0);
+            builder.def_var(sp_var, zero);
+
+            let fmt_int_gv = module.declare_data_in_func(fmt_int_id, builder.func);
+            let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
+            let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
+            let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+            let printf_ref = module.declare_func_in_func(printf_func, builder.func);
+
+            // Bind parameters to locals
+            let params = builder.block_params(entry_block).to_vec();
+            for (p_idx, p_val) in params.iter().enumerate() {
+                let slot_off = builder.ins().iconst(types::I64, (p_idx as i64) * 8);
+                let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
+                let dest_addr = builder.ins().iadd(locals_addr, slot_off);
+                builder.ins().store(MemFlags::new(), *p_val, dest_addr, 0);
+            }
+
+            compile_chunk(
+                &mut module,
+                &mut builder,
+                &f.chunk,
+                stack_slot,
+                locals_slot,
+                globals_slot,
+                sp_var,
+                printf_ref,
+                fmt_int_ptr,
+                fmt_str_ptr,
+                false,
+            )?;
+            builder.finalize();
+        }
+        module
+            .define_function(func_ids[i], &mut f_ctx)
+            .map_err(|e| e.to_string())?;
+    }
 
     let obj = module.finish();
     obj.emit().map_err(|e| e.to_string())
