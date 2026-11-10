@@ -53,6 +53,8 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         I::ReadFile | I::FileExists => (1, 1),
         I::TimeNow => (0, 1),
         I::TimeSleep => (1, 1),
+        I::MathAbs | I::MathFloor | I::MathCeil | I::MathRound => (1, 1),
+        I::MathPow => (2, 1),
         I::WriteFile => (2, 1),
         I::Neg
         | I::Not

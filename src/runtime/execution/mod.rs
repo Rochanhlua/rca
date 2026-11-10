@@ -731,6 +731,65 @@ impl Interpreter {
             };
         }
 
+        if name == "abs" {
+            if args.len() != 1 {
+                return Err(err("abs() takes exactly 1 argument", span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            return match v {
+                Value::Int(n) => n
+                    .checked_abs()
+                    .map(Value::Int)
+                    .ok_or_else(|| err("integer overflow", span)),
+                Value::Float(x) => Ok(Value::Float(x.abs())),
+                _ => Err(err("abs() needs a number", span)),
+            };
+        }
+
+        if name == "pow" {
+            if args.len() != 2 {
+                return Err(err("pow() takes exactly 2 arguments", span));
+            }
+            let b = self.eval_expr(&args[0].value)?;
+            let e = self.eval_expr(&args[1].value)?;
+            return match (b, e) {
+                (Value::Int(bb), Value::Int(ee)) if ee >= 0 => {
+                    Ok(Value::Int(bb.saturating_pow(ee as u32)))
+                }
+                (b, e) => {
+                    let bf = match b {
+                        Value::Int(i) => i as f64,
+                        Value::Float(x) => x,
+                        _ => return Err(err("pow() needs numbers", span)),
+                    };
+                    let ef = match e {
+                        Value::Int(i) => i as f64,
+                        Value::Float(x) => x,
+                        _ => return Err(err("pow() needs numbers", span)),
+                    };
+                    Ok(Value::Float(bf.powf(ef)))
+                }
+            };
+        }
+
+        if matches!(name.as_str(), "floor" | "ceil" | "round") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            let x = match v {
+                Value::Int(i) => i as f64,
+                Value::Float(x) => x,
+                _ => return Err(err("math function needs a number", span)),
+            };
+            let r = match name.as_str() {
+                "floor" => x.floor(),
+                "ceil" => x.ceil(),
+                _ => x.round(),
+            };
+            return Ok(Value::Float(r));
+        }
+
         if name == "now" {
             if !args.is_empty() {
                 return Err(err("now() takes exactly 0 arguments", span));

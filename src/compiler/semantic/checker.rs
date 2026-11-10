@@ -1170,6 +1170,55 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "abs" {
+            if args.len() != 1 {
+                self.error("abs() takes exactly 1 argument".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Float;
+            }
+            let t = self.check_expr(&args[0].value);
+            match t {
+                Type::Int | Type::Unknown => return Type::Int,
+                Type::Float => return Type::Float,
+                _ => self.error(
+                    format!("abs() needs a number, found {}", t),
+                    &args[0].value.span,
+                ),
+            }
+            return Type::Float;
+        }
+
+        if name == "pow" {
+            if args.len() != 2 {
+                self.error("pow() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Float;
+            }
+            for a in args.iter() {
+                let t = self.check_expr(&a.value);
+                if !matches!(t, Type::Int | Type::Float | Type::Unknown) {
+                    self.error(format!("pow() needs numbers, found {}", t), &a.value.span);
+                }
+            }
+            return Type::Float;
+        }
+
+        if matches!(name.as_str(), "floor" | "ceil" | "round") {
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+                return Type::Float;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::Int | Type::Float | Type::Unknown) {
+                self.error(
+                    format!("{}() needs a number, found {}", name, t),
+                    &args[0].value.span,
+                );
+            }
+            return Type::Float;
+        }
+
         if name == "now" {
             if !args.is_empty() {
                 self.error("now() takes exactly 0 arguments".to_string(), span);

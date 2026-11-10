@@ -747,6 +747,39 @@ impl Compiler {
 
         let fkey = self.item_key(&name);
 
+        if name == "abs" {
+            if args.len() != 1 {
+                return Err(err("abs() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::MathAbs, span);
+            return Ok(());
+        }
+
+        if name == "pow" {
+            if args.len() != 2 {
+                return Err(err("pow() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::MathPow, span);
+            return Ok(());
+        }
+
+        if matches!(name.as_str(), "floor" | "ceil" | "round") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let ins = match name.as_str() {
+                "floor" => Instruction::MathFloor,
+                "ceil" => Instruction::MathCeil,
+                _ => Instruction::MathRound,
+            };
+            self.emit(ins, span);
+            return Ok(());
+        }
+
         if name == "now" {
             if !args.is_empty() {
                 return Err(err("now() takes exactly 0 arguments", span));

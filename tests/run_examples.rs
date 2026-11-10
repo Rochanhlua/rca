@@ -65,6 +65,7 @@ const RUN_PASS: &[&str] = &[
     "types_ok.rca",
     "fs_demo.rca",
     "time_demo.rca",
+    "math_demo.rca",
 ];
 
 const RUN_FAIL_AT_RUNTIME: &[&str] = &[

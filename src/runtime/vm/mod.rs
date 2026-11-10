@@ -283,6 +283,56 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("write_file('{}'): {}", path, e), span)),
                     }
                 }
+
+                Instruction::MathAbs => {
+                    let v = self.pop();
+                    let r = match v {
+                        Value::Int(n) => n
+                            .checked_abs()
+                            .map(Value::Int)
+                            .ok_or_else(|| err("integer overflow", span))?,
+                        Value::Float(x) => Value::Float(x.abs()),
+                        _ => return Err(err("abs() needs a number", span)),
+                    };
+                    self.stack.push(r);
+                }
+                Instruction::MathPow => {
+                    let exp = self.pop();
+                    let base = self.pop();
+                    let r = match (base, exp) {
+                        (Value::Int(b), Value::Int(e)) if e >= 0 => {
+                            Value::Int(b.saturating_pow(e as u32))
+                        }
+                        (b, e) => {
+                            let bf = match b {
+                                Value::Int(i) => i as f64,
+                                Value::Float(x) => x,
+                                _ => return Err(err("pow() needs numbers", span)),
+                            };
+                            let ef = match e {
+                                Value::Int(i) => i as f64,
+                                Value::Float(x) => x,
+                                _ => return Err(err("pow() needs numbers", span)),
+                            };
+                            Value::Float(bf.powf(ef))
+                        }
+                    };
+                    self.stack.push(r);
+                }
+                Instruction::MathFloor | Instruction::MathCeil | Instruction::MathRound => {
+                    let v = self.pop();
+                    let x = match v {
+                        Value::Int(i) => i as f64,
+                        Value::Float(x) => x,
+                        _ => return Err(err("math function needs a number", span)),
+                    };
+                    let r = match ins {
+                        Instruction::MathFloor => x.floor(),
+                        Instruction::MathCeil => x.ceil(),
+                        _ => x.round(),
+                    };
+                    self.stack.push(Value::Float(r));
+                }
                 Instruction::TimeNow => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)

@@ -103,6 +103,7 @@ const SHOULD_PASS: &[&str] = &[
     "try_demo.rca",
     "fs_demo.rca",
     "time_demo.rca",
+    "math_demo.rca",
 ];
 
 /// Files whose `check` exits non-zero with a diagnostic on stderr.

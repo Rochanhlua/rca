@@ -137,6 +137,17 @@ pub enum Instruction {
     TimeNow,
     /// Pops an Int (milliseconds) and sleeps.
     TimeSleep,
+
+    /// Pops a number, pushes its absolute value.
+    MathAbs,
+    /// Pops exponent (deeper) and base (top), pushes base^exp.
+    MathPow,
+    /// Pops a Float, pushes its floor.
+    MathFloor,
+    /// Pops a Float, pushes its ceiling.
+    MathCeil,
+    /// Pops a Float, pushes its rounded value.
+    MathRound,
 }
 
 #[derive(Debug, Clone, Default)]
