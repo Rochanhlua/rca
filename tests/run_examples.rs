@@ -64,6 +64,7 @@ const RUN_PASS: &[&str] = &[
     "try_demo.rca",
     "types_ok.rca",
     "native_if.rca",
+    "native_str.rca",
     "native_compare.rca",
     "native_test.rca",
     "fs_demo.rca",
