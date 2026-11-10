@@ -23,7 +23,15 @@ enum StackType {
 pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
-    flag_builder.set("is_pic", "true").unwrap();
+    // Platform-conditional PIC:
+    // - Linux/macOS/ARM: needs is_pic=true (default)
+    // - Windows: is_pic=true causes access violation at runtime (0xC0000005)
+    let is_pic = if cfg!(target_os = "windows") {
+        "false"
+    } else {
+        "true"
+    };
+    flag_builder.set("is_pic", is_pic).unwrap();
     let isa_builder = cranelift_native::builder().map_err(|e| e.to_string())?;
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
