@@ -21,3 +21,4 @@
 - **Planned:** module-qualified `math.abs()`, `math.pow()` etc. via `import math` (blueprint §8, §13).
 - **Implemented:** string builtins `trim()`, `split()`, `replace()` — flat functions matching the existing style.
 - **Planned:** module-qualified `string.trim()` etc. via `import string` (blueprint §8, §13).
+- **Implemented:** cross-platform CI (Ubuntu, Windows, macOS) to catch OS-specific regressions. Fixed CRLF line ending mismatch in snapshot tests.
