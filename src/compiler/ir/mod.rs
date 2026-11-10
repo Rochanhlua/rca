@@ -159,6 +159,8 @@ pub enum Instruction {
     TcpRecv,
     /// Pops a socket, closes it, pushes None.
     TcpClose,
+    /// Pops a String URL, pushes the response body String.
+    HttpGet,
     MapLen,
 
     /// Pops a number, pushes its absolute value.
