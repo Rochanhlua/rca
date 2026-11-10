@@ -19,3 +19,5 @@
 - **Planned:** module-qualified `time.now()`, `time.sleep()` via `import time` (blueprint §8, §13).
 - **Implemented:** math builtins `abs()`, `pow()`, `floor()`, `ceil()`, `round()` — flat functions matching the existing style.
 - **Planned:** module-qualified `math.abs()`, `math.pow()` etc. via `import math` (blueprint §8, §13).
+- **Implemented:** string builtins `trim()`, `split()`, `replace()` — flat functions matching the existing style.
+- **Planned:** module-qualified `string.trim()` etc. via `import string` (blueprint §8, §13).
