@@ -377,7 +377,7 @@ impl<'a> Vm<'a> {
                     };
                     match map.into_iter().find(|(k, _)| *k == key) {
                         Some((_, v)) => self.stack.push(v),
-                        None => return Err(err(format!("map_get(): key not found"), span)),
+                        None => return Err(err("map_get(): key not found".to_string(), span)),
                     }
                 }
                 Instruction::MapHas => {
