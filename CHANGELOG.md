@@ -32,3 +32,5 @@
 - **Planned:** HTTP POST and HTTPS.
 - **Implemented:** `sha256()` cryptographic hashing builtin — uses the audited `sha2` crate (blueprint §9).
 - **Planned:** Additional hashes (SHA-512, MD5 for legacy) and HMAC.
+- **Implemented:** native codegen backend (Cranelift) — `rca compile <file.rca>` generates native object files (`.o`).
+- **Planned:** full IR-to-Cranelift translation and final executable linking.
