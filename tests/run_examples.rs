@@ -67,6 +67,7 @@ const RUN_PASS: &[&str] = &[
     "time_demo.rca",
     "string_demo.rca",
     "map_demo.rca",
+    "json_demo.rca",
     "math_demo.rca",
 ];
 

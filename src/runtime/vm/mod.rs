@@ -352,6 +352,23 @@ impl<'a> Vm<'a> {
                     let parts = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
                     self.stack.push(Value::List(parts));
                 }
+                Instruction::JsonParse => {
+                    let s = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("json_parse() needs a String", span)),
+                    };
+                    match crate::runtime::json::parse(&s) {
+                        Ok(v) => self.stack.push(v),
+                        Err(m) => return Err(err(format!("json_parse(): {}", m), span)),
+                    }
+                }
+                Instruction::JsonStringify => {
+                    let v = self.pop();
+                    match crate::runtime::json::stringify(&v) {
+                        Ok(s) => self.stack.push(Value::Str(s)),
+                        Err(m) => return Err(err(format!("json_stringify(): {}", m), span)),
+                    }
+                }
                 Instruction::MapNew => {
                     self.stack.push(Value::Map(Vec::new()));
                 }

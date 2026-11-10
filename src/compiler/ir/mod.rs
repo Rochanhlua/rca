@@ -147,6 +147,10 @@ pub enum Instruction {
     MapSet,
     MapGet,
     MapHas,
+    /// Pops a String, pushes the parsed JSON Value.
+    JsonParse,
+    /// Pops a Value, pushes the JSON String.
+    JsonStringify,
     MapLen,
 
     /// Pops a number, pushes its absolute value.

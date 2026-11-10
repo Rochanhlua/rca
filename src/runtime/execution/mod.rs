@@ -912,6 +912,27 @@ impl Interpreter {
             return Ok(Value::None);
         }
 
+        if name == "json_parse" {
+            if args.len() != 1 {
+                return Err(err("json_parse() takes exactly 1 argument", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("json_parse() needs a String", span)),
+            };
+            return crate::runtime::json::parse(&s)
+                .map_err(|m| err(format!("json_parse(): {}", m), span));
+        }
+        if name == "json_stringify" {
+            if args.len() != 1 {
+                return Err(err("json_stringify() takes exactly 1 argument", span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            return crate::runtime::json::stringify(&v)
+                .map(Value::Str)
+                .map_err(|m| err(format!("json_stringify(): {}", m), span));
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }
