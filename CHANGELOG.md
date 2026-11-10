@@ -56,3 +56,5 @@
 - **Planned:** recursion, string/float parameters, default args.
 - **Implemented:** native codegen for `Float` — arithmetic, comparisons, and printing (3 decimal places).
 - **Planned:** Float-to-Int conversion, `Char`/`List`/`Map`/`Struct` native.
+- **Implemented:** native codegen for String concat (`+`), comparison (`==`, `!=`), and printing via libc (`strlen`, `malloc`, `memcpy`, `strcmp`). Works cross-platform (Windows x64, macOS, Linux, ARM).
+- **Planned:** String parameters in `fn` (requires IR param type info), String ordering, `Char`/`List`/`Map`/`Struct`/`Enum` native.
