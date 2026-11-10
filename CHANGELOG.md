@@ -50,3 +50,5 @@
 - **Planned:** native codegen for functions (`Call`/`Return`) and loops.
 - **Verified:** native codegen for `while` loops — compiles down to `Jump`/`JumpIfFalse` (already implemented in #59).
 - **Planned:** `for` loops (`ForNext`) and functions (`Call`/`Return`).
+- **Implemented:** native codegen for `for` loops (`MakeRange`, `ForNext`) — `for i in 0..5:` works natively.
+- **Planned:** functions (`Call`/`Return`) in native codegen.
