@@ -105,6 +105,26 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
+    if command == "compile" {
+        match rca::compiler::codegen::compile(&ir) {
+            Ok(obj_bytes) => {
+                let out_path = format!("{}.o", path);
+                match fs::write(&out_path, obj_bytes) {
+                    Ok(_) => println!("Successfully compiled to {}", out_path),
+                    Err(e) => {
+                        eprintln!("failed to write output file: {}", e);
+                        return 1;
+                    }
+                }
+                return 0;
+            }
+            Err(e) => {
+                eprintln!("codegen error: {}", e);
+                return 1;
+            }
+        }
+    }
+
     let mut vm = Vm::new(&ir);
     match vm.run() {
         Ok(()) => 0,
@@ -117,7 +137,9 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let commands = ["lex", "parse", "check", "ir", "ir-opt", "run", "run-tree"];
+    let commands = [
+        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile",
+    ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
         println!("Usage:");
@@ -128,6 +150,7 @@ fn main() {
         println!("  rca ir-opt <file.rca>    (show optimized bytecode)");
         println!("  rca run <file.rca>       (run on the VM)");
         println!("  rca run-tree <file.rca>  (run on the tree-walking interpreter)");
+        println!("  rca compile <file.rca>   (generate native object file)");
         return;
     }
 
@@ -202,6 +225,27 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         println!("{}", ir);
         return 0;
     }
+
+    if command == "compile" {
+        match rca::compiler::codegen::compile(&ir) {
+            Ok(obj_bytes) => {
+                let out_path = format!("{}.o", path);
+                match fs::write(&out_path, obj_bytes) {
+                    Ok(_) => println!("Successfully compiled to {}", out_path),
+                    Err(e) => {
+                        eprintln!("failed to write output file: {}", e);
+                        return 1;
+                    }
+                }
+                return 0;
+            }
+            Err(e) => {
+                eprintln!("codegen error: {}", e);
+                return 1;
+            }
+        }
+    }
+
     let mut vm = Vm::new(&ir);
     match vm.run() {
         Ok(()) => 0,
