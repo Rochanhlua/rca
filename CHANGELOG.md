@@ -34,3 +34,5 @@
 - **Planned:** Additional hashes (SHA-512, MD5 for legacy) and HMAC.
 - **Implemented:** native codegen backend (Cranelift) — `rca compile <file.rca>` generates native object files (`.o`).
 - **Planned:** full IR-to-Cranelift translation and final executable linking.
+- **Implemented:** native codegen infrastructure (Cranelift) — `rca compile` generates object files.
+- **Planned:** full IR-to-Cranelift translation (PushInt, Add, Print) and final executable linking.
