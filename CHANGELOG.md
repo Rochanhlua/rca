@@ -30,3 +30,5 @@
 - **Planned:** UDP sockets and HTTP wrappers.
 - **Implemented:** HTTP client `http_get()` — pure Rust using `std::net`.
 - **Planned:** HTTP POST and HTTPS.
+- **Implemented:** `sha256()` cryptographic hashing builtin — uses the audited `sha2` crate (blueprint §9).
+- **Planned:** Additional hashes (SHA-512, MD5 for legacy) and HMAC.
