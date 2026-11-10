@@ -84,6 +84,7 @@ const SHOULD_PASS: &[&str] = &[
     "native_str.rca",
     "native_vars.rca",
     "native_while.rca",
+    "native_for.rca",
     "native_compare.rca",
     "native_test.rca",
     // runtime-error examples (check passes, run would fail)
