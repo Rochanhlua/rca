@@ -1123,6 +1123,53 @@ impl Checker {
             return Type::Int;
         }
 
+        if matches!(name.as_str(), "read_file" | "file_exists") {
+            if args.len() != 1 {
+                self.error(format!("{}() takes exactly 1 argument", name), span);
+                self.check_arg_exprs(args);
+                return if name == "file_exists" {
+                    Type::Bool
+                } else {
+                    Type::String
+                };
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::String | Type::Unknown) {
+                self.error(
+                    format!("{}() needs a String path, found {}", name, t),
+                    &args[0].value.span,
+                );
+            }
+            return if name == "file_exists" {
+                Type::Bool
+            } else {
+                Type::String
+            };
+        }
+
+        if name == "write_file" {
+            if args.len() != 2 {
+                self.error("write_file() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::None;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::String | Type::Unknown) {
+                self.error(
+                    format!("write_file() needs a String path, found {}", t),
+                    &args[0].value.span,
+                );
+            }
+            let c = self.check_expr(&args[1].value);
+            if !matches!(c, Type::String | Type::Unknown) {
+                self.error(
+                    format!("write_file() needs a String content, found {}", c),
+                    &args[1].value.span,
+                );
+            }
+            return Type::None;
+        }
+
         if let Some(sig) = self.functions.get(&name).cloned() {
             return self.check_function_call(&name, &sig, args, span);
         }

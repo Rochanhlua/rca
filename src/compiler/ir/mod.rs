@@ -127,6 +127,12 @@ pub enum Instruction {
     Convert(ConvKind),
     /// Stack: [value, list] -> new list with value appended.
     ListPush,
+    /// Pops a String path, pushes the file's contents as a String.
+    ReadFile,
+    /// Pops path (deeper) and content (top), writes to the file, pushes None.
+    WriteFile,
+    /// Pops a String path, pushes a Bool (true if the file exists).
+    FileExists,
 }
 
 #[derive(Debug, Clone, Default)]

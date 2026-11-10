@@ -746,6 +746,31 @@ impl Compiler {
         }
 
         let fkey = self.item_key(&name);
+
+        if matches!(name.as_str(), "read_file" | "file_exists") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            let ins = if name == "read_file" {
+                Instruction::ReadFile
+            } else {
+                Instruction::FileExists
+            };
+            self.emit(ins, span);
+            return Ok(());
+        }
+
+        if name == "write_file" {
+            if args.len() != 2 {
+                return Err(err("write_file() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::WriteFile, span);
+            return Ok(());
+        }
+
         if let Some(&id) = self.func_ids.get(&fkey) {
             let sig = self.func_sigs[id].clone();
             self.emit_bound_args(&sig.params, &sig.defaults, args, span)?;

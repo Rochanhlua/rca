@@ -695,6 +695,42 @@ impl Interpreter {
             };
         }
 
+        if matches!(name.as_str(), "read_file" | "file_exists") {
+            if args.len() != 1 {
+                return Err(err(format!("{}() takes exactly 1 argument", name), span));
+            }
+            let path = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err(format!("{}() needs a String path", name), span)),
+            };
+            return if name == "read_file" {
+                match std::fs::read_to_string(&path) {
+                    Ok(contents) => Ok(Value::Str(contents)),
+                    Err(e) => Err(err(format!("read_file('{}'): {}", path, e), span)),
+                }
+            } else {
+                Ok(Value::Bool(std::path::Path::new(&path).exists()))
+            };
+        }
+
+        if name == "write_file" {
+            if args.len() != 2 {
+                return Err(err("write_file() takes exactly 2 arguments", span));
+            }
+            let path = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("write_file() needs a String path", span)),
+            };
+            let content = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("write_file() needs a String content", span)),
+            };
+            return match std::fs::write(&path, &content) {
+                Ok(()) => Ok(Value::None),
+                Err(e) => Err(err(format!("write_file('{}'): {}", path, e), span)),
+            };
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }
