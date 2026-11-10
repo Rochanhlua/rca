@@ -1,0 +1,835 @@
+Program {
+    statements: [
+        Stmt {
+            kind: Struct(
+                StructDecl {
+                    name: "User",
+                    fields: [
+                        FieldDecl {
+                            name: "name",
+                            ty: TypeExpr {
+                                name: "String",
+                                elements: [],
+                                span: Span {
+                                    line: 3,
+                                    column: 11,
+                                },
+                            },
+                            span: Span {
+                                line: 3,
+                                column: 5,
+                            },
+                        },
+                        FieldDecl {
+                            name: "age",
+                            ty: TypeExpr {
+                                name: "Int",
+                                elements: [],
+                                span: Span {
+                                    line: 4,
+                                    column: 10,
+                                },
+                            },
+                            span: Span {
+                                line: 4,
+                                column: 5,
+                            },
+                        },
+                    ],
+                    public: false,
+                },
+            ),
+            span: Span {
+                line: 2,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: Function(
+                FunctionDecl {
+                    name: "greet",
+                    params: [
+                        Param {
+                            name: "user",
+                            ty: TypeExpr {
+                                name: "User",
+                                elements: [],
+                                span: Span {
+                                    line: 6,
+                                    column: 16,
+                                },
+                            },
+                            default: None,
+                        },
+                        Param {
+                            name: "times",
+                            ty: TypeExpr {
+                                name: "Int",
+                                elements: [],
+                                span: Span {
+                                    line: 6,
+                                    column: 29,
+                                },
+                            },
+                            default: Some(
+                                Expr {
+                                    kind: Int(
+                                        1,
+                                    ),
+                                    span: Span {
+                                        line: 6,
+                                        column: 35,
+                                    },
+                                },
+                            ),
+                        },
+                    ],
+                    return_type: Some(
+                        TypeExpr {
+                            name: "String",
+                            elements: [],
+                            span: Span {
+                                line: 6,
+                                column: 41,
+                            },
+                        },
+                    ),
+                    body: [
+                        Stmt {
+                            kind: Let {
+                                name: "i",
+                                mutable: true,
+                                constant: false,
+                                ty: Some(
+                                    TypeExpr {
+                                        name: "Int",
+                                        elements: [],
+                                        span: Span {
+                                            line: 7,
+                                            column: 12,
+                                        },
+                                    },
+                                ),
+                                value: Expr {
+                                    kind: Int(
+                                        0,
+                                    ),
+                                    span: Span {
+                                        line: 7,
+                                        column: 18,
+                                    },
+                                },
+                            },
+                            span: Span {
+                                line: 7,
+                                column: 5,
+                            },
+                        },
+                        Stmt {
+                            kind: While {
+                                condition: Expr {
+                                    kind: Binary {
+                                        op: Lt,
+                                        left: Expr {
+                                            kind: Ident(
+                                                "i",
+                                            ),
+                                            span: Span {
+                                                line: 8,
+                                                column: 11,
+                                            },
+                                        },
+                                        right: Expr {
+                                            kind: Ident(
+                                                "times",
+                                            ),
+                                            span: Span {
+                                                line: 8,
+                                                column: 15,
+                                            },
+                                        },
+                                    },
+                                    span: Span {
+                                        line: 8,
+                                        column: 11,
+                                    },
+                                },
+                                body: [
+                                    Stmt {
+                                        kind: Expr(
+                                            Expr {
+                                                kind: Call {
+                                                    callee: Expr {
+                                                        kind: Ident(
+                                                            "print",
+                                                        ),
+                                                        span: Span {
+                                                            line: 9,
+                                                            column: 9,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        Argument {
+                                                            name: None,
+                                                            value: Expr {
+                                                                kind: Field {
+                                                                    object: Expr {
+                                                                        kind: Ident(
+                                                                            "user",
+                                                                        ),
+                                                                        span: Span {
+                                                                            line: 9,
+                                                                            column: 15,
+                                                                        },
+                                                                    },
+                                                                    name: "name",
+                                                                },
+                                                                span: Span {
+                                                                    line: 9,
+                                                                    column: 15,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                                span: Span {
+                                                    line: 9,
+                                                    column: 9,
+                                                },
+                                            },
+                                        ),
+                                        span: Span {
+                                            line: 9,
+                                            column: 9,
+                                        },
+                                    },
+                                    Stmt {
+                                        kind: Assign {
+                                            target: Expr {
+                                                kind: Ident(
+                                                    "i",
+                                                ),
+                                                span: Span {
+                                                    line: 10,
+                                                    column: 9,
+                                                },
+                                            },
+                                            value: Expr {
+                                                kind: Binary {
+                                                    op: Add,
+                                                    left: Expr {
+                                                        kind: Ident(
+                                                            "i",
+                                                        ),
+                                                        span: Span {
+                                                            line: 10,
+                                                            column: 13,
+                                                        },
+                                                    },
+                                                    right: Expr {
+                                                        kind: Int(
+                                                            1,
+                                                        ),
+                                                        span: Span {
+                                                            line: 10,
+                                                            column: 17,
+                                                        },
+                                                    },
+                                                },
+                                                span: Span {
+                                                    line: 10,
+                                                    column: 13,
+                                                },
+                                            },
+                                        },
+                                        span: Span {
+                                            line: 10,
+                                            column: 9,
+                                        },
+                                    },
+                                ],
+                            },
+                            span: Span {
+                                line: 8,
+                                column: 5,
+                            },
+                        },
+                        Stmt {
+                            kind: Return(
+                                Some(
+                                    Expr {
+                                        kind: Str(
+                                            "done",
+                                        ),
+                                        span: Span {
+                                            line: 11,
+                                            column: 12,
+                                        },
+                                    },
+                                ),
+                            ),
+                            span: Span {
+                                line: 11,
+                                column: 5,
+                            },
+                        },
+                    ],
+                    public: false,
+                },
+            ),
+            span: Span {
+                line: 6,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: Let {
+                name: "user",
+                mutable: false,
+                constant: false,
+                ty: None,
+                value: Expr {
+                    kind: Call {
+                        callee: Expr {
+                            kind: Ident(
+                                "User",
+                            ),
+                            span: Span {
+                                line: 13,
+                                column: 12,
+                            },
+                        },
+                        args: [
+                            Argument {
+                                name: Some(
+                                    "name",
+                                ),
+                                value: Expr {
+                                    kind: Str(
+                                        "RCA Developer",
+                                    ),
+                                    span: Span {
+                                        line: 14,
+                                        column: 12,
+                                    },
+                                },
+                            },
+                            Argument {
+                                name: Some(
+                                    "age",
+                                ),
+                                value: Expr {
+                                    kind: Int(
+                                        20,
+                                    ),
+                                    span: Span {
+                                        line: 15,
+                                        column: 11,
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    span: Span {
+                        line: 13,
+                        column: 12,
+                    },
+                },
+            },
+            span: Span {
+                line: 13,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: Let {
+                name: "numbers",
+                mutable: false,
+                constant: false,
+                ty: None,
+                value: Expr {
+                    kind: List(
+                        [
+                            Expr {
+                                kind: Int(
+                                    1,
+                                ),
+                                span: Span {
+                                    line: 18,
+                                    column: 16,
+                                },
+                            },
+                            Expr {
+                                kind: Int(
+                                    2,
+                                ),
+                                span: Span {
+                                    line: 18,
+                                    column: 19,
+                                },
+                            },
+                            Expr {
+                                kind: Int(
+                                    3,
+                                ),
+                                span: Span {
+                                    line: 18,
+                                    column: 22,
+                                },
+                            },
+                        ],
+                    ),
+                    span: Span {
+                        line: 18,
+                        column: 15,
+                    },
+                },
+            },
+            span: Span {
+                line: 18,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: Let {
+                name: "score",
+                mutable: false,
+                constant: false,
+                ty: None,
+                value: Expr {
+                    kind: Binary {
+                        op: Sub,
+                        left: Expr {
+                            kind: Binary {
+                                op: Mul,
+                                left: Expr {
+                                    kind: Binary {
+                                        op: Add,
+                                        left: Expr {
+                                            kind: Int(
+                                                10,
+                                            ),
+                                            span: Span {
+                                                line: 19,
+                                                column: 14,
+                                            },
+                                        },
+                                        right: Expr {
+                                            kind: Int(
+                                                5,
+                                            ),
+                                            span: Span {
+                                                line: 19,
+                                                column: 19,
+                                            },
+                                        },
+                                    },
+                                    span: Span {
+                                        line: 19,
+                                        column: 14,
+                                    },
+                                },
+                                right: Expr {
+                                    kind: Int(
+                                        2,
+                                    ),
+                                    span: Span {
+                                        line: 19,
+                                        column: 24,
+                                    },
+                                },
+                            },
+                            span: Span {
+                                line: 19,
+                                column: 14,
+                            },
+                        },
+                        right: Expr {
+                            kind: Int(
+                                3,
+                            ),
+                            span: Span {
+                                line: 19,
+                                column: 28,
+                            },
+                        },
+                    },
+                    span: Span {
+                        line: 19,
+                        column: 14,
+                    },
+                },
+            },
+            span: Span {
+                line: 19,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: If {
+                condition: Expr {
+                    kind: Binary {
+                        op: And,
+                        left: Expr {
+                            kind: Binary {
+                                op: GtEq,
+                                left: Expr {
+                                    kind: Field {
+                                        object: Expr {
+                                            kind: Ident(
+                                                "user",
+                                            ),
+                                            span: Span {
+                                                line: 21,
+                                                column: 4,
+                                            },
+                                        },
+                                        name: "age",
+                                    },
+                                    span: Span {
+                                        line: 21,
+                                        column: 4,
+                                    },
+                                },
+                                right: Expr {
+                                    kind: Int(
+                                        18,
+                                    ),
+                                    span: Span {
+                                        line: 21,
+                                        column: 16,
+                                    },
+                                },
+                            },
+                            span: Span {
+                                line: 21,
+                                column: 4,
+                            },
+                        },
+                        right: Expr {
+                            kind: Unary {
+                                op: Not,
+                                operand: Expr {
+                                    kind: Bool(
+                                        false,
+                                    ),
+                                    span: Span {
+                                        line: 21,
+                                        column: 27,
+                                    },
+                                },
+                            },
+                            span: Span {
+                                line: 21,
+                                column: 23,
+                            },
+                        },
+                    },
+                    span: Span {
+                        line: 21,
+                        column: 4,
+                    },
+                },
+                then_block: [
+                    Stmt {
+                        kind: Expr(
+                            Expr {
+                                kind: Call {
+                                    callee: Expr {
+                                        kind: Ident(
+                                            "print",
+                                        ),
+                                        span: Span {
+                                            line: 22,
+                                            column: 5,
+                                        },
+                                    },
+                                    args: [
+                                        Argument {
+                                            name: None,
+                                            value: Expr {
+                                                kind: Str(
+                                                    "Adult",
+                                                ),
+                                                span: Span {
+                                                    line: 22,
+                                                    column: 11,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                },
+                                span: Span {
+                                    line: 22,
+                                    column: 5,
+                                },
+                            },
+                        ),
+                        span: Span {
+                            line: 22,
+                            column: 5,
+                        },
+                    },
+                ],
+                else_block: Some(
+                    [
+                        Stmt {
+                            kind: If {
+                                condition: Expr {
+                                    kind: Binary {
+                                        op: GtEq,
+                                        left: Expr {
+                                            kind: Field {
+                                                object: Expr {
+                                                    kind: Ident(
+                                                        "user",
+                                                    ),
+                                                    span: Span {
+                                                        line: 23,
+                                                        column: 6,
+                                                    },
+                                                },
+                                                name: "age",
+                                            },
+                                            span: Span {
+                                                line: 23,
+                                                column: 6,
+                                            },
+                                        },
+                                        right: Expr {
+                                            kind: Int(
+                                                13,
+                                            ),
+                                            span: Span {
+                                                line: 23,
+                                                column: 18,
+                                            },
+                                        },
+                                    },
+                                    span: Span {
+                                        line: 23,
+                                        column: 6,
+                                    },
+                                },
+                                then_block: [
+                                    Stmt {
+                                        kind: Expr(
+                                            Expr {
+                                                kind: Call {
+                                                    callee: Expr {
+                                                        kind: Ident(
+                                                            "print",
+                                                        ),
+                                                        span: Span {
+                                                            line: 24,
+                                                            column: 5,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        Argument {
+                                                            name: None,
+                                                            value: Expr {
+                                                                kind: Str(
+                                                                    "Teen",
+                                                                ),
+                                                                span: Span {
+                                                                    line: 24,
+                                                                    column: 11,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                                span: Span {
+                                                    line: 24,
+                                                    column: 5,
+                                                },
+                                            },
+                                        ),
+                                        span: Span {
+                                            line: 24,
+                                            column: 5,
+                                        },
+                                    },
+                                ],
+                                else_block: Some(
+                                    [
+                                        Stmt {
+                                            kind: Expr(
+                                                Expr {
+                                                    kind: Call {
+                                                        callee: Expr {
+                                                            kind: Ident(
+                                                                "print",
+                                                            ),
+                                                            span: Span {
+                                                                line: 26,
+                                                                column: 5,
+                                                            },
+                                                        },
+                                                        args: [
+                                                            Argument {
+                                                                name: None,
+                                                                value: Expr {
+                                                                    kind: Str(
+                                                                        "Minor",
+                                                                    ),
+                                                                    span: Span {
+                                                                        line: 26,
+                                                                        column: 11,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ],
+                                                    },
+                                                    span: Span {
+                                                        line: 26,
+                                                        column: 5,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                line: 26,
+                                                column: 5,
+                                            },
+                                        },
+                                    ],
+                                ),
+                            },
+                            span: Span {
+                                line: 23,
+                                column: 1,
+                            },
+                        },
+                    ],
+                ),
+            },
+            span: Span {
+                line: 21,
+                column: 1,
+            },
+        },
+        Stmt {
+            kind: For {
+                var: "n",
+                iter: Expr {
+                    kind: Binary {
+                        op: Range,
+                        left: Expr {
+                            kind: Int(
+                                0,
+                            ),
+                            span: Span {
+                                line: 28,
+                                column: 10,
+                            },
+                        },
+                        right: Expr {
+                            kind: Int(
+                                10,
+                            ),
+                            span: Span {
+                                line: 28,
+                                column: 13,
+                            },
+                        },
+                    },
+                    span: Span {
+                        line: 28,
+                        column: 10,
+                    },
+                },
+                body: [
+                    Stmt {
+                        kind: If {
+                            condition: Expr {
+                                kind: Binary {
+                                    op: Eq,
+                                    left: Expr {
+                                        kind: Ident(
+                                            "n",
+                                        ),
+                                        span: Span {
+                                            line: 29,
+                                            column: 8,
+                                        },
+                                    },
+                                    right: Expr {
+                                        kind: Int(
+                                            5,
+                                        ),
+                                        span: Span {
+                                            line: 29,
+                                            column: 13,
+                                        },
+                                    },
+                                },
+                                span: Span {
+                                    line: 29,
+                                    column: 8,
+                                },
+                            },
+                            then_block: [
+                                Stmt {
+                                    kind: Continue,
+                                    span: Span {
+                                        line: 30,
+                                        column: 9,
+                                    },
+                                },
+                            ],
+                            else_block: None,
+                        },
+                        span: Span {
+                            line: 29,
+                            column: 5,
+                        },
+                    },
+                    Stmt {
+                        kind: Expr(
+                            Expr {
+                                kind: Call {
+                                    callee: Expr {
+                                        kind: Ident(
+                                            "print",
+                                        ),
+                                        span: Span {
+                                            line: 31,
+                                            column: 5,
+                                        },
+                                    },
+                                    args: [
+                                        Argument {
+                                            name: None,
+                                            value: Expr {
+                                                kind: Ident(
+                                                    "n",
+                                                ),
+                                                span: Span {
+                                                    line: 31,
+                                                    column: 11,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                },
+                                span: Span {
+                                    line: 31,
+                                    column: 5,
+                                },
+                            },
+                        ),
+                        span: Span {
+                            line: 31,
+                            column: 5,
+                        },
+                    },
+                ],
+            },
+            span: Span {
+                line: 28,
+                column: 1,
+            },
+        },
+    ],
+}

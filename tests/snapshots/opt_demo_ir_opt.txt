@@ -1,0 +1,16 @@
+; optimized: 23 -> 12 instructions
+
+== main (locals: 0, globals: 2) ==
+0000  PushInt(10)                  ; line 1
+0001  StoreGlobal(0)               ; line 1
+0002  LoadGlobal(0)                ; line 2
+0003  PushInt(5)                   ; line 2
+0004  Add                          ; line 2
+0005  StoreGlobal(1)               ; line 2
+0006  LoadGlobal(0)                ; line 5
+0007  LoadGlobal(1)                ; line 5
+0008  Print(2)                     ; line 5
+0009  Pop                          ; line 5
+0010  PushNone                     ; line 1
+0011  Return                       ; line 1
+
