@@ -1348,6 +1348,84 @@ impl Checker {
             return Type::String;
         }
 
+        if name == "tcp_connect" {
+            if args.len() != 2 {
+                self.error("tcp_connect() takes exactly 2 arguments".to_string(), span);
+            } else {
+                let t1 = self.check_expr(&args[0].value);
+                if !matches!(t1, Type::String | Type::Unknown) {
+                    self.error(
+                        format!("tcp_connect() needs a String host, found {}", t1),
+                        &args[0].value.span,
+                    );
+                }
+                let t2 = self.check_expr(&args[1].value);
+                if !matches!(t2, Type::Int | Type::Unknown) {
+                    self.error(
+                        format!("tcp_connect() needs an Int port, found {}", t2),
+                        &args[1].value.span,
+                    );
+                }
+            }
+            return Type::Socket;
+        }
+        if name == "tcp_send" {
+            if args.len() != 2 {
+                self.error("tcp_send() takes exactly 2 arguments".to_string(), span);
+            } else {
+                let t1 = self.check_expr(&args[0].value);
+                if !matches!(t1, Type::Socket | Type::Unknown) {
+                    self.error(
+                        format!("tcp_send() needs a Socket, found {}", t1),
+                        &args[0].value.span,
+                    );
+                }
+                let t2 = self.check_expr(&args[1].value);
+                if !matches!(t2, Type::String | Type::Unknown) {
+                    self.error(
+                        format!("tcp_send() needs a String, found {}", t2),
+                        &args[1].value.span,
+                    );
+                }
+            }
+            return Type::Int;
+        }
+        if name == "tcp_recv" {
+            if args.len() != 2 {
+                self.error("tcp_recv() takes exactly 2 arguments".to_string(), span);
+            } else {
+                let t1 = self.check_expr(&args[0].value);
+                if !matches!(t1, Type::Socket | Type::Unknown) {
+                    self.error(
+                        format!("tcp_recv() needs a Socket, found {}", t1),
+                        &args[0].value.span,
+                    );
+                }
+                let t2 = self.check_expr(&args[1].value);
+                if !matches!(t2, Type::Int | Type::Unknown) {
+                    self.error(
+                        format!("tcp_recv() needs an Int, found {}", t2),
+                        &args[1].value.span,
+                    );
+                }
+            }
+            return Type::String;
+        }
+        if name == "tcp_close" {
+            if args.len() != 1 {
+                self.error("tcp_close() takes exactly 1 argument".to_string(), span);
+            } else {
+                let t = self.check_expr(&args[0].value);
+                if !matches!(t, Type::Socket | Type::Unknown) {
+                    self.error(
+                        format!("tcp_close() needs a Socket, found {}", t),
+                        &args[0].value.span,
+                    );
+                }
+            }
+            return Type::None;
+        }
+
         if let Some(sig) = self.functions.get(&name).cloned() {
             return self.check_function_call(&name, &sig, args, span);
         }

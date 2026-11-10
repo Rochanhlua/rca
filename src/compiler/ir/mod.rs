@@ -151,6 +151,14 @@ pub enum Instruction {
     JsonParse,
     /// Pops a Value, pushes the JSON String.
     JsonStringify,
+    /// Pops port (top) and host (deeper), pushes a Socket.
+    TcpConnect,
+    /// Pops data (top) and socket (deeper), pushes bytes sent as Int.
+    TcpSend,
+    /// Pops max_bytes (top) and socket (deeper), pushes received String.
+    TcpRecv,
+    /// Pops a socket, closes it, pushes None.
+    TcpClose,
     MapLen,
 
     /// Pops a number, pushes its absolute value.
