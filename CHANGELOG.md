@@ -46,3 +46,5 @@
 - **Planned:** native codegen for loops (`while`, `for`), functions, and strings.
 - **Implemented:** native codegen for string printing (`PushStr`, `Print` with `%s`) — `print("Hello")` works natively.
 - **Planned:** native string concatenation, indexing, `len()`, and functions.
+- **Implemented:** native codegen for local/global variables (`StoreLocal`, `LoadLocal`, `StoreGlobal`, `LoadGlobal`) — `let x = 42` works natively.
+- **Planned:** native codegen for functions (`Call`/`Return`) and loops.
