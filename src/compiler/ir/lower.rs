@@ -747,6 +747,23 @@ impl Compiler {
 
         let fkey = self.item_key(&name);
 
+        if name == "now" {
+            if !args.is_empty() {
+                return Err(err("now() takes exactly 0 arguments", span));
+            }
+            self.emit(Instruction::TimeNow, span);
+            return Ok(());
+        }
+
+        if name == "sleep" {
+            if args.len() != 1 {
+                return Err(err("sleep() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::TimeSleep, span);
+            return Ok(());
+        }
+
         if matches!(name.as_str(), "read_file" | "file_exists") {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));

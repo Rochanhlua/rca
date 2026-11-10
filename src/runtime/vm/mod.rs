@@ -283,6 +283,21 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("write_file('{}'): {}", path, e), span)),
                     }
                 }
+                Instruction::TimeNow => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis();
+                    self.stack.push(Value::Int(now as i64));
+                }
+                Instruction::TimeSleep => {
+                    let ms = match self.pop() {
+                        Value::Int(n) if n >= 0 => n as u64,
+                        _ => return Err(err("sleep() needs a non-negative Int (ms)", span)),
+                    };
+                    std::thread::sleep(std::time::Duration::from_millis(ms));
+                    self.stack.push(Value::None);
+                }
                 Instruction::FileExists => {
                     let path = match self.pop() {
                         Value::Str(s) => s,
