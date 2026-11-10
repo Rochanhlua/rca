@@ -1,0 +1,11 @@
+let a = "Foo"
+let b = "Bar"
+let c = a + b
+print(c)
+
+if c == "FooBar":
+    print("Match!")
+else:
+    print("No match")
+
+print("Done")
