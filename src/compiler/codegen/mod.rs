@@ -1,10 +1,10 @@
 //! Cranelift backend for generating native machine code.
 //! See blueprint §5.2: native compilation must ultimately be supported.
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{types, AbiParam};
+use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{default_libcall_names, Linkage, Module};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 pub fn compile(_program: &crate::compiler::ir::IrProgram) -> Result<Vec<u8>, String> {
@@ -48,5 +48,5 @@ pub fn compile(_program: &crate::compiler::ir::IrProgram) -> Result<Vec<u8>, Str
         .map_err(|e| e.to_string())?;
 
     let obj = module.finish();
-    Ok(obj.emit().map_err(|e| e.to_string())?)
+    obj.emit().map_err(|e| e.to_string())
 }
