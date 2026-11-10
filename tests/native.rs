@@ -11,16 +11,28 @@ fn test_native_build() {
         .output()
         .unwrap();
 
+    eprintln!("=== BUILD ===");
+    eprintln!("exit: {:?}", build.status);
+    eprintln!("stdout: {:?}", String::from_utf8_lossy(&build.stdout));
+    eprintln!("stderr: {:?}", String::from_utf8_lossy(&build.stderr));
+    eprintln!("exe path: {:?}", exe);
+    eprintln!("exe exists: {}", exe.exists());
+
     if !build.status.success() {
-        eprintln!(
-            "Build failed (may be OK if clang missing): {}",
-            String::from_utf8_lossy(&build.stderr)
-        );
-        return;
+        panic!("Build failed");
     }
 
     let run = Command::new(&exe).output().unwrap();
-    assert!(String::from_utf8_lossy(&run.stdout).contains("42"));
+    eprintln!("=== RUN ===");
+    eprintln!("exit: {:?}", run.status);
+    eprintln!("stdout: {:?}", String::from_utf8_lossy(&run.stdout));
+    eprintln!("stderr: {:?}", String::from_utf8_lossy(&run.stderr));
+    eprintln!("===========");
+
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("42"),
+        "exe did not output 42"
+    );
 
     std::fs::remove_file(&temp).ok();
     std::fs::remove_file(&exe).ok();
