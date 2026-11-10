@@ -259,6 +259,39 @@ impl<'a> Vm<'a> {
                     self.pop();
                 }
 
+                Instruction::ReadFile => {
+                    let path = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("read_file() needs a String path", span)),
+                    };
+                    match std::fs::read_to_string(&path) {
+                        Ok(contents) => self.stack.push(Value::Str(contents)),
+                        Err(e) => return Err(err(format!("read_file('{}'): {}", path, e), span)),
+                    }
+                }
+                Instruction::WriteFile => {
+                    let content = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("write_file() needs a String content", span)),
+                    };
+                    let path = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("write_file() needs a String path", span)),
+                    };
+                    match std::fs::write(&path, &content) {
+                        Ok(()) => self.stack.push(Value::None),
+                        Err(e) => return Err(err(format!("write_file('{}'): {}", path, e), span)),
+                    }
+                }
+                Instruction::FileExists => {
+                    let path = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("file_exists() needs a String path", span)),
+                    };
+                    self.stack
+                        .push(Value::Bool(std::path::Path::new(&path).exists()));
+                }
+
                 // lists
                 Instruction::MakeTuple(n) => {
                     let start = self.stack.len() - *n;

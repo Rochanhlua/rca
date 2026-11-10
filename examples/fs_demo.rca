@@ -1,0 +1,7 @@
+let path = "target/rca_fs_demo.txt"
+write_file(path, "Hello from RCA file system!")
+print(file_exists(path))
+
+let read_back = read_file(path)
+print(len(read_back))
+print(read_back)

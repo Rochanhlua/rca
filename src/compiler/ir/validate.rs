@@ -50,6 +50,8 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::Index
         | I::SetField(_)
         | I::ListPush => (2, 1),
+        I::ReadFile | I::FileExists => (1, 1),
+        I::WriteFile => (2, 1),
         I::Neg
         | I::Not
         | I::GetField(_)
