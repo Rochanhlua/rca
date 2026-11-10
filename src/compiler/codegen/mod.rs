@@ -142,6 +142,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())?;
 
     let str_counter = Cell::new(0usize);
+    // Stack slot size: 1024 bytes each. Under Windows's 4KB stack-probe threshold,
+    // so Cranelift doesn't emit __chkstk calls (which have ABI naming issues with clang).
+    let slot_size = 1024u32;
 
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
@@ -638,12 +641,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        let stack_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-        let locals_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-        let globals_slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+        let stack_slot = builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
+        let locals_slot = builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
+        let globals_slot = builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
         let sp_var = Variable::new(0);
         builder.declare_var(sp_var, types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
@@ -706,12 +709,18 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             builder.switch_to_block(entry_block);
             builder.seal_block(entry_block);
 
-            let stack_slot = builder
-                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-            let locals_slot = builder
-                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
-            let globals_slot = builder
-                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8192));
+            let stack_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                slot_size,
+            ));
+            let locals_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                slot_size,
+            ));
+            let globals_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                slot_size,
+            ));
             let sp_var = Variable::new(0);
             builder.declare_var(sp_var, types::I64);
             let zero = builder.ins().iconst(types::I64, 0);
