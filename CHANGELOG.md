@@ -22,3 +22,5 @@
 - **Implemented:** string builtins `trim()`, `split()`, `replace()` — flat functions matching the existing style.
 - **Planned:** module-qualified `string.trim()` etc. via `import string` (blueprint §8, §13).
 - **Implemented:** cross-platform CI (Ubuntu, Windows, macOS) to catch OS-specific regressions. Fixed CRLF line ending mismatch in snapshot tests.
+- **Implemented:** collections: `map_new()`, `map_set()`, `map_get()`, `map_has()`, `map_len()` — flat functions matching the existing style.
+- **Planned:** proper Map literal syntax (e.g. `{"key": value}`) and direct iteration.
