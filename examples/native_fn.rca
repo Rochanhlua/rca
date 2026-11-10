@@ -1,0 +1,10 @@
+fn add(a: Int, b: Int) -> Int:
+    return a + b
+
+let result = add(10, 20)
+print(result)
+
+fn sub(a: Int, b: Int) -> Int:
+    return a - b
+
+print(sub(50, 8))
