@@ -333,6 +333,40 @@ impl<'a> Vm<'a> {
                     };
                     self.stack.push(Value::Float(r));
                 }
+                Instruction::StrTrim => {
+                    let s = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("trim() needs a String", span)),
+                    };
+                    self.stack.push(Value::Str(s.trim().to_string()));
+                }
+                Instruction::StrSplit => {
+                    let sep = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("split() needs a separator", span)),
+                    };
+                    let s = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("split() needs a String", span)),
+                    };
+                    let parts = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
+                    self.stack.push(Value::List(parts));
+                }
+                Instruction::StrReplace => {
+                    let rep = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("replace() needs a String", span)),
+                    };
+                    let target = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("replace() needs a String", span)),
+                    };
+                    let s = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("replace() needs a String", span)),
+                    };
+                    self.stack.push(Value::Str(s.replace(&target, &rep)));
+                }
                 Instruction::TimeNow => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)

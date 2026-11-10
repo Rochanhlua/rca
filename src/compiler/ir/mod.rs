@@ -137,6 +137,12 @@ pub enum Instruction {
     TimeNow,
     /// Pops an Int (milliseconds) and sleeps.
     TimeSleep,
+    /// Pops a String and a separator, pushes a List of Strings.
+    StrSplit,
+    /// Pops a String, pushes a trimmed String.
+    StrTrim,
+    /// Pops a String (deeper), target (top), and replacement (top), pushes a String.
+    StrReplace,
 
     /// Pops a number, pushes its absolute value.
     MathAbs,
