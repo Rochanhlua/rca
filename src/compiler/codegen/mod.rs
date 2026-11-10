@@ -1,7 +1,7 @@
 //! Cranelift backend for generating native machine code.
 //! See blueprint §5.2: native compilation must ultimately be supported.
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{AbiParam, InstBuilder, StackSlotData, StackSlotKind, types};
+use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags, StackSlotData, StackSlotKind, types};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataDescription, Linkage, Module, default_libcall_names};
@@ -60,7 +60,6 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
         builder.switch_to_block(entry_block);
-        builder.seal_block(entry_block);
 
         // Setup VM stack
         let stack_slot =
@@ -74,8 +73,18 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_ptr = builder.ins().global_value(types::I64, gv_fmt);
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
 
+        // Create basic blocks for every instruction
+        let code = &program.main.chunk.code;
+        let mut blocks = Vec::new();
+        for _ in 0..code.len() + 1 {
+            blocks.push(builder.create_block());
+        }
+
+        builder.ins().jump(blocks[0], &[]);
+
         // Translate IR
-        for ins in &program.main.chunk.code {
+        for (ip, ins) in code.iter().enumerate() {
+            builder.switch_to_block(blocks[ip]);
             match ins {
                 Instruction::PushInt(n) => {
                     let val = builder.ins().iconst(types::I64, *n);
@@ -86,47 +95,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().store(MemFlags::new(), val, dest_addr, 0);
                     let new_sp = builder.ins().iadd_imm(sp, 1);
                     builder.def_var(sp_var, new_sp);
-                }
-                Instruction::Print(n) => {
-                    for _ in 0..*n {
-                        let sp = builder.use_var(sp_var);
-                        let new_sp = builder.ins().iadd_imm(sp, -1);
-                        builder.def_var(sp_var, new_sp);
-
-                        let sp_off = builder.ins().imul_imm(new_sp, 8);
-                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                        let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                        let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
-
-                        builder.ins().call(printf_ref, &[fmt_ptr, val]);
-                    }
-                }
-                Instruction::Add
-                | Instruction::Sub
-                | Instruction::Mul
-                | Instruction::Div
-                | Instruction::Mod => {
-                    let sp = builder.use_var(sp_var);
-                    let new_sp = builder.ins().iadd_imm(sp, -1);
-                    builder.def_var(sp_var, new_sp);
-
-                    let sp_off = builder.ins().imul_imm(new_sp, 8);
-                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let b_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
-
-                    let a_addr = builder.ins().iadd_imm(b_addr, -8);
-                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-
-                    let r = match ins {
-                        Instruction::Add => builder.ins().iadd(a, b),
-                        Instruction::Sub => builder.ins().isub(a, b),
-                        Instruction::Mul => builder.ins().imul(a, b),
-                        Instruction::Div => builder.ins().sdiv(a, b),
-                        Instruction::Mod => builder.ins().srem(a, b),
-                        _ => unreachable!(),
-                    };
-                    builder.ins().store(MemFlags::new(), r, a_addr, 0);
+                    builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::PushBool(b) => {
                     let val = builder.ins().iconst(types::I64, if *b { 1 } else { 0 });
@@ -137,6 +106,45 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().store(MemFlags::new(), val, dest_addr, 0);
                     let new_sp = builder.ins().iadd_imm(sp, 1);
                     builder.def_var(sp_var, new_sp);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::Print(n) => {
+                    for _ in 0..*n {
+                        let sp = builder.use_var(sp_var);
+                        let new_sp = builder.ins().iadd_imm(sp, -1);
+                        builder.def_var(sp_var, new_sp);
+                        let sp_off = builder.ins().imul_imm(new_sp, 8);
+                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src_addr = builder.ins().iadd(sp_addr, sp_off);
+                        let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                        builder.ins().call(printf_ref, &[fmt_ptr, val]);
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::Add
+                | Instruction::Sub
+                | Instruction::Mul
+                | Instruction::Div
+                | Instruction::Mod => {
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    let sp_off = builder.ins().imul_imm(new_sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let b_addr = builder.ins().iadd(sp_addr, sp_off);
+                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let a_addr = builder.ins().iadd_imm(b_addr, -8);
+                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let r = match ins {
+                        Instruction::Add => builder.ins().iadd(a, b),
+                        Instruction::Sub => builder.ins().isub(a, b),
+                        Instruction::Mul => builder.ins().imul(a, b),
+                        Instruction::Div => builder.ins().sdiv(a, b),
+                        Instruction::Mod => builder.ins().srem(a, b),
+                        _ => unreachable!(),
+                    };
+                    builder.ins().store(MemFlags::new(), r, a_addr, 0);
+                    builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::Eq
                 | Instruction::NotEq
@@ -147,15 +155,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
-
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
                     let b_addr = builder.ins().iadd(sp_addr, sp_off);
                     let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
-
                     let a_addr = builder.ins().iadd_imm(b_addr, -8);
                     let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-
                     let cmp = match ins {
                         Instruction::Eq => builder.ins().icmp(IntCC::Equal, a, b),
                         Instruction::NotEq => builder.ins().icmp(IntCC::NotEqual, a, b),
@@ -169,13 +174,43 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     };
                     let r = builder.ins().uextend(types::I64, cmp);
                     builder.ins().store(MemFlags::new(), r, a_addr, 0);
+                    builder.ins().jump(blocks[ip + 1], &[]);
                 }
-                _ => {} // Other instructions not yet implemented
+                Instruction::Jump(target) => {
+                    builder.ins().jump(blocks[*target], &[]);
+                }
+                Instruction::JumpIfFalse(target) => {
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    let sp_off = builder.ins().imul_imm(new_sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let src_addr = builder.ins().iadd(sp_addr, sp_off);
+                    let cond = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_false = builder.ins().icmp(IntCC::Equal, cond, zero);
+                    builder
+                        .ins()
+                        .brif(is_false, blocks[*target], &[], blocks[ip + 1], &[]);
+                }
+                Instruction::Return => {
+                    let ret = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[ret]);
+                }
+                _ => {
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
             }
         }
 
+        builder.switch_to_block(blocks[code.len()]);
         let ret = builder.ins().iconst(types::I32, 0);
         builder.ins().return_(&[ret]);
+
+        for block in &blocks {
+            builder.seal_block(*block);
+        }
+        builder.seal_block(entry_block);
         builder.finalize();
     }
 
