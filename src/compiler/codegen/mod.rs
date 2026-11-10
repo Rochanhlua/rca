@@ -8,6 +8,7 @@ use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::compiler::ir::{Instruction, IrProgram};
@@ -43,6 +44,39 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("printf", Linkage::Import, &printf_sig)
         .map_err(|e| e.to_string())?;
 
+    // C-runtime for strings
+    let mut strlen_sig = module.make_signature();
+    strlen_sig.params.push(AbiParam::new(types::I64));
+    strlen_sig.returns.push(AbiParam::new(types::I64));
+    let strlen_func = module
+        .declare_function("strlen", Linkage::Import, &strlen_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut malloc_sig = module.make_signature();
+    malloc_sig.params.push(AbiParam::new(types::I64));
+    malloc_sig.returns.push(AbiParam::new(types::I64));
+    let malloc_func = module
+        .declare_function("malloc", Linkage::Import, &malloc_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut memcpy_sig = module.make_signature();
+    memcpy_sig.params.push(AbiParam::new(types::I64)); // dest
+    memcpy_sig.params.push(AbiParam::new(types::I64)); // src
+    memcpy_sig.params.push(AbiParam::new(types::I64)); // n
+    memcpy_sig.returns.push(AbiParam::new(types::I64));
+    let memcpy_func = module
+        .declare_function("memcpy", Linkage::Import, &memcpy_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut strcmp_sig = module.make_signature();
+    strcmp_sig.params.push(AbiParam::new(types::I64));
+    strcmp_sig.params.push(AbiParam::new(types::I64));
+    strcmp_sig.returns.push(AbiParam::new(types::I32));
+    let strcmp_func = module
+        .declare_function("strcmp", Linkage::Import, &strcmp_sig)
+        .map_err(|e| e.to_string())?;
+
+    // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
     let fmt_int_id = module
@@ -90,7 +124,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("main", Linkage::Export, &main_sig)
         .map_err(|e| e.to_string())?;
 
-    // Helper that compiles a chunk (main or user fn)
+    let str_counter = Cell::new(0usize);
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
                          chunk: &crate::compiler::ir::Chunk,
@@ -99,6 +133,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          globals_slot: StackSlot,
                          sp_var: Variable,
                          printf_ref: FuncRef,
+                         strlen_ref: FuncRef,
+                         malloc_ref: FuncRef,
+                         memcpy_ref: FuncRef,
+                         strcmp_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_ptr: Value,
@@ -160,7 +198,16 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         bytes.push(0);
                         data.define(bytes.into_boxed_slice());
                         let id = module
-                            .declare_data(&format!("str_{}", ip), Linkage::Local, false, false)
+                            .declare_data(
+                                &format!("str_{}", {
+                                    let __u = str_counter.get();
+                                    str_counter.set(__u + 1);
+                                    __u
+                                }),
+                                Linkage::Local,
+                                false,
+                                false,
+                            )
                             .map_err(|e| e.to_string())?;
                         module.define_data(id, &data).map_err(|e| e.to_string())?;
                         id
@@ -342,6 +389,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let ty_a = type_stack.pop().unwrap_or(StackType::Int);
                     let is_float =
                         matches!(ty_a, StackType::Float) || matches!(ty_b, StackType::Float);
+                    let is_str = matches!(ty_a, StackType::Str) && matches!(ty_b, StackType::Str);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
@@ -351,33 +399,53 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let b_bits = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
                     let a_addr = builder.ins().iadd_imm(b_addr, -8);
                     let a_bits = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-                    let r_bits = if is_float {
-                        let a = builder.ins().bitcast(types::F64, MemFlags::new(), a_bits);
-                        let b = builder.ins().bitcast(types::F64, MemFlags::new(), b_bits);
-                        let r = match ins {
-                            Instruction::Add => builder.ins().fadd(a, b),
-                            Instruction::Sub => builder.ins().fsub(a, b),
-                            Instruction::Mul => builder.ins().fmul(a, b),
-                            Instruction::Div => builder.ins().fdiv(a, b),
-                            _ => builder.ins().fadd(a, b),
+
+                    if is_str && matches!(ins, Instruction::Add) {
+                        let len1_call = builder.ins().call(strlen_ref, &[a_bits]);
+                        let len1 = builder.inst_results(len1_call)[0];
+                        let len2_call = builder.ins().call(strlen_ref, &[b_bits]);
+                        let len2 = builder.inst_results(len2_call)[0];
+                        let total_len = builder.ins().iadd(len1, len2);
+                        let alloc_size = builder.ins().iadd_imm(total_len, 1);
+                        let new_str_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                        let new_str = builder.inst_results(new_str_call)[0];
+                        builder.ins().call(memcpy_ref, &[new_str, a_bits, len1]);
+                        let dest2 = builder.ins().iadd(new_str, len1);
+                        builder.ins().call(memcpy_ref, &[dest2, b_bits, len2]);
+                        let null_pos = builder.ins().iadd(new_str, total_len);
+                        let null_byte = builder.ins().iconst(types::I8, 0);
+                        builder.ins().store(MemFlags::new(), null_byte, null_pos, 0);
+                        builder.ins().store(MemFlags::new(), new_str, a_addr, 0);
+                        type_stack.push(StackType::Str);
+                    } else {
+                        let r_bits = if is_float {
+                            let a = builder.ins().bitcast(types::F64, MemFlags::new(), a_bits);
+                            let b = builder.ins().bitcast(types::F64, MemFlags::new(), b_bits);
+                            let r = match ins {
+                                Instruction::Add => builder.ins().fadd(a, b),
+                                Instruction::Sub => builder.ins().fsub(a, b),
+                                Instruction::Mul => builder.ins().fmul(a, b),
+                                Instruction::Div => builder.ins().fdiv(a, b),
+                                _ => builder.ins().fadd(a, b),
+                            };
+                            builder.ins().bitcast(types::I64, MemFlags::new(), r)
+                        } else {
+                            match ins {
+                                Instruction::Add => builder.ins().iadd(a_bits, b_bits),
+                                Instruction::Sub => builder.ins().isub(a_bits, b_bits),
+                                Instruction::Mul => builder.ins().imul(a_bits, b_bits),
+                                Instruction::Div => builder.ins().sdiv(a_bits, b_bits),
+                                Instruction::Mod => builder.ins().srem(a_bits, b_bits),
+                                _ => unreachable!(),
+                            }
                         };
-                        builder.ins().bitcast(types::I64, MemFlags::new(), r)
-                    } else {
-                        match ins {
-                            Instruction::Add => builder.ins().iadd(a_bits, b_bits),
-                            Instruction::Sub => builder.ins().isub(a_bits, b_bits),
-                            Instruction::Mul => builder.ins().imul(a_bits, b_bits),
-                            Instruction::Div => builder.ins().sdiv(a_bits, b_bits),
-                            Instruction::Mod => builder.ins().srem(a_bits, b_bits),
-                            _ => unreachable!(),
-                        }
-                    };
-                    builder.ins().store(MemFlags::new(), r_bits, a_addr, 0);
-                    type_stack.push(if is_float {
-                        StackType::Float
-                    } else {
-                        StackType::Int
-                    });
+                        builder.ins().store(MemFlags::new(), r_bits, a_addr, 0);
+                        type_stack.push(if is_float {
+                            StackType::Float
+                        } else {
+                            StackType::Int
+                        });
+                    }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::Eq
@@ -390,6 +458,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let ty_a = type_stack.pop().unwrap_or(StackType::Int);
                     let is_float =
                         matches!(ty_a, StackType::Float) || matches!(ty_b, StackType::Float);
+                    let is_str = matches!(ty_a, StackType::Str) && matches!(ty_b, StackType::Str);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
@@ -399,10 +468,23 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let b_bits = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
                     let a_addr = builder.ins().iadd_imm(b_addr, -8);
                     let a_bits = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-                    let cmp = if is_float {
+
+                    let r = if is_str {
+                        let cmp_res_call = builder.ins().call(strcmp_ref, &[a_bits, b_bits]);
+                        let cmp_res = builder.inst_results(cmp_res_call)[0]; // i32
+                        let zero_i32 = builder.ins().iconst(types::I32, 0);
+                        let cmp = match ins {
+                            Instruction::Eq => builder.ins().icmp(IntCC::Equal, cmp_res, zero_i32),
+                            Instruction::NotEq => {
+                                builder.ins().icmp(IntCC::NotEqual, cmp_res, zero_i32)
+                            }
+                            _ => return Err("String ordering not supported".to_string()),
+                        };
+                        builder.ins().uextend(types::I64, cmp)
+                    } else if is_float {
                         let a = builder.ins().bitcast(types::F64, MemFlags::new(), a_bits);
                         let b = builder.ins().bitcast(types::F64, MemFlags::new(), b_bits);
-                        match ins {
+                        let cmp = match ins {
                             Instruction::Eq => builder.ins().fcmp(FloatCC::Equal, a, b),
                             Instruction::NotEq => builder.ins().fcmp(FloatCC::NotEqual, a, b),
                             Instruction::Lt => builder.ins().fcmp(FloatCC::LessThan, a, b),
@@ -412,9 +494,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder.ins().fcmp(FloatCC::GreaterThanOrEqual, a, b)
                             }
                             _ => unreachable!(),
-                        }
+                        };
+                        builder.ins().uextend(types::I64, cmp)
                     } else {
-                        match ins {
+                        let cmp = match ins {
                             Instruction::Eq => builder.ins().icmp(IntCC::Equal, a_bits, b_bits),
                             Instruction::NotEq => {
                                 builder.ins().icmp(IntCC::NotEqual, a_bits, b_bits)
@@ -436,9 +519,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                     .icmp(IntCC::SignedGreaterThanOrEqual, a_bits, b_bits)
                             }
                             _ => unreachable!(),
-                        }
+                        };
+                        builder.ins().uextend(types::I64, cmp)
                     };
-                    let r = builder.ins().uextend(types::I64, cmp);
                     builder.ins().store(MemFlags::new(), r, a_addr, 0);
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
@@ -530,7 +613,6 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         Ok(())
     };
 
-    // Compile main
     let mut ctx = module.make_context();
     ctx.func.signature = main_sig.clone();
     let mut builder_ctx = FunctionBuilderContext::new();
@@ -558,7 +640,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
         let fmt_float_gv = module.declare_data_in_func(fmt_float_id, builder.func);
         let fmt_float_ptr = builder.ins().global_value(types::I64, fmt_float_gv);
+
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
+        let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
+        let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
+        let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
+        let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
 
         compile_chunk(
             &mut module,
@@ -569,6 +656,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             globals_slot,
             sp_var,
             printf_ref,
+            strlen_ref,
+            malloc_ref,
+            memcpy_ref,
+            strcmp_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_ptr,
@@ -580,7 +671,6 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_function(main_id, &mut ctx)
         .map_err(|e| e.to_string())?;
 
-    // Compile user functions
     for (i, f) in program.functions.iter().enumerate() {
         let mut f_ctx = module.make_context();
         let mut f_sig = module.make_signature();
@@ -615,7 +705,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
             let fmt_float_gv = module.declare_data_in_func(fmt_float_id, builder.func);
             let fmt_float_ptr = builder.ins().global_value(types::I64, fmt_float_gv);
+
             let printf_ref = module.declare_func_in_func(printf_func, builder.func);
+            let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
+            let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
+            let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
+            let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -634,6 +729,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 globals_slot,
                 sp_var,
                 printf_ref,
+                strlen_ref,
+                malloc_ref,
+                memcpy_ref,
+                strcmp_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_ptr,

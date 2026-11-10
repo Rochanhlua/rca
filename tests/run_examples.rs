@@ -70,6 +70,7 @@ const RUN_PASS: &[&str] = &[
     "native_for.rca",
     "native_fn.rca",
     "native_float.rca",
+    "native_strings.rca",
     "native_compare.rca",
     "native_test.rca",
     "fs_demo.rca",
