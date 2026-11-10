@@ -80,6 +80,7 @@ const SHOULD_PASS: &[&str] = &[
     "match_run.rca",
     // types
     "types_ok.rca",
+    "native_test.rca",
     // runtime-error examples (check passes, run would fail)
     "runtime_error.rca",
     // tensor (check passes; some are runtime-bad by design)

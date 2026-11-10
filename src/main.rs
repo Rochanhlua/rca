@@ -11,7 +11,7 @@ use rca::runtime::vm::Vm;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::process;
+use std::process::{self, Command};
 use std::thread;
 
 fn run_command(command: &str, path: &str, source: &str) -> i32 {
@@ -105,16 +105,32 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
-    if command == "compile" {
+    if command == "compile" || command == "build" {
         match rca::compiler::codegen::compile(&ir) {
             Ok(obj_bytes) => {
                 let out_path = format!("{}.o", path);
-                match fs::write(&out_path, obj_bytes) {
-                    Ok(_) => println!("Successfully compiled to {}", out_path),
-                    Err(e) => {
-                        eprintln!("failed to write output file: {}", e);
-                        return 1;
+                if let Err(e) = fs::write(&out_path, obj_bytes) {
+                    eprintln!("failed to write output file: {}", e);
+                    return 1;
+                }
+                if command == "build" {
+                    let exe_path = path.trim_end_matches(".rca");
+                    let status = Command::new("clang")
+                        .arg(&out_path)
+                        .arg("-o")
+                        .arg(exe_path)
+                        .status();
+                    match status {
+                        Ok(s) if s.success() => {
+                            println!("Successfully built executable: {}", exe_path)
+                        }
+                        _ => {
+                            eprintln!("failed to link with clang");
+                            return 1;
+                        }
                     }
+                } else {
+                    println!("Successfully compiled to {}", out_path);
                 }
                 return 0;
             }
@@ -138,7 +154,7 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
 fn main() {
     let args: Vec<String> = env::args().collect();
     let commands = [
-        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile",
+        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -150,7 +166,8 @@ fn main() {
         println!("  rca ir-opt <file.rca>    (show optimized bytecode)");
         println!("  rca run <file.rca>       (run on the VM)");
         println!("  rca run-tree <file.rca>  (run on the tree-walking interpreter)");
-        println!("  rca compile <file.rca>   (generate native object file)");
+        println!("  rca compile <file.rca>   (generate native object file .o)");
+        println!("  rca build <file.rca>     (compile and link to an executable)");
         return;
     }
 
@@ -226,16 +243,32 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
-    if command == "compile" {
+    if command == "compile" || command == "build" {
         match rca::compiler::codegen::compile(&ir) {
             Ok(obj_bytes) => {
                 let out_path = format!("{}.o", path);
-                match fs::write(&out_path, obj_bytes) {
-                    Ok(_) => println!("Successfully compiled to {}", out_path),
-                    Err(e) => {
-                        eprintln!("failed to write output file: {}", e);
-                        return 1;
+                if let Err(e) = fs::write(&out_path, obj_bytes) {
+                    eprintln!("failed to write output file: {}", e);
+                    return 1;
+                }
+                if command == "build" {
+                    let exe_path = path.trim_end_matches(".rca");
+                    let status = Command::new("clang")
+                        .arg(&out_path)
+                        .arg("-o")
+                        .arg(exe_path)
+                        .status();
+                    match status {
+                        Ok(s) if s.success() => {
+                            println!("Successfully built executable: {}", exe_path)
+                        }
+                        _ => {
+                            eprintln!("failed to link with clang");
+                            return 1;
+                        }
                     }
+                } else {
+                    println!("Successfully compiled to {}", out_path);
                 }
                 return 0;
             }
