@@ -352,6 +352,50 @@ impl<'a> Vm<'a> {
                     let parts = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
                     self.stack.push(Value::List(parts));
                 }
+                Instruction::MapNew => {
+                    self.stack.push(Value::Map(Vec::new()));
+                }
+                Instruction::MapSet => {
+                    let val = self.pop();
+                    let key = self.pop();
+                    let mut map = match self.pop() {
+                        Value::Map(m) => m,
+                        _ => return Err(err("map_set() needs a Map", span)),
+                    };
+                    if let Some(pos) = map.iter().position(|(k, _)| k == &key) {
+                        map[pos] = (key, val);
+                    } else {
+                        map.push((key, val));
+                    }
+                    self.stack.push(Value::Map(map));
+                }
+                Instruction::MapGet => {
+                    let key = self.pop();
+                    let map = match self.pop() {
+                        Value::Map(m) => m,
+                        _ => return Err(err("map_get() needs a Map", span)),
+                    };
+                    match map.into_iter().find(|(k, _)| *k == key) {
+                        Some((_, v)) => self.stack.push(v),
+                        None => return Err(err("map_get(): key not found".to_string(), span)),
+                    }
+                }
+                Instruction::MapHas => {
+                    let key = self.pop();
+                    let map = match self.pop() {
+                        Value::Map(m) => m,
+                        _ => return Err(err("map_has() needs a Map", span)),
+                    };
+                    self.stack
+                        .push(Value::Bool(map.into_iter().any(|(k, _)| k == key)));
+                }
+                Instruction::MapLen => {
+                    let map = match self.pop() {
+                        Value::Map(m) => m,
+                        _ => return Err(err("map_len() needs a Map", span)),
+                    };
+                    self.stack.push(Value::Int(map.len() as i64));
+                }
                 Instruction::StrReplace => {
                     let rep = match self.pop() {
                         Value::Str(s) => s,

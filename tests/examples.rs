@@ -104,6 +104,7 @@ const SHOULD_PASS: &[&str] = &[
     "fs_demo.rca",
     "time_demo.rca",
     "string_demo.rca",
+    "map_demo.rca",
     "math_demo.rca",
 ];
 

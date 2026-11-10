@@ -11,6 +11,8 @@ pub enum Value {
     Str(String),
     None,
     List(Vec<Value>),
+    /// Key-value map. Uses Vec of pairs for simplicity and to preserve order.
+    Map(Vec<(Value, Value)>),
     Tuple(Vec<Value>),
     /// Start (inclusive) and end (exclusive), like `0..10`.
     Range(i64, i64),
@@ -59,6 +61,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, ")")
             }
+            Value::Map(map) => write!(f, "Map(size={})", map.len()),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {

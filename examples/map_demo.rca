@@ -1,0 +1,6 @@
+mut m = map_new()
+m = map_set(m, "name", "RCA")
+m = map_set(m, "version", 1)
+print(map_len(m))
+print(map_has(m, "name"))
+print(map_get(m, "name"))

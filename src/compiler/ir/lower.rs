@@ -780,6 +780,44 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "map_new" {
+            self.emit(Instruction::MapNew, span);
+            return Ok(());
+        }
+        if name == "map_set" {
+            if args.len() != 3 {
+                return Err(err("map_set() takes exactly 3 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.compile_expr(&args[2].value)?;
+            self.emit(Instruction::MapSet, span);
+            return Ok(());
+        }
+        if matches!(name.as_str(), "map_get" | "map_has") {
+            if args.len() != 2 {
+                return Err(err(format!("{}() takes exactly 2 arguments", name), span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(
+                if name == "map_get" {
+                    Instruction::MapGet
+                } else {
+                    Instruction::MapHas
+                },
+                span,
+            );
+            return Ok(());
+        }
+        if name == "map_len" {
+            if args.len() != 1 {
+                return Err(err("map_len() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::MapLen, span);
+            return Ok(());
+        }
         if name == "trim" {
             if args.len() != 1 {
                 return Err(err("trim() takes exactly 1 argument", span));
