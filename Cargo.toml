@@ -6,3 +6,4 @@ license = "MIT"
 description = "RCA: an AI-native programming language (early development)"
 
 [dependencies]
+sha2 = "0.10"

@@ -1017,6 +1017,17 @@ impl Interpreter {
             };
         }
 
+        if name == "sha256" {
+            if args.len() != 1 {
+                return Err(err("sha256() takes exactly 1 argument", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("sha256() needs a String", span)),
+            };
+            return Ok(Value::Str(crate::runtime::crypto::sha256(&s)));
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }
