@@ -8,12 +8,14 @@ use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::collections::HashMap;
 
 use crate::compiler::ir::{Instruction, IrProgram};
 
 #[derive(Clone, Copy)]
 enum StackType {
     Int,
+    Float,
     Str,
 }
 
@@ -31,7 +33,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             .map_err(|e| e.to_string())?,
     );
 
+    // printf(fmt, arg1, arg2) -> i32
     let mut printf_sig = module.make_signature();
+    printf_sig.params.push(AbiParam::new(types::I64));
     printf_sig.params.push(AbiParam::new(types::I64));
     printf_sig.params.push(AbiParam::new(types::I64));
     printf_sig.returns.push(AbiParam::new(types::I32));
@@ -57,29 +61,36 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_str_id, &fmt_str_data)
         .map_err(|e| e.to_string())?;
 
-    // 1. Declare all RCA functions
+    let mut fmt_float_data = DataDescription::new();
+    fmt_float_data.define(b"%lld.%03lld\n\0".to_vec().into_boxed_slice());
+    let fmt_float_id = module
+        .declare_data("fmt_float", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_float_id, &fmt_float_data)
+        .map_err(|e| e.to_string())?;
+
+    // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
         let mut sig = module.make_signature();
         for _ in 0..f.arity {
-            sig.params.push(AbiParam::new(types::I64)); // For now, only Int args
+            sig.params.push(AbiParam::new(types::I64));
         }
-        sig.returns.push(AbiParam::new(types::I64)); // For now, only Int returns
-
+        sig.returns.push(AbiParam::new(types::I64));
         let id = module
             .declare_function(&f.name, Linkage::Export, &sig)
             .map_err(|e| e.to_string())?;
         func_ids.push(id);
     }
 
-    // 2. Declare main function
     let mut main_sig = module.make_signature();
     main_sig.returns.push(AbiParam::new(types::I32));
     let main_id = module
         .declare_function("main", Linkage::Export, &main_sig)
         .map_err(|e| e.to_string())?;
 
-    // Helper to compile a chunk (used for both main and RCA functions)
+    // Helper that compiles a chunk (main or user fn)
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
                          chunk: &crate::compiler::ir::Chunk,
@@ -90,9 +101,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          printf_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
+                         fmt_float_ptr: Value,
                          is_main: bool|
      -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
+        let mut local_types: HashMap<usize, StackType> = HashMap::new();
         let code = &chunk.code;
         let mut blocks = Vec::new();
         for _ in 0..code.len() + 1 {
@@ -108,11 +121,24 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::PushFloat(f) => {
+                    let f_val = builder.ins().f64const(*f);
+                    let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f_val);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), bits, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Float);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::PushBool(b) => {
@@ -120,10 +146,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -144,10 +170,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), ptr, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), ptr, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -159,77 +185,101 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.def_var(sp_var, new_sp);
                         let sp_off = builder.ins().imul_imm(new_sp, 8);
                         let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                        let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                        let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                        let src = builder.ins().iadd(sp_addr, sp_off);
+                        let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                        let zero = builder.ins().iconst(types::I64, 0);
                         match ty {
                             StackType::Int => {
-                                builder.ins().call(printf_ref, &[fmt_int_ptr, val]);
+                                builder.ins().call(printf_ref, &[fmt_int_ptr, val, zero]);
                             }
                             StackType::Str => {
-                                builder.ins().call(printf_ref, &[fmt_str_ptr, val]);
+                                builder.ins().call(printf_ref, &[fmt_str_ptr, val, zero]);
+                            }
+                            StackType::Float => {
+                                let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
+                                let thousand = builder.ins().f64const(1000.0);
+                                let scaled = builder.ins().fmul(f_val, thousand);
+                                let scaled_int = builder.ins().fcvt_to_sint(types::I64, scaled);
+                                let divisor = builder.ins().iconst(types::I64, 1000);
+                                let int_part = builder.ins().sdiv(scaled_int, divisor);
+                                let dec_raw = builder.ins().srem(scaled_int, divisor);
+                                let is_neg =
+                                    builder.ins().icmp(IntCC::SignedLessThan, dec_raw, zero);
+                                let neg_dec = builder.ins().ineg(dec_raw);
+                                let dec_part = builder.ins().select(is_neg, neg_dec, dec_raw);
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_float_ptr, int_part, dec_part]);
                             }
                         }
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::StoreLocal(slot) => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    local_types.insert(*slot, ty);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let src = builder.ins().iadd(sp_addr, sp_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
-                    let dest_addr = builder.ins().iadd(locals_addr, slot_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    type_stack.pop();
+                    let dest = builder.ins().iadd(locals_addr, slot_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::LoadLocal(slot) => {
+                    let ty = local_types.get(slot).copied().unwrap_or(StackType::Int);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
-                    let src_addr = builder.ins().iadd(locals_addr, slot_off);
-                    let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let src = builder.ins().iadd(locals_addr, slot_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
-                    type_stack.push(StackType::Int);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(ty);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::StoreGlobal(slot) => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    local_types.insert(100000 + slot, ty);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let src = builder.ins().iadd(sp_addr, sp_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let globals_addr = builder.ins().stack_addr(types::I64, globals_slot, 0);
-                    let dest_addr = builder.ins().iadd(globals_addr, slot_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    type_stack.pop();
+                    let dest = builder.ins().iadd(globals_addr, slot_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::LoadGlobal(slot) => {
+                    let ty = local_types
+                        .get(&(100000 + slot))
+                        .copied()
+                        .unwrap_or(StackType::Int);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let globals_addr = builder.ins().stack_addr(types::I64, globals_slot, 0);
-                    let src_addr = builder.ins().iadd(globals_addr, slot_off);
-                    let val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let src = builder.ins().iadd(globals_addr, slot_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
-                    type_stack.push(StackType::Int);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(ty);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::MakeRange => {
@@ -288,27 +338,46 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 | Instruction::Mul
                 | Instruction::Div
                 | Instruction::Mod => {
+                    let ty_b = type_stack.pop().unwrap_or(StackType::Int);
+                    let ty_a = type_stack.pop().unwrap_or(StackType::Int);
+                    let is_float =
+                        matches!(ty_a, StackType::Float) || matches!(ty_b, StackType::Float);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
                     let b_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let b_bits = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
                     let a_addr = builder.ins().iadd_imm(b_addr, -8);
-                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-                    let r = match ins {
-                        Instruction::Add => builder.ins().iadd(a, b),
-                        Instruction::Sub => builder.ins().isub(a, b),
-                        Instruction::Mul => builder.ins().imul(a, b),
-                        Instruction::Div => builder.ins().sdiv(a, b),
-                        Instruction::Mod => builder.ins().srem(a, b),
-                        _ => unreachable!(),
+                    let a_bits = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let r_bits = if is_float {
+                        let a = builder.ins().bitcast(types::F64, MemFlags::new(), a_bits);
+                        let b = builder.ins().bitcast(types::F64, MemFlags::new(), b_bits);
+                        let r = match ins {
+                            Instruction::Add => builder.ins().fadd(a, b),
+                            Instruction::Sub => builder.ins().fsub(a, b),
+                            Instruction::Mul => builder.ins().fmul(a, b),
+                            Instruction::Div => builder.ins().fdiv(a, b),
+                            _ => builder.ins().fadd(a, b),
+                        };
+                        builder.ins().bitcast(types::I64, MemFlags::new(), r)
+                    } else {
+                        match ins {
+                            Instruction::Add => builder.ins().iadd(a_bits, b_bits),
+                            Instruction::Sub => builder.ins().isub(a_bits, b_bits),
+                            Instruction::Mul => builder.ins().imul(a_bits, b_bits),
+                            Instruction::Div => builder.ins().sdiv(a_bits, b_bits),
+                            Instruction::Mod => builder.ins().srem(a_bits, b_bits),
+                            _ => unreachable!(),
+                        }
                     };
-                    builder.ins().store(MemFlags::new(), r, a_addr, 0);
-                    type_stack.pop();
-                    type_stack.pop();
-                    type_stack.push(StackType::Int);
+                    builder.ins().store(MemFlags::new(), r_bits, a_addr, 0);
+                    type_stack.push(if is_float {
+                        StackType::Float
+                    } else {
+                        StackType::Int
+                    });
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::Eq
@@ -317,30 +386,60 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 | Instruction::LtEq
                 | Instruction::Gt
                 | Instruction::GtEq => {
+                    let ty_b = type_stack.pop().unwrap_or(StackType::Int);
+                    let ty_a = type_stack.pop().unwrap_or(StackType::Int);
+                    let is_float =
+                        matches!(ty_a, StackType::Float) || matches!(ty_b, StackType::Float);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
                     let b_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let b_bits = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
                     let a_addr = builder.ins().iadd_imm(b_addr, -8);
-                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
-                    let cmp = match ins {
-                        Instruction::Eq => builder.ins().icmp(IntCC::Equal, a, b),
-                        Instruction::NotEq => builder.ins().icmp(IntCC::NotEqual, a, b),
-                        Instruction::Lt => builder.ins().icmp(IntCC::SignedLessThan, a, b),
-                        Instruction::LtEq => builder.ins().icmp(IntCC::SignedLessThanOrEqual, a, b),
-                        Instruction::Gt => builder.ins().icmp(IntCC::SignedGreaterThan, a, b),
-                        Instruction::GtEq => {
-                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, a, b)
+                    let a_bits = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let cmp = if is_float {
+                        let a = builder.ins().bitcast(types::F64, MemFlags::new(), a_bits);
+                        let b = builder.ins().bitcast(types::F64, MemFlags::new(), b_bits);
+                        match ins {
+                            Instruction::Eq => builder.ins().fcmp(FloatCC::Equal, a, b),
+                            Instruction::NotEq => builder.ins().fcmp(FloatCC::NotEqual, a, b),
+                            Instruction::Lt => builder.ins().fcmp(FloatCC::LessThan, a, b),
+                            Instruction::LtEq => builder.ins().fcmp(FloatCC::LessThanOrEqual, a, b),
+                            Instruction::Gt => builder.ins().fcmp(FloatCC::GreaterThan, a, b),
+                            Instruction::GtEq => {
+                                builder.ins().fcmp(FloatCC::GreaterThanOrEqual, a, b)
+                            }
+                            _ => unreachable!(),
                         }
-                        _ => unreachable!(),
+                    } else {
+                        match ins {
+                            Instruction::Eq => builder.ins().icmp(IntCC::Equal, a_bits, b_bits),
+                            Instruction::NotEq => {
+                                builder.ins().icmp(IntCC::NotEqual, a_bits, b_bits)
+                            }
+                            Instruction::Lt => {
+                                builder.ins().icmp(IntCC::SignedLessThan, a_bits, b_bits)
+                            }
+                            Instruction::LtEq => {
+                                builder
+                                    .ins()
+                                    .icmp(IntCC::SignedLessThanOrEqual, a_bits, b_bits)
+                            }
+                            Instruction::Gt => {
+                                builder.ins().icmp(IntCC::SignedGreaterThan, a_bits, b_bits)
+                            }
+                            Instruction::GtEq => {
+                                builder
+                                    .ins()
+                                    .icmp(IntCC::SignedGreaterThanOrEqual, a_bits, b_bits)
+                            }
+                            _ => unreachable!(),
+                        }
                     };
                     let r = builder.ins().uextend(types::I64, cmp);
                     builder.ins().store(MemFlags::new(), r, a_addr, 0);
-                    type_stack.pop();
-                    type_stack.pop();
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -363,18 +462,17 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         args.push(arg);
                         type_stack.pop();
                     }
-                    args.reverse(); // Arguments must be in order
+                    args.reverse();
                     let f_ref = module.declare_func_in_func(f_id, builder.func);
                     let call = builder.ins().call(f_ref, &args);
                     let ret_val = builder.inst_results(call)[0];
-
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
-                    builder.ins().store(MemFlags::new(), ret_val, dest_addr, 0);
-                    let new_sp = builder.ins().iadd_imm(sp, 1);
-                    builder.def_var(sp_var, new_sp);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), ret_val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -387,8 +485,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.def_var(sp_var, new_sp);
                     let sp_off = builder.ins().imul_imm(new_sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                    let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                    let cond = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let src = builder.ins().iadd(sp_addr, sp_off);
+                    let cond = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let zero = builder.ins().iconst(types::I64, 0);
                     let is_false = builder.ins().icmp(IntCC::Equal, cond, zero);
                     builder
@@ -406,8 +504,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.def_var(sp_var, new_sp);
                         let sp_off = builder.ins().imul_imm(new_sp, 8);
                         let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                        let src_addr = builder.ins().iadd(sp_addr, sp_off);
-                        let ret_val = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                        let src = builder.ins().iadd(sp_addr, sp_off);
+                        let ret_val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                         builder.ins().return_(&[ret_val]);
                     }
                 }
@@ -432,7 +530,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         Ok(())
     };
 
-    // 3. Compile main function
+    // Compile main
     let mut ctx = module.make_context();
     ctx.func.signature = main_sig.clone();
     let mut builder_ctx = FunctionBuilderContext::new();
@@ -458,6 +556,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
         let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
         let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+        let fmt_float_gv = module.declare_data_in_func(fmt_float_id, builder.func);
+        let fmt_float_ptr = builder.ins().global_value(types::I64, fmt_float_gv);
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
 
         compile_chunk(
@@ -471,6 +571,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             printf_ref,
             fmt_int_ptr,
             fmt_str_ptr,
+            fmt_float_ptr,
             true,
         )?;
         builder.finalize();
@@ -479,7 +580,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_function(main_id, &mut ctx)
         .map_err(|e| e.to_string())?;
 
-    // 4. Compile RCA user functions
+    // Compile user functions
     for (i, f) in program.functions.iter().enumerate() {
         let mut f_ctx = module.make_context();
         let mut f_sig = module.make_signature();
@@ -512,15 +613,16 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
             let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
             let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+            let fmt_float_gv = module.declare_data_in_func(fmt_float_id, builder.func);
+            let fmt_float_ptr = builder.ins().global_value(types::I64, fmt_float_gv);
             let printf_ref = module.declare_func_in_func(printf_func, builder.func);
 
-            // Bind parameters to locals
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
                 let slot_off = builder.ins().iconst(types::I64, (p_idx as i64) * 8);
                 let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
-                let dest_addr = builder.ins().iadd(locals_addr, slot_off);
-                builder.ins().store(MemFlags::new(), *p_val, dest_addr, 0);
+                let dest = builder.ins().iadd(locals_addr, slot_off);
+                builder.ins().store(MemFlags::new(), *p_val, dest, 0);
             }
 
             compile_chunk(
@@ -534,6 +636,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 printf_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
+                fmt_float_ptr,
                 false,
             )?;
             builder.finalize();
