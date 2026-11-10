@@ -44,3 +44,5 @@
 - **Planned:** native codegen for control flow (`if`/`else`, loops) and strings.
 - **Implemented:** native codegen for control flow (`Jump`, `JumpIfFalse`, `Return`) — `if`/`else` works natively.
 - **Planned:** native codegen for loops (`while`, `for`), functions, and strings.
+- **Implemented:** native codegen for string printing (`PushStr`, `Print` with `%s`) — `print("Hello")` works natively.
+- **Planned:** native string concatenation, indexing, `len()`, and functions.
