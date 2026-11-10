@@ -48,3 +48,5 @@
 - **Planned:** native string concatenation, indexing, `len()`, and functions.
 - **Implemented:** native codegen for local/global variables (`StoreLocal`, `LoadLocal`, `StoreGlobal`, `LoadGlobal`) — `let x = 42` works natively.
 - **Planned:** native codegen for functions (`Call`/`Return`) and loops.
+- **Verified:** native codegen for `while` loops — compiles down to `Jump`/`JumpIfFalse` (already implemented in #59).
+- **Planned:** `for` loops (`ForNext`) and functions (`Call`/`Return`).
