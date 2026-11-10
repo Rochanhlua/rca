@@ -421,6 +421,16 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("tcp_recv failed: {}", e), span)),
                     }
                 }
+                Instruction::HttpGet => {
+                    let url = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("http_get() needs a String URL", span)),
+                    };
+                    match crate::runtime::http::http_get(&url) {
+                        Ok(body) => self.stack.push(Value::Str(body)),
+                        Err(m) => return Err(err(format!("http_get(): {}", m), span)),
+                    }
+                }
                 Instruction::TcpClose => {
                     let _sock = match self.pop() {
                         Value::Socket(s) => s,

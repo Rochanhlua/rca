@@ -1003,6 +1003,20 @@ impl Interpreter {
             return Ok(Value::None);
         }
 
+        if name == "http_get" {
+            if args.len() != 1 {
+                return Err(err("http_get() takes exactly 1 argument", span));
+            }
+            let url = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("http_get() needs a String URL", span)),
+            };
+            return match crate::runtime::http::http_get(&url) {
+                Ok(body) => Ok(Value::Str(body)),
+                Err(m) => Err(err(format!("http_get(): {}", m), span)),
+            };
+        }
+
         if let Some(f) = self.functions.get(&name).cloned() {
             return self.call_function(&f, args, span);
         }
