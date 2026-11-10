@@ -36,3 +36,5 @@
 - **Planned:** full IR-to-Cranelift translation and final executable linking.
 - **Implemented:** native codegen infrastructure (Cranelift) — `rca compile` generates object files.
 - **Planned:** full IR-to-Cranelift translation (PushInt, Add, Print) and final executable linking.
+- **Implemented:** native codegen for `PushInt` and `Print` — RCA can now compile simple integer programs to native executables via `rca build`.
+- **Planned:** native codegen for arithmetic, strings, functions, and control flow.
