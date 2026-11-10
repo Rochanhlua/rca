@@ -790,6 +790,61 @@ impl Interpreter {
             return Ok(Value::Float(r));
         }
 
+        if name == "map_new" {
+            return Ok(Value::Map(Vec::new()));
+        }
+        if name == "map_set" {
+            if args.len() != 3 {
+                return Err(err("map_set() takes exactly 3 arguments", span));
+            }
+            let mut map = match self.eval_expr(&args[0].value)? {
+                Value::Map(m) => m,
+                _ => return Err(err("map_set() needs a Map", span)),
+            };
+            let key = self.eval_expr(&args[1].value)?;
+            let val = self.eval_expr(&args[2].value)?;
+            if let Some(pos) = map.iter().position(|(k, _)| k == &key) {
+                map[pos] = (key, val);
+            } else {
+                map.push((key, val));
+            }
+            return Ok(Value::Map(map));
+        }
+        if name == "map_get" {
+            if args.len() != 2 {
+                return Err(err("map_get() takes exactly 2 arguments", span));
+            }
+            let map = match self.eval_expr(&args[0].value)? {
+                Value::Map(m) => m,
+                _ => return Err(err("map_get() needs a Map", span)),
+            };
+            let key = self.eval_expr(&args[1].value)?;
+            return match map.into_iter().find(|(k, _)| *k == key) {
+                Some((_, v)) => Ok(v),
+                None => Err(err("map_get(): key not found", span)),
+            };
+        }
+        if name == "map_has" {
+            if args.len() != 2 {
+                return Err(err("map_has() takes exactly 2 arguments", span));
+            }
+            let map = match self.eval_expr(&args[0].value)? {
+                Value::Map(m) => m,
+                _ => return Err(err("map_has() needs a Map", span)),
+            };
+            let key = self.eval_expr(&args[1].value)?;
+            return Ok(Value::Bool(map.into_iter().any(|(k, _)| k == key)));
+        }
+        if name == "map_len" {
+            if args.len() != 1 {
+                return Err(err("map_len() takes exactly 1 argument", span));
+            }
+            let map = match self.eval_expr(&args[0].value)? {
+                Value::Map(m) => m,
+                _ => return Err(err("map_len() needs a Map", span)),
+            };
+            return Ok(Value::Int(map.len() as i64));
+        }
         if name == "trim" {
             if args.len() != 1 {
                 return Err(err("trim() takes exactly 1 argument", span));

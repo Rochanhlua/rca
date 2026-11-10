@@ -1219,6 +1219,46 @@ impl Checker {
             return Type::Float;
         }
 
+        if matches!(
+            name.as_str(),
+            "map_new" | "map_set" | "map_get" | "map_has" | "map_len"
+        ) {
+            if name == "map_new" {
+                if !args.is_empty() {
+                    self.error("map_new() takes exactly 0 arguments".to_string(), span);
+                }
+                return Type::Map(Box::new(Type::Unknown), Box::new(Type::Unknown));
+            }
+            if name == "map_len" {
+                if args.len() != 1 {
+                    self.error("map_len() takes exactly 1 argument".to_string(), span);
+                }
+                return Type::Int;
+            }
+            if name == "map_set" {
+                if args.len() != 3 {
+                    self.error("map_set() takes exactly 3 arguments".to_string(), span);
+                }
+                for a in args.iter() {
+                    self.check_expr(&a.value);
+                }
+                return Type::Map(Box::new(Type::Unknown), Box::new(Type::Unknown));
+            }
+            if matches!(name.as_str(), "map_get" | "map_has") {
+                if args.len() != 2 {
+                    self.error(format!("{}() takes exactly 2 arguments", name), span);
+                }
+                for a in args.iter() {
+                    self.check_expr(&a.value);
+                }
+                return if name == "map_get" {
+                    Type::Unknown
+                } else {
+                    Type::Bool
+                };
+            }
+            return Type::Unknown;
+        }
         if matches!(name.as_str(), "trim" | "split" | "replace") {
             if name == "trim" {
                 if args.len() != 1 {

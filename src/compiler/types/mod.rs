@@ -15,6 +15,8 @@ pub enum Type {
     Struct(String),
     /// Fixed-size tuple; each element has its own type.
     Tuple(Vec<Type>),
+    /// Key-value map, e.g. { "a": 1, "b": 2 }. Key and value types.
+    Map(Box<Type>, Box<Type>),
     /// A user-defined enum, identified by name.
     Enum(String),
     /// Used after an error, or when a type is not yet known.
@@ -66,6 +68,7 @@ impl fmt::Display for Type {
             }
             Type::Enum(name) => write!(f, "{}", name),
             Type::Unknown => write!(f, "<unknown>"),
+            Type::Map(k, v) => write!(f, "Map<{}, {}>", k, v),
         }
     }
 }

@@ -143,6 +143,11 @@ pub enum Instruction {
     StrTrim,
     /// Pops a String (deeper), target (top), and replacement (top), pushes a String.
     StrReplace,
+    MapNew,
+    MapSet,
+    MapGet,
+    MapHas,
+    MapLen,
 
     /// Pops a number, pushes its absolute value.
     MathAbs,
