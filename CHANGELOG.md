@@ -28,3 +28,5 @@
 - **Planned:** native JSON integration with `Map` literal syntax.
 - **Implemented:** TCP networking builtins `tcp_connect()`, `tcp_send()`, `tcp_recv()`, `tcp_close()` — pure Rust using `std::net`.
 - **Planned:** UDP sockets and HTTP wrappers.
+- **Implemented:** HTTP client `http_get()` — pure Rust using `std::net`.
+- **Planned:** HTTP POST and HTTPS.
