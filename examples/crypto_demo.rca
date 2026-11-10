@@ -1,0 +1,2 @@
+let hash = sha256("RCA Language")
+print(hash)

@@ -161,6 +161,8 @@ pub enum Instruction {
     TcpClose,
     /// Pops a String URL, pushes the response body String.
     HttpGet,
+    /// Pops a String, pushes its SHA-256 hash as a hex String.
+    Sha256,
     MapLen,
 
     /// Pops a number, pushes its absolute value.

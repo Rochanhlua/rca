@@ -807,6 +807,15 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "sha256" {
+            if args.len() != 1 {
+                return Err(err("sha256() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::Sha256, span);
+            return Ok(());
+        }
+
         let fkey = self.item_key(&name);
 
         if name == "abs" {

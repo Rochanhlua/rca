@@ -1441,6 +1441,21 @@ impl Checker {
             return Type::String;
         }
 
+        if name == "sha256" {
+            if args.len() != 1 {
+                self.error("sha256() takes exactly 1 argument".to_string(), span);
+            } else {
+                let t = self.check_expr(&args[0].value);
+                if !matches!(t, Type::String | Type::Unknown) {
+                    self.error(
+                        format!("sha256() needs a String, found {}", t),
+                        &args[0].value.span,
+                    );
+                }
+            }
+            return Type::String;
+        }
+
         if let Some(sig) = self.functions.get(&name).cloned() {
             return self.check_function_call(&name, &sig, args, span);
         }

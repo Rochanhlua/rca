@@ -421,6 +421,14 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("tcp_recv failed: {}", e), span)),
                     }
                 }
+                Instruction::Sha256 => {
+                    let s = match self.pop() {
+                        Value::Str(s) => s,
+                        _ => return Err(err("sha256() needs a String", span)),
+                    };
+                    self.stack
+                        .push(Value::Str(crate::runtime::crypto::sha256(&s)));
+                }
                 Instruction::HttpGet => {
                     let url = match self.pop() {
                         Value::Str(s) => s,
