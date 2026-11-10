@@ -128,6 +128,48 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     };
                     builder.ins().store(MemFlags::new(), r, a_addr, 0);
                 }
+                Instruction::PushBool(b) => {
+                    let val = builder.ins().iconst(types::I64, if *b { 1 } else { 0 });
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest_addr = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), val, dest_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, new_sp);
+                }
+                Instruction::Eq
+                | Instruction::NotEq
+                | Instruction::Lt
+                | Instruction::LtEq
+                | Instruction::Gt
+                | Instruction::GtEq => {
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+
+                    let sp_off = builder.ins().imul_imm(new_sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let b_addr = builder.ins().iadd(sp_addr, sp_off);
+                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+
+                    let a_addr = builder.ins().iadd_imm(b_addr, -8);
+                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+
+                    let cmp = match ins {
+                        Instruction::Eq => builder.ins().icmp(IntCC::Equal, a, b),
+                        Instruction::NotEq => builder.ins().icmp(IntCC::NotEqual, a, b),
+                        Instruction::Lt => builder.ins().icmp(IntCC::SignedLessThan, a, b),
+                        Instruction::LtEq => builder.ins().icmp(IntCC::SignedLessThanOrEqual, a, b),
+                        Instruction::Gt => builder.ins().icmp(IntCC::SignedGreaterThan, a, b),
+                        Instruction::GtEq => {
+                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, a, b)
+                        }
+                        _ => unreachable!(),
+                    };
+                    let r = builder.ins().uextend(types::I64, cmp);
+                    builder.ins().store(MemFlags::new(), r, a_addr, 0);
+                }
                 _ => {} // Other instructions not yet implemented
             }
         }
