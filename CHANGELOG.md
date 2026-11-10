@@ -52,3 +52,5 @@
 - **Planned:** `for` loops (`ForNext`) and functions (`Call`/`Return`).
 - **Implemented:** native codegen for `for` loops (`MakeRange`, `ForNext`) — `for i in 0..5:` works natively.
 - **Planned:** functions (`Call`/`Return`) in native codegen.
+- **Implemented:** native codegen for user functions (`Call`/`Return`) — `fn add(a, b)` compiles and runs natively.
+- **Planned:** recursion, string/float parameters, default args.
