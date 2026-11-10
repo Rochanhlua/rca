@@ -54,3 +54,5 @@
 - **Planned:** functions (`Call`/`Return`) in native codegen.
 - **Implemented:** native codegen for user functions (`Call`/`Return`) — `fn add(a, b)` compiles and runs natively.
 - **Planned:** recursion, string/float parameters, default args.
+- **Implemented:** native codegen for `Float` — arithmetic, comparisons, and printing (3 decimal places).
+- **Planned:** Float-to-Int conversion, `Char`/`List`/`Map`/`Struct` native.
