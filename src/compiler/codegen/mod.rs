@@ -123,6 +123,32 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_float_dec_id, &fmt_float_dec_data)
         .map_err(|e| e.to_string())?;
 
+    let mut str_nan_data = DataDescription::new();
+    str_nan_data.define(b"nan\0".to_vec().into_boxed_slice());
+    let str_nan_id = module
+        .declare_data("str_nan", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_nan_id, &str_nan_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_inf_data = DataDescription::new();
+    str_inf_data.define(b"inf\0".to_vec().into_boxed_slice());
+    let str_inf_id = module
+        .declare_data("str_inf", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_inf_id, &str_inf_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_neg_inf_data = DataDescription::new();
+    str_neg_inf_data.define(b"-inf\0".to_vec().into_boxed_slice());
+    let str_neg_inf_id = module
+        .declare_data("str_neg_inf", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_neg_inf_id, &str_neg_inf_data)
+        .map_err(|e| e.to_string())?;
     // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
@@ -164,6 +190,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
                          fmt_float_dec_ptr: Value,
+                         fmt_nan_ptr: Value,
+                         fmt_inf_ptr: Value,
+                         fmt_neg_inf_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -457,6 +486,38 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
+                                let is_nan = builder.ins().fcmp(FloatCC::NotEqual, f_val, f_val);
+                                let pos_inf = builder.ins().f64const(f64::INFINITY);
+                                let neg_inf = builder.ins().f64const(f64::NEG_INFINITY);
+                                let is_pos_inf = builder.ins().fcmp(FloatCC::Equal, f_val, pos_inf);
+                                let is_neg_inf = builder.ins().fcmp(FloatCC::Equal, f_val, neg_inf);
+                                let is_inf = builder.ins().bor(is_pos_inf, is_neg_inf);
+                                let is_special = builder.ins().bor(is_nan, is_inf);
+
+                                let special_block = builder.create_block();
+                                let finite_block = builder.create_block();
+                                let after_block = builder.create_block();
+                                builder.ins().brif(
+                                    is_special,
+                                    special_block,
+                                    &[],
+                                    finite_block,
+                                    &[],
+                                );
+
+                                builder.seal_block(special_block);
+                                builder.seal_block(finite_block);
+
+                                builder.switch_to_block(special_block);
+                                let inf_ptr =
+                                    builder
+                                        .ins()
+                                        .select(is_neg_inf, fmt_neg_inf_ptr, fmt_inf_ptr);
+                                let final_ptr = builder.ins().select(is_nan, fmt_nan_ptr, inf_ptr);
+                                builder.ins().call(printf_ref, &[fmt_str_ptr, final_ptr]);
+                                builder.ins().jump(after_block, &[]);
+
+                                builder.switch_to_block(finite_block);
                                 let thousand = builder.ins().f64const(1000.0);
                                 let scaled = builder.ins().fmul(f_val, thousand);
                                 let scaled_int = builder.ins().fcvt_to_sint(types::I64, scaled);
@@ -474,6 +535,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_float_dec_ptr, dec_part]);
+                                builder.ins().jump(after_block, &[]);
+                                builder.seal_block(after_block);
+
+                                builder.switch_to_block(after_block);
                             }
                         }
                     }
@@ -872,6 +937,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_float_dec_gv = module.declare_data_in_func(fmt_float_dec_id, builder.func);
         let fmt_float_dec_ptr = builder.ins().global_value(types::I64, fmt_float_dec_gv);
 
+        let fmt_nan_gv = module.declare_data_in_func(str_nan_id, builder.func);
+        let fmt_nan_ptr = builder.ins().global_value(types::I64, fmt_nan_gv);
+        let fmt_inf_gv = module.declare_data_in_func(str_inf_id, builder.func);
+        let fmt_inf_ptr = builder.ins().global_value(types::I64, fmt_inf_gv);
+        let fmt_neg_inf_gv = module.declare_data_in_func(str_neg_inf_id, builder.func);
+        let fmt_neg_inf_ptr = builder.ins().global_value(types::I64, fmt_neg_inf_gv);
+
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
         let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
         let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
@@ -895,6 +967,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_str_ptr,
             fmt_float_int_ptr,
             fmt_float_dec_ptr,
+            fmt_nan_ptr,
+            fmt_inf_ptr,
+            fmt_neg_inf_ptr,
             &[],
             &program.structs,
             true,
@@ -948,6 +1023,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_float_dec_gv = module.declare_data_in_func(fmt_float_dec_id, builder.func);
             let fmt_float_dec_ptr = builder.ins().global_value(types::I64, fmt_float_dec_gv);
 
+            let fmt_nan_gv = module.declare_data_in_func(str_nan_id, builder.func);
+            let fmt_nan_ptr = builder.ins().global_value(types::I64, fmt_nan_gv);
+            let fmt_inf_gv = module.declare_data_in_func(str_inf_id, builder.func);
+            let fmt_inf_ptr = builder.ins().global_value(types::I64, fmt_inf_gv);
+            let fmt_neg_inf_gv = module.declare_data_in_func(str_neg_inf_id, builder.func);
+            let fmt_neg_inf_ptr = builder.ins().global_value(types::I64, fmt_neg_inf_gv);
+
             let printf_ref = module.declare_func_in_func(printf_func, builder.func);
             let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
             let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
@@ -979,6 +1061,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_str_ptr,
                 fmt_float_int_ptr,
                 fmt_float_dec_ptr,
+                fmt_nan_ptr,
+                fmt_inf_ptr,
+                fmt_neg_inf_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
