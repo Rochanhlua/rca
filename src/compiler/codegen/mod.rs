@@ -12,13 +12,14 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::cell::Cell;
 use std::collections::HashMap;
 
-use crate::compiler::ir::{ConvKind, Instruction, IrProgram};
+use crate::compiler::ir::{ConvKind, Instruction, IrProgram, StructInfo};
 
 #[derive(Clone, Copy)]
 enum StackType {
     Int,
     Float,
     Str,
+    Struct(usize),
 }
 
 pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
@@ -164,6 +165,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_float_int_ptr: Value,
                          fmt_float_dec_ptr: Value,
                          param_types: &[Type],
+                         struct_fields: &[StructInfo],
                          is_main: bool|
      -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
@@ -261,6 +263,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let (result, new_ty) = match kind {
                         ConvKind::Int => match ty {
+                            StackType::Struct(_) => {
+                                return Err("struct -> int not supported".to_string());
+                            }
                             StackType::Int => (val, StackType::Int),
                             StackType::Float => {
                                 let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -272,6 +277,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                         },
                         ConvKind::Float => match ty {
+                            StackType::Struct(_) => {
+                                return Err("struct -> float not supported".to_string());
+                            }
                             StackType::Int => {
                                 let f = builder.ins().fcvt_from_sint(types::F64, val);
                                 let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
@@ -297,6 +305,115 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
+                Instruction::MakeStruct(id) => {
+                    let info = &struct_fields[*id];
+                    let n = info.fields.len();
+                    let size_bytes = (n as i64) * 8;
+                    let sp = builder.use_var(sp_var);
+                    let sp_new = builder.ins().iadd_imm(sp, -(n as i64));
+                    let size_c = builder.ins().iconst(types::I64, size_bytes);
+                    let malloc_call = builder.ins().call(malloc_ref, &[size_c]);
+                    let ptr = builder.inst_results(malloc_call)[0];
+                    for i in 0..n {
+                        let src_idx = builder.ins().iadd_imm(sp_new, i as i64);
+                        let src_off = builder.ins().imul_imm(src_idx, 8);
+                        let src_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src_final = builder.ins().iadd(src_base, src_off);
+                        let val = builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), src_final, 0);
+                        let dst_off = builder.ins().iconst(types::I64, (i as i64) * 8);
+                        let dst_final = builder.ins().iadd(ptr, dst_off);
+                        builder.ins().store(MemFlags::new(), val, dst_final, 0);
+                    }
+                    let dst_off2 = builder.ins().imul_imm(sp_new, 8);
+                    let dst_base2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dst_final2 = builder.ins().iadd(dst_base2, dst_off2);
+                    builder.ins().store(MemFlags::new(), ptr, dst_final2, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp_new, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    for _ in 0..n {
+                        type_stack.pop();
+                    }
+                    type_stack.push(StackType::Struct(*id));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
+                Instruction::GetField(name) => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let struct_id = match ty {
+                        StackType::Struct(id) => id,
+                        _ => return Err("GetField on non-struct".to_string()),
+                    };
+                    let info = &struct_fields[struct_id];
+                    let field_idx = info
+                        .fields
+                        .iter()
+                        .position(|f| f == name)
+                        .ok_or_else(|| format!("no field {}", name))?;
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    let ptr_off = builder.ins().imul_imm(new_sp, 8);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let ptr_addr = builder.ins().iadd(stack_addr, ptr_off);
+                    let ptr = builder.ins().load(types::I64, MemFlags::new(), ptr_addr, 0);
+                    let field_off = builder.ins().iconst(types::I64, (field_idx as i64) * 8);
+                    let field_addr = builder.ins().iadd(ptr, field_off);
+                    let val = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), field_addr, 0);
+                    let sp_off2 = builder.ins().imul_imm(new_sp, 8);
+                    let sp_addr2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr2, sp_off2);
+                    builder.ins().store(MemFlags::new(), val, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(new_sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    let field_type = &info.field_types[field_idx];
+                    let st = match field_type {
+                        Type::Int | Type::Bool => StackType::Int,
+                        Type::Float => StackType::Float,
+                        Type::String => StackType::Str,
+                        _ => StackType::Int,
+                    };
+                    type_stack.push(st);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
+                Instruction::SetField(name) => {
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let ptr_off = builder.ins().imul_imm(new_sp, 8);
+                    let ptr_addr = builder.ins().iadd(stack_addr, ptr_off);
+                    let ptr = builder.ins().load(types::I64, MemFlags::new(), ptr_addr, 0);
+                    let sp_after_ptr = builder.ins().iadd_imm(new_sp, -1);
+                    let val_off = builder.ins().imul_imm(sp_after_ptr, 8);
+                    let val_addr = builder.ins().iadd(stack_addr, val_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), val_addr, 0);
+                    let struct_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    type_stack.pop();
+                    let struct_id = match struct_ty {
+                        StackType::Struct(id) => id,
+                        _ => return Err("SetField on non-struct".to_string()),
+                    };
+                    let info = &struct_fields[struct_id];
+                    let field_idx = info
+                        .fields
+                        .iter()
+                        .position(|f| f == name)
+                        .ok_or_else(|| format!("no field {}", name))?;
+                    let field_off = builder.ins().iconst(types::I64, (field_idx as i64) * 8);
+                    let field_addr = builder.ins().iadd(ptr, field_off);
+                    builder.ins().store(MemFlags::new(), val, field_addr, 0);
+                    let dst_off = builder.ins().imul_imm(sp_after_ptr, 8);
+                    let dst_addr = builder.ins().iadd(stack_addr, dst_off);
+                    builder.ins().store(MemFlags::new(), ptr, dst_addr, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp_after_ptr, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Struct(struct_id));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
                 Instruction::Print(n) => {
                     for _ in 0..*n {
                         let ty = type_stack.pop().unwrap_or(StackType::Int);
@@ -308,6 +425,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         let src = builder.ins().iadd(sp_addr, sp_off);
                         let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                         match ty {
+                            StackType::Struct(_) => {
+                                return Err("struct display not supported".to_string());
+                            }
                             StackType::Int => {
                                 builder.ins().call(printf_ref, &[fmt_int_ptr, val]);
                             }
@@ -743,6 +863,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_float_int_ptr,
             fmt_float_dec_ptr,
             &[],
+            &program.structs,
             true,
         )?;
         builder.finalize();
@@ -826,6 +947,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_float_int_ptr,
                 fmt_float_dec_ptr,
                 &f.param_types,
+                &program.structs,
                 false,
             )?;
             builder.finalize();

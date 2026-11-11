@@ -173,6 +173,7 @@ pub struct Function {
 pub struct StructInfo {
     pub name: String,
     pub fields: Vec<String>,
+    pub field_types: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
