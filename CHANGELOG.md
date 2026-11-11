@@ -68,3 +68,5 @@
 - **Planned:** stack-balance audit across the remaining IR instruction arms in native codegen.
 - **Implemented:** native codegen float printing NaN/Inf fix — `Print(Float)` now checks `f64` for NaN and ±Inf with `fcmp` before `fcvt_to_sint`, so `print(0.0/0.0)`, `print(1.0/0.0)`, and `print(-1.0/0.0)` print `nan`, `inf`, and `-inf` instead of trapping with SIGILL. Finite values keep the existing 3-decimal path.
 - **Planned:** float `nan`/`inf` formatting parity with the VM (signed forms, uppercase forms if adopted), and regression tests for non-finite float printing.
+- **Implemented:** native codegen runtime check for integer division/modulo by zero — `Div`/`Mod` now compare the divisor with `icmp_imm` before `sdiv`/`srem` and route zero divisors to an error block that prints `runtime error: division by zero` via `printf` and exits with code 1. Matches the VM path; previously `rca build` output trapped with SIGILL (exit 132). Float `Div` keeps the IEEE 754 `fdiv` path.
+- **Planned:** source-span-aware error message (line:column) matching the VM, and `try`/`catch` handling of runtime errors in native codegen.

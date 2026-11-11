@@ -77,6 +77,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("memcpy", Linkage::Import, &memcpy_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut exit_sig = module.make_signature();
+    exit_sig.params.push(AbiParam::new(types::I32));
+    let exit_func = module
+        .declare_function("exit", Linkage::Import, &exit_sig)
+        .map_err(|e| e.to_string())?;
+
     let mut strcmp_sig = module.make_signature();
     strcmp_sig.params.push(AbiParam::new(types::I64));
     strcmp_sig.params.push(AbiParam::new(types::I64));
@@ -149,6 +155,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     module
         .define_data(str_neg_inf_id, &str_neg_inf_data)
         .map_err(|e| e.to_string())?;
+    let mut str_div0_data = DataDescription::new();
+    str_div0_data.define(
+        b"runtime error: division by zero\0"
+            .to_vec()
+            .into_boxed_slice(),
+    );
+    let str_div0_id = module
+        .declare_data("str_div0", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_div0_id, &str_div0_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
@@ -186,6 +205,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          malloc_ref: FuncRef,
                          memcpy_ref: FuncRef,
                          strcmp_ref: FuncRef,
+                         exit_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
@@ -193,6 +213,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_nan_ptr: Value,
                          fmt_inf_ptr: Value,
                          fmt_neg_inf_ptr: Value,
+                         fmt_div0_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -725,8 +746,34 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 Instruction::Add => builder.ins().iadd(a_bits, b_bits),
                                 Instruction::Sub => builder.ins().isub(a_bits, b_bits),
                                 Instruction::Mul => builder.ins().imul(a_bits, b_bits),
-                                Instruction::Div => builder.ins().sdiv(a_bits, b_bits),
-                                Instruction::Mod => builder.ins().srem(a_bits, b_bits),
+                                Instruction::Div | Instruction::Mod => {
+                                    let is_zero = builder.ins().icmp_imm(IntCC::Equal, b_bits, 0);
+                                    let err_block = builder.create_block();
+                                    let ok_block = builder.create_block();
+                                    builder.ins().brif(is_zero, err_block, &[], ok_block, &[]);
+
+                                    builder.seal_block(err_block);
+                                    builder.seal_block(ok_block);
+
+                                    builder.switch_to_block(err_block);
+                                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_div0_ptr]);
+                                    let exit_arg = builder.ins().iconst(types::I32, 1);
+                                    builder.ins().call(exit_ref, &[exit_arg]);
+                                    if is_main {
+                                        let ret = builder.ins().iconst(types::I32, 1);
+                                        builder.ins().return_(&[ret]);
+                                    } else {
+                                        let ret = builder.ins().iconst(types::I64, 0);
+                                        builder.ins().return_(&[ret]);
+                                    }
+
+                                    builder.switch_to_block(ok_block);
+                                    match ins {
+                                        Instruction::Div => builder.ins().sdiv(a_bits, b_bits),
+                                        Instruction::Mod => builder.ins().srem(a_bits, b_bits),
+                                        _ => unreachable!(),
+                                    }
+                                }
                                 _ => unreachable!(),
                             }
                         };
@@ -949,6 +996,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
         let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
         let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
+        let exit_ref = module.declare_func_in_func(exit_func, builder.func);
+        let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
+        let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
 
         compile_chunk(
             &mut module,
@@ -963,6 +1013,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             malloc_ref,
             memcpy_ref,
             strcmp_ref,
+            exit_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_int_ptr,
@@ -970,6 +1021,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_nan_ptr,
             fmt_inf_ptr,
             fmt_neg_inf_ptr,
+            fmt_div0_ptr,
             &[],
             &program.structs,
             true,
@@ -1035,6 +1087,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let malloc_ref = module.declare_func_in_func(malloc_func, builder.func);
             let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
             let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
+            let exit_ref = module.declare_func_in_func(exit_func, builder.func);
+            let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
+            let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -1057,6 +1112,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 malloc_ref,
                 memcpy_ref,
                 strcmp_ref,
+                exit_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_int_ptr,
@@ -1064,6 +1120,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_nan_ptr,
                 fmt_inf_ptr,
                 fmt_neg_inf_ptr,
+                fmt_div0_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
