@@ -1,0 +1,12 @@
+struct Point:
+    x: Int
+    y: Int
+
+let p = Point(x=1, y=2)
+print(p.x)
+print(p.y)
+
+mut q = Point(x=10, y=20)
+print(q.x)
+q.x = 99
+print(q.x)

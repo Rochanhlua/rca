@@ -130,6 +130,17 @@ impl Compiler {
                     self.structs.push(StructInfo {
                         name: s.name.clone(),
                         fields: s.fields.iter().map(|f| f.name.clone()).collect(),
+                        field_types: s
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                if !f.ty.elements.is_empty() {
+                                    Type::Unknown
+                                } else {
+                                    Type::from_name(&f.ty.name).unwrap_or(Type::Unknown)
+                                }
+                            })
+                            .collect(),
                     });
                 }
                 StmtKind::Function(f) => {
