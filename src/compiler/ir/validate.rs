@@ -248,6 +248,7 @@ mod tests {
                 name: "<main>".to_string(),
                 arity: 0,
                 num_locals: 1,
+                param_types: vec![],
                 chunk: Chunk { code, spans },
             },
             functions: vec![],

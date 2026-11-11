@@ -1,0 +1,5 @@
+fn greet(name: String) -> None:
+    print("Hello, " + name)
+
+greet("RCA")
+greet("Lalrochanhlua")

@@ -2,6 +2,7 @@ use super::{Chunk, ConvKind, Function, Instruction, IrProgram, StructInfo};
 use crate::compiler::ast::*;
 use crate::compiler::diagnostics::Diagnostic;
 use crate::compiler::lexer::token::Span;
+use crate::compiler::types::Type;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
@@ -108,6 +109,7 @@ impl Compiler {
                 name: "<main>".to_string(),
                 arity: 0,
                 num_locals: self.state.next_slot,
+                param_types: vec![],
                 chunk: self.state.chunk,
             },
             functions: self.functions,
@@ -142,6 +144,17 @@ impl Compiler {
                         name: f.name.clone(),
                         arity: f.params.len(),
                         num_locals: 0,
+                        param_types: f
+                            .params
+                            .iter()
+                            .map(|p| {
+                                if !p.ty.elements.is_empty() {
+                                    Type::Unknown
+                                } else {
+                                    Type::from_name(&p.ty.name).unwrap_or(Type::Unknown)
+                                }
+                            })
+                            .collect(),
                         chunk: Chunk::default(),
                     });
                 }
@@ -266,6 +279,17 @@ impl Compiler {
             name: f.name.clone(),
             arity: f.params.len(),
             num_locals: state.next_slot,
+            param_types: f
+                .params
+                .iter()
+                .map(|p| {
+                    if !p.ty.elements.is_empty() {
+                        Type::Unknown
+                    } else {
+                        Type::from_name(&p.ty.name).unwrap_or(Type::Unknown)
+                    }
+                })
+                .collect(),
             chunk: state.chunk,
         };
         Ok(())

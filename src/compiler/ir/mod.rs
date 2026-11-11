@@ -1,9 +1,10 @@
 use crate::compiler::lexer::token::Span;
+use crate::compiler::types::Type;
 use std::fmt;
 
 pub mod lower;
+pub mod validate;
 
-/// Target type of a `Convert` instruction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConvKind {
     Str,
@@ -11,7 +12,6 @@ pub enum ConvKind {
     Float,
 }
 
-/// Stack-based bytecode instruction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     // constants
@@ -19,11 +19,10 @@ pub enum Instruction {
     PushFloat(f64),
     PushBool(bool),
     PushStr(String),
-    /// Pushes an enum value (enum name, variant name).
     PushEnum(String, String),
     PushNone,
 
-    // variables (slot numbers resolved at compile time)
+    // variables
     LoadLocal(usize),
     StoreLocal(usize),
     LoadGlobal(usize),
@@ -47,13 +46,9 @@ pub enum Instruction {
     GtEq,
     MakeRange,
 
-    // control flow (targets are instruction indexes)
+    // control flow
     Jump(usize),
-    /// Pops a Bool; jumps if it is false.
     JumpIfFalse(usize),
-    /// For-loop step: reads the iterable in local `iter` (Range or List) and
-    /// the counter in local `idx`. If finished, jumps to `exit`; otherwise
-    /// stores the next element in local `var` and increments the counter.
     ForNext {
         iter: usize,
         idx: usize,
@@ -68,119 +63,100 @@ pub enum Instruction {
 
     // lists
     MakeList(usize),
-    /// Pops n values, pushes a Tuple.
     MakeTuple(usize),
     Index,
-    /// Stack: [value, list, index] -> new list
     StoreIndex,
 
     // structs
-    /// Pops one value per field (in declaration order), pushes the struct.
     MakeStruct(usize),
     GetField(String),
-    /// Stack: [value, struct] -> new struct
     SetField(String),
 
     // built-in
-    /// Pops `n` values, prints them, pushes None.
     Print(usize),
+    Len,
+    MakeTensor,
+    FillTensor(f64),
+    TensorShape,
+    MatMul,
+    TensorSum,
+    TensorMean,
+    TensorMax,
+    TensorMin,
+    TensorTranspose,
+    TensorMap(char),
+    Track,
+    Grad,
+    TensorReshape,
+    Convert(ConvKind),
+    ListPush,
 
     // error handling
-    /// Registers a catch handler; `catch_target` is the instruction index of the catch block.
     PushHandler(usize),
-    /// Removes the innermost handler (the try block finished without error).
     PopHandler,
-    /// Pops a String and raises it as an error.
     Throw,
 
-    // built-in
-    /// Pops a String or List, pushes its length.
-    Len,
-    /// Pops a List (of Float, nested), pushes a Tensor.
-    MakeTensor,
-    /// Pops a List of Int (the shape), pushes a Tensor filled with the value.
-    FillTensor(f64),
-    /// Pops a Tensor, pushes its shape as a List of Int.
-    TensorShape,
-    /// Pops two rank-2 Tensors (b then a), pushes the matrix product a x b.
-    MatMul,
-    /// Pops a Tensor, pushes the sum of all elements (Float).
-    TensorSum,
-    /// Pops a Tensor, pushes the mean (Float).
-    TensorMean,
-    /// Pops a Tensor, pushes the largest element (Float).
-    TensorMax,
-    /// Pops a Tensor, pushes the smallest element (Float).
-    TensorMin,
-    /// Pops a Tensor, pushes its transpose.
-    TensorTranspose,
-    /// Pops a Tensor, pushes it with an elementwise function applied.
-    /// kind: 'e' exp, 'l' log, 'q' sqrt, 't' tanh, 'r' relu, 's' sigmoid.
-    TensorMap(char),
-    /// Pops a Tensor, pushes it as a differentiable (tracked) tensor.
-    Track,
-    /// Pops x then y (both tracked), pushes the gradient of y with respect to x.
-    Grad,
-    /// Pops a shape List then a Tensor, pushes the reshaped Tensor.
-    TensorReshape,
-    /// Pops a value, converts it, pushes the result.
-    Convert(ConvKind),
-    /// Stack: [value, list] -> new list with value appended.
-    ListPush,
-    /// Pops a String path, pushes the file's contents as a String.
+    // file system
     ReadFile,
-    /// Pops path (deeper) and content (top), writes to the file, pushes None.
     WriteFile,
-    /// Pops a String path, pushes a Bool (true if the file exists).
     FileExists,
-    /// Pushes the current Unix timestamp in milliseconds.
+
+    // time
     TimeNow,
-    /// Pops an Int (milliseconds) and sleeps.
     TimeSleep,
-    /// Pops a String and a separator, pushes a List of Strings.
+
+    // math
+    MathAbs,
+    MathPow,
+    MathFloor,
+    MathCeil,
+    MathRound,
+
+    // string
     StrSplit,
-    /// Pops a String, pushes a trimmed String.
     StrTrim,
-    /// Pops a String (deeper), target (top), and replacement (top), pushes a String.
     StrReplace,
+
+    // collections
     MapNew,
     MapSet,
     MapGet,
     MapHas,
-    /// Pops a String, pushes the parsed JSON Value.
-    JsonParse,
-    /// Pops a Value, pushes the JSON String.
-    JsonStringify,
-    /// Pops port (top) and host (deeper), pushes a Socket.
-    TcpConnect,
-    /// Pops data (top) and socket (deeper), pushes bytes sent as Int.
-    TcpSend,
-    /// Pops max_bytes (top) and socket (deeper), pushes received String.
-    TcpRecv,
-    /// Pops a socket, closes it, pushes None.
-    TcpClose,
-    /// Pops a String URL, pushes the response body String.
-    HttpGet,
-    /// Pops a String, pushes its SHA-256 hash as a hex String.
-    Sha256,
     MapLen,
 
-    /// Pops a number, pushes its absolute value.
-    MathAbs,
-    /// Pops exponent (deeper) and base (top), pushes base^exp.
-    MathPow,
-    /// Pops a Float, pushes its floor.
-    MathFloor,
-    /// Pops a Float, pushes its ceiling.
-    MathCeil,
-    /// Pops a Float, pushes its rounded value.
-    MathRound,
+    // json
+    JsonParse,
+    JsonStringify,
+
+    // network (TCP)
+    TcpConnect,
+    TcpSend,
+    TcpRecv,
+    TcpClose,
+
+    // HTTP
+    HttpGet,
+
+    // crypto
+    Sha256,
+}
+
+impl Instruction {
+    pub fn successors(&self, index: usize) -> Vec<usize> {
+        match self {
+            Instruction::Jump(t) => vec![*t],
+            Instruction::JumpIfFalse(t) => vec![index + 1, *t],
+            Instruction::PushHandler(t) => vec![index + 1, *t],
+            Instruction::ForNext { exit, .. } => vec![index + 1, *exit],
+            Instruction::Return | Instruction::Throw => vec![],
+            _ => vec![index + 1],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
     pub code: Vec<Instruction>,
-    /// Source position of each instruction (same length as `code`).
     pub spans: Vec<Span>,
 }
 
@@ -189,6 +165,7 @@ pub struct Function {
     pub name: String,
     pub arity: usize,
     pub num_locals: usize,
+    pub param_types: Vec<Type>,
     pub chunk: Chunk,
 }
 
@@ -237,21 +214,5 @@ impl fmt::Display for IrProgram {
             write_chunk(f, &func.chunk)?;
         }
         Ok(())
-    }
-}
-
-pub mod validate;
-
-impl Instruction {
-    /// Indexes of the instructions that can run right after this one.
-    pub fn successors(&self, index: usize) -> Vec<usize> {
-        match self {
-            Instruction::Jump(t) => vec![*t],
-            Instruction::JumpIfFalse(t) => vec![index + 1, *t],
-            Instruction::PushHandler(t) => vec![index + 1, *t],
-            Instruction::ForNext { exit, .. } => vec![index + 1, *exit],
-            Instruction::Return | Instruction::Throw => vec![],
-            _ => vec![index + 1],
-        }
     }
 }
