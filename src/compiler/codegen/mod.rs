@@ -1,5 +1,6 @@
 //! Cranelift backend for generating native machine code.
 //! See blueprint §5.2: native compilation must ultimately be supported.
+use crate::compiler::types::Type;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::{
     AbiParam, FuncRef, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind, types,
@@ -162,10 +163,20 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
                          fmt_float_dec_ptr: Value,
+                         param_types: &[Type],
                          is_main: bool|
      -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
         let mut local_types: HashMap<usize, StackType> = HashMap::new();
+        for (i, ty) in param_types.iter().enumerate() {
+            let st = match ty {
+                Type::Int | Type::Bool => StackType::Int,
+                Type::Float => StackType::Float,
+                Type::String => StackType::Str,
+                _ => StackType::Int,
+            };
+            local_types.insert(i, st);
+        }
         let code = &chunk.code;
         let mut blocks = Vec::new();
         for _ in 0..code.len() + 1 {
@@ -684,6 +695,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_str_ptr,
             fmt_float_int_ptr,
             fmt_float_dec_ptr,
+            &[],
             true,
         )?;
         builder.finalize();
@@ -766,6 +778,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_str_ptr,
                 fmt_float_int_ptr,
                 fmt_float_dec_ptr,
+                &f.param_types,
                 false,
             )?;
             builder.finalize();
