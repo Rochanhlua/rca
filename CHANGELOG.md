@@ -62,3 +62,5 @@
 - **Planned:** Struct/Enum/List param types, default args, named args in native codegen.
 - **Implemented:** native codegen for `int()` and `float()` numeric conversions (`fcvt_to_sint` / `fcvt_from_sint`). String ↔ numeric conversion not yet supported.
 - **Planned:** `str()` in native codegen, string → numeric parsing, `Bool` ↔ numeric.
+- **Implemented:** native codegen for user-defined structs (Int/Float/Bool/String fields) — `MakeStruct`, `GetField`, `SetField` via malloc + offsets. In-place mutation shares the pointer (no COW yet).
+- **Planned:** Struct as function param/return, nested structs, struct display/equality, copy-on-write.
