@@ -1,0 +1,9 @@
+let f = 3.14
+let i = int(f)
+print(i)
+
+let n = 42
+let g = float(n)
+print(g)
+
+print(int(7.9))
