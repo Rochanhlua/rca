@@ -12,7 +12,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::cell::Cell;
 use std::collections::HashMap;
 
-use crate::compiler::ir::{Instruction, IrProgram};
+use crate::compiler::ir::{ConvKind, Instruction, IrProgram};
 
 #[derive(Clone, Copy)]
 enum StackType {
@@ -250,6 +250,53 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::Convert(kind) => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    let sp_off = builder.ins().imul_imm(new_sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let src = builder.ins().iadd(sp_addr, sp_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let (result, new_ty) = match kind {
+                        ConvKind::Int => match ty {
+                            StackType::Int => (val, StackType::Int),
+                            StackType::Float => {
+                                let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
+                                let i = builder.ins().fcvt_to_sint(types::I64, f);
+                                (i, StackType::Int)
+                            }
+                            StackType::Str => {
+                                return Err("str -> int not yet supported in native".to_string());
+                            }
+                        },
+                        ConvKind::Float => match ty {
+                            StackType::Int => {
+                                let f = builder.ins().fcvt_from_sint(types::F64, val);
+                                let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
+                                (bits, StackType::Float)
+                            }
+                            StackType::Float => (val, StackType::Float),
+                            StackType::Str => {
+                                return Err("str -> float not yet supported in native".to_string());
+                            }
+                        },
+                        ConvKind::Str => {
+                            return Err("str() not yet supported in native".to_string());
+                        }
+                    };
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), result, dest, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(new_ty);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
                 Instruction::Print(n) => {
                     for _ in 0..*n {
                         let ty = type_stack.pop().unwrap_or(StackType::Int);
