@@ -64,3 +64,7 @@
 - **Planned:** `str()` in native codegen, string → numeric parsing, `Bool` ↔ numeric.
 - **Implemented:** native codegen for user-defined structs (Int/Float/Bool/String fields) — `MakeStruct`, `GetField`, `SetField` via malloc + offsets. In-place mutation shares the pointer (no COW yet).
 - **Planned:** Struct as function param/return, nested structs, struct display/equality, copy-on-write.
+- **Implemented:** native codegen `Print` stack-balance fix — the Print arm now stores a `None` placeholder before incrementing `sp_var`, so struct field offsets are no longer shifted by `-1` when a `print` statement follows a struct construction. `examples/native_struct.rca` now prints `1 2 10 99` (previously `1 2 -1 99`).
+- **Planned:** stack-balance audit across the remaining IR instruction arms in native codegen.
+- **Implemented:** native codegen float printing NaN/Inf fix — `Print(Float)` now checks `f64` for NaN and ±Inf with `fcmp` before `fcvt_to_sint`, so `print(0.0/0.0)`, `print(1.0/0.0)`, and `print(-1.0/0.0)` print `nan`, `inf`, and `-inf` instead of trapping with SIGILL. Finite values keep the existing 3-decimal path.
+- **Planned:** float `nan`/`inf` formatting parity with the VM (signed forms, uppercase forms if adopted), and regression tests for non-finite float printing.
