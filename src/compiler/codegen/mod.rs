@@ -414,6 +414,27 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
+                Instruction::PushNone => {
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
+                Instruction::Pop => {
+                    let sp = builder.use_var(sp_var);
+                    let sp_dec = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, sp_dec);
+                    type_stack.pop();
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+
                 Instruction::Print(n) => {
                     for _ in 0..*n {
                         let ty = type_stack.pop().unwrap_or(StackType::Int);
@@ -456,6 +477,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                         }
                     }
+                    let sp_after = builder.use_var(sp_var);
+                    let sp_off_pn = builder.ins().imul_imm(sp_after, 8);
+                    let sp_addr_pn = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest_pn = builder.ins().iadd(sp_addr_pn, sp_off_pn);
+                    let zero_pn = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero_pn, dest_pn, 0);
+                    let sp_inc_pn = builder.ins().iadd_imm(sp_after, 1);
+                    builder.def_var(sp_var, sp_inc_pn);
+                    type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::StoreLocal(slot) => {
@@ -788,8 +818,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.ins().return_(&[ret_val]);
                     }
                 }
-                _ => {
-                    builder.ins().jump(blocks[ip + 1], &[]);
+                other => {
+                    return Err(format!(
+                        "native codegen: {:?} not yet implemented (use `rca run` for VM)",
+                        other
+                    ));
                 }
             }
         }
