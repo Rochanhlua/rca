@@ -168,6 +168,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(str_div0_id, &str_div0_data)
         .map_err(|e| e.to_string())?;
 
+    let mut str_ovf_data = DataDescription::new();
+    str_ovf_data.define(
+        b"runtime error: integer overflow\0"
+            .to_vec()
+            .into_boxed_slice(),
+    );
+    let str_ovf_id = module
+        .declare_data("str_ovf", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_ovf_id, &str_ovf_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
@@ -214,6 +227,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_inf_ptr: Value,
                          fmt_neg_inf_ptr: Value,
                          fmt_div0_ptr: Value,
+                         fmt_ovf_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -748,15 +762,28 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 Instruction::Mul => builder.ins().imul(a_bits, b_bits),
                                 Instruction::Div | Instruction::Mod => {
                                     let is_zero = builder.ins().icmp_imm(IntCC::Equal, b_bits, 0);
+                                    let is_overflow = if matches!(ins, Instruction::Div) {
+                                        let is_neg_one =
+                                            builder.ins().icmp_imm(IntCC::Equal, b_bits, -1);
+                                        let int_min_v = builder.ins().iconst(types::I64, i64::MIN);
+                                        let is_int_min =
+                                            builder.ins().icmp(IntCC::Equal, a_bits, int_min_v);
+                                        builder.ins().band(is_neg_one, is_int_min)
+                                    } else {
+                                        is_zero
+                                    };
+                                    let is_bad = builder.ins().bor(is_zero, is_overflow);
                                     let err_block = builder.create_block();
                                     let ok_block = builder.create_block();
-                                    builder.ins().brif(is_zero, err_block, &[], ok_block, &[]);
+                                    builder.ins().brif(is_bad, err_block, &[], ok_block, &[]);
 
                                     builder.seal_block(err_block);
                                     builder.seal_block(ok_block);
 
                                     builder.switch_to_block(err_block);
-                                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_div0_ptr]);
+                                    let err_ptr =
+                                        builder.ins().select(is_zero, fmt_div0_ptr, fmt_ovf_ptr);
+                                    builder.ins().call(printf_ref, &[fmt_str_ptr, err_ptr]);
                                     let exit_arg = builder.ins().iconst(types::I32, 1);
                                     builder.ins().call(exit_ref, &[exit_arg]);
                                     if is_main {
@@ -999,6 +1026,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let exit_ref = module.declare_func_in_func(exit_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
+        let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
+        let fmt_ovf_ptr = builder.ins().global_value(types::I64, fmt_ovf_gv);
 
         compile_chunk(
             &mut module,
@@ -1022,6 +1051,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_inf_ptr,
             fmt_neg_inf_ptr,
             fmt_div0_ptr,
+            fmt_ovf_ptr,
             &[],
             &program.structs,
             true,
@@ -1090,6 +1120,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let exit_ref = module.declare_func_in_func(exit_func, builder.func);
             let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
             let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
+            let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
+            let fmt_ovf_ptr = builder.ins().global_value(types::I64, fmt_ovf_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -1121,6 +1153,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_inf_ptr,
                 fmt_neg_inf_ptr,
                 fmt_div0_ptr,
+                fmt_ovf_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
