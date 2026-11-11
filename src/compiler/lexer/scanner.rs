@@ -215,9 +215,12 @@ impl Lexer {
                     } else {
                         match s.parse::<i64>() {
                             Ok(v) => TokenKind::IntLiteral(v),
-                            Err(_) => {
-                                return Err(Diagnostic::new("integer literal too large", span));
-                            }
+                            Err(_) => match s.parse::<u64>() {
+                                Ok(v) if v == (i64::MAX as u64) + 1 => TokenKind::IntLiteralMin,
+                                _ => {
+                                    return Err(Diagnostic::new("integer literal too large", span));
+                                }
+                            },
                         }
                     };
                     self.tokens.push(Token { kind, span });
