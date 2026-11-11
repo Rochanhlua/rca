@@ -60,3 +60,5 @@
 - **Planned:** String parameters in `fn` (requires IR param type info), String ordering, `Char`/`List`/`Map`/`Struct`/`Enum` native.
 - **Implemented:** native codegen for String parameters in functions (`fn greet(name: String)`) — Int/Float/Bool/String param types covered. Struct/Enum/List params map to `Type::Unknown` (Int fallback) for follow-up.
 - **Planned:** Struct/Enum/List param types, default args, named args in native codegen.
+- **Implemented:** native codegen for `int()` and `float()` numeric conversions (`fcvt_to_sint` / `fcvt_from_sint`). String ↔ numeric conversion not yet supported.
+- **Planned:** `str()` in native codegen, string → numeric parsing, `Bool` ↔ numeric.
