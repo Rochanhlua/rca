@@ -72,3 +72,5 @@
 - **Planned:** source-span-aware error message (line:column) matching the VM, and `try`/`catch` handling of runtime errors in native codegen.
 - **Implemented:** native codegen overflow check for `INT_MIN / -1` — `Div` now also treats `i64::MIN / -1` as an error (i64 overflow), routed to the same error block as division by zero and printing `runtime error: integer overflow`. `Mod` is unaffected (`INT_MIN % -1` is well-defined as 0). Completes the integer Div/Mod trap coverage started in PR #88.
 - **Planned:** `INT_MIN` source literal parsing (`-9223372036854775808` currently rejected by the lexer) and `try`/`catch` handling of runtime errors in native codegen.
+- **Implemented:** `INT_MIN` source literal — `-9223372036854775808` now parses and evaluates to `i64::MIN` via a dedicated `IntLiteralMin` token consumed by unary minus. A bare `9223372036854775808` (2^63 with no leading `-`) remains a parse error, so the earlier intermediate fix that silently mapped that literal to `i64::MIN` is corrected.
+- **Planned:** unary `Neg` in native codegen (`Neg` is currently VM-only), needed for double-negation of `INT_MIN`.

@@ -634,6 +634,13 @@ impl Parser {
         if self.check(&TokenKind::Minus) {
             let span = self.span();
             self.advance();
+            if self.check(&TokenKind::IntLiteralMin) {
+                self.advance();
+                return Ok(Expr {
+                    kind: ExprKind::Int(i64::MIN),
+                    span,
+                });
+            }
             let operand = self.parse_unary()?;
             return Ok(Expr {
                 kind: ExprKind::Unary {
@@ -721,6 +728,10 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::IntLiteralMin => Err(Diagnostic::new(
+                "integer literal too large without a leading '-'",
+                span,
+            )),
             TokenKind::FloatLiteral(v) => {
                 self.advance();
                 Ok(Expr {
