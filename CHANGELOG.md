@@ -58,3 +58,5 @@
 - **Planned:** Float-to-Int conversion, `Char`/`List`/`Map`/`Struct` native.
 - **Implemented:** native codegen for String concat (`+`), comparison (`==`, `!=`), and printing via libc (`strlen`, `malloc`, `memcpy`, `strcmp`). Works cross-platform (Windows x64, macOS, Linux, ARM).
 - **Planned:** String parameters in `fn` (requires IR param type info), String ordering, `Char`/`List`/`Map`/`Struct`/`Enum` native.
+- **Implemented:** native codegen for String parameters in functions (`fn greet(name: String)`) — Int/Float/Bool/String param types covered. Struct/Enum/List params map to `Type::Unknown` (Int fallback) for follow-up.
+- **Planned:** Struct/Enum/List param types, default args, named args in native codegen.
