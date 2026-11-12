@@ -20,6 +20,7 @@ enum StackType {
     Float,
     Str,
     Bool,
+    List,
     Struct(usize),
 }
 
@@ -403,6 +404,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Int => (val, StackType::Int),
                             StackType::Bool => (val, StackType::Int),
+                            StackType::List => {
+                                return Err("list -> int not supported in native".to_string());
+                            }
                             StackType::Float => {
                                 let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
                                 let i = builder.ins().fcvt_to_sint(types::I64, f);
@@ -427,6 +431,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
                                 (bits, StackType::Float)
                             }
+                            StackType::List => {
+                                return Err("list -> float not supported in native".to_string());
+                            }
                             StackType::Str => {
                                 return Err("str -> float not yet supported in native".to_string());
                             }
@@ -446,6 +453,39 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
+                Instruction::MakeList(n) => {
+                    let sp = builder.use_var(sp_var);
+                    let n_i = *n as i64;
+                    let sp_new = builder.ins().iadd_imm(sp, -n_i);
+                    let total_size = builder.ins().iconst(types::I64, (n_i + 1) * 8);
+                    let malloc_call = builder.ins().call(malloc_ref, &[total_size]);
+                    let ptr = builder.inst_results(malloc_call)[0];
+                    let len_val = builder.ins().iconst(types::I64, n_i);
+                    builder.ins().store(MemFlags::new(), len_val, ptr, 0);
+                    for i in 0..*n {
+                        let src_idx = builder.ins().iadd_imm(sp_new, i as i64);
+                        let src_off = builder.ins().imul_imm(src_idx, 8);
+                        let src_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src_final = builder.ins().iadd(src_base, src_off);
+                        let val = builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), src_final, 0);
+                        let dst_off = builder.ins().iconst(types::I64, ((i as i64) + 1) * 8);
+                        let dst_final = builder.ins().iadd(ptr, dst_off);
+                        builder.ins().store(MemFlags::new(), val, dst_final, 0);
+                    }
+                    let dst_off2 = builder.ins().imul_imm(sp_new, 8);
+                    let dst_base2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dst_final2 = builder.ins().iadd(dst_base2, dst_off2);
+                    builder.ins().store(MemFlags::new(), ptr, dst_final2, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp_new, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    for _ in 0..*n {
+                        type_stack.pop();
+                    }
+                    type_stack.push(StackType::List);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::MakeStruct(id) => {
                     let info = &struct_fields[*id];
                     let n = info.fields.len();
@@ -609,6 +649,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                     builder.ins().select(non_zero, fmt_true_ptr, fmt_false_ptr);
                                 let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, ptr]);
+                            }
+                            StackType::List => {
+                                return Err(
+                                    "list display not supported in native (yet)".to_string()
+                                );
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -1114,6 +1159,32 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             type_stack.push(StackType::Bool);
                         }
                         _ => return Err("not on non-bool".to_string()),
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::Len => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    match ty {
+                        StackType::List => {
+                            let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                            builder.ins().store(MemFlags::new(), len, src, 0);
+                            type_stack.push(StackType::Int);
+                        }
+                        StackType::Str => {
+                            let len_call = builder.ins().call(strlen_ref, &[val]);
+                            let len = builder.inst_results(len_call)[0];
+                            builder.ins().store(MemFlags::new(), len, src, 0);
+                            type_stack.push(StackType::Int);
+                        }
+                        _ => {
+                            return Err("len() not supported for this type in native".to_string());
+                        }
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
