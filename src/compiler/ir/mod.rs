@@ -121,7 +121,7 @@ pub enum Instruction {
     // collections
     MapNew,
     MapSet,
-    MapGet,
+    MapGet(Type),
     MapHas,
     MapLen,
 

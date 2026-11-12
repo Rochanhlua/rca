@@ -64,6 +64,7 @@ struct Compiler {
     prefix: String,
     aliases: HashMap<String, String>,
     module_aliases: HashMap<String, String>,
+    map_key_types: HashMap<(String, String), Type>,
 }
 
 fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
@@ -97,6 +98,7 @@ impl Compiler {
             prefix: String::new(),
             aliases: HashMap::new(),
             module_aliases: HashMap::new(),
+            map_key_types: HashMap::new(),
         }
     }
 
@@ -181,6 +183,17 @@ impl Compiler {
     }
 
     // ---------- emit helpers ----------
+
+    fn infer_expr_type(&self, e: &Expr) -> Type {
+        match &e.kind {
+            ExprKind::Int(_) => Type::Int,
+            ExprKind::Float(_) => Type::Float,
+            ExprKind::Str(_) => Type::String,
+            ExprKind::Bool(_) => Type::Bool,
+            ExprKind::NoneLit => Type::None,
+            _ => Type::Unknown,
+        }
+    }
 
     fn emit(&mut self, ins: Instruction, span: &Span) {
         self.state.chunk.code.push(ins);
@@ -337,11 +350,31 @@ impl Compiler {
         let span = &stmt.span;
         match &stmt.kind {
             StmtKind::Let { name, value, .. } => {
+                self.map_key_types.retain(|(v, _), _| v != name);
                 self.compile_expr(value)?;
                 let var = self.declare_var(name);
                 self.emit_store(var, span);
             }
             StmtKind::Assign { target, value } => {
+                let mut tracked = false;
+                if let ExprKind::Ident(target_name) = &target.kind {
+                    if let ExprKind::Call { callee, args } = &value.kind
+                        && let ExprKind::Ident(fname) = &callee.kind
+                        && fname == "map_set"
+                        && args.len() == 3
+                        && let (ExprKind::Ident(m_name), ExprKind::Str(key)) =
+                            (&args[0].value.kind, &args[1].value.kind)
+                        && m_name == target_name
+                    {
+                        let vt = self.infer_expr_type(&args[2].value);
+                        self.map_key_types
+                            .insert((target_name.clone(), key.clone()), vt);
+                        tracked = true;
+                    }
+                    if !tracked {
+                        self.map_key_types.retain(|(v, _), _| v != target_name);
+                    }
+                }
                 self.compile_expr(value)?;
                 self.emit_store_to(target)?;
             }
@@ -919,11 +952,25 @@ impl Compiler {
             if args.len() != 2 {
                 return Err(err(format!("{}() takes exactly 2 arguments", name), span));
             }
+            let ret_ty = if name == "map_get" {
+                if let (ExprKind::Ident(m_name), ExprKind::Str(key)) =
+                    (&args[0].value.kind, &args[1].value.kind)
+                {
+                    self.map_key_types
+                        .get(&(m_name.clone(), key.clone()))
+                        .cloned()
+                        .unwrap_or(Type::Unknown)
+                } else {
+                    Type::Unknown
+                }
+            } else {
+                Type::Bool
+            };
             self.compile_expr(&args[0].value)?;
             self.compile_expr(&args[1].value)?;
             self.emit(
                 if name == "map_get" {
-                    Instruction::MapGet
+                    Instruction::MapGet(ret_ty)
                 } else {
                     Instruction::MapHas
                 },

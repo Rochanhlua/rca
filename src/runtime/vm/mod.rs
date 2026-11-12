@@ -464,7 +464,7 @@ impl<'a> Vm<'a> {
                     }
                     self.stack.push(Value::Map(map));
                 }
-                Instruction::MapGet => {
+                Instruction::MapGet(_) => {
                     let key = self.pop();
                     let map = match self.pop() {
                         Value::Map(m) => m,
