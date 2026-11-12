@@ -1382,6 +1382,65 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::StoreIndex => {
+                    let idx_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let obj_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let _val_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    if !matches!(idx_ty, StackType::Int) {
+                        return Err("list index must be Int in native".to_string());
+                    }
+                    let elem_ty = match obj_ty {
+                        StackType::List(e) => e,
+                        _ => return Err("StoreIndex on non-list type in native".to_string()),
+                    };
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let val_pos = builder.ins().iadd_imm(sp, -3);
+                    let val_off = builder.ins().imul_imm(val_pos, 8);
+                    let val_addr = builder.ins().iadd(stack_addr, val_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), val_addr, 0);
+                    let obj_pos = builder.ins().iadd_imm(sp, -2);
+                    let obj_off = builder.ins().imul_imm(obj_pos, 8);
+                    let obj_addr = builder.ins().iadd(stack_addr, obj_off);
+                    let obj = builder.ins().load(types::I64, MemFlags::new(), obj_addr, 0);
+                    let idx_pos = builder.ins().iadd_imm(sp, -1);
+                    let idx_off = builder.ins().imul_imm(idx_pos, 8);
+                    let idx_addr = builder.ins().iadd(stack_addr, idx_off);
+                    let idx = builder.ins().load(types::I64, MemFlags::new(), idx_addr, 0);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+                    let is_neg = builder.ins().icmp(IntCC::SignedLessThan, idx, zero);
+                    let is_oob_hi = builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, idx, len);
+                    let is_oob = builder.ins().bor(is_neg, is_oob_hi);
+                    let err_block = builder.create_block();
+                    let ok_block = builder.create_block();
+                    builder.ins().brif(is_oob, err_block, &[], ok_block, &[]);
+                    builder.seal_block(err_block);
+                    builder.seal_block(ok_block);
+                    builder.switch_to_block(err_block);
+                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                    let exit_arg = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[exit_arg]);
+                    if is_main {
+                        let ret = builder.ins().iconst(types::I32, 1);
+                        builder.ins().return_(&[ret]);
+                    } else {
+                        let ret = builder.ins().iconst(types::I64, 0);
+                        builder.ins().return_(&[ret]);
+                    }
+                    builder.switch_to_block(ok_block);
+                    let elem_idx = builder.ins().iadd_imm(idx, 1);
+                    let elem_off = builder.ins().imul_imm(elem_idx, 8);
+                    let elem_addr = builder.ins().iadd(obj, elem_off);
+                    builder.ins().store(MemFlags::new(), val, elem_addr, 0);
+                    builder.ins().store(MemFlags::new(), obj, val_addr, 0);
+                    let sp_after = builder.ins().iadd_imm(sp, -2);
+                    builder.def_var(sp_var, sp_after);
+                    type_stack.push(StackType::List(elem_ty));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::ListPush => {
                     let list_ty = type_stack.pop().unwrap_or(StackType::Int);
                     let _val_ty = type_stack.pop().unwrap_or(StackType::Int);
