@@ -96,3 +96,5 @@
 - **Planned:** `StoreIndex` (`xs[i] = v`), list `pop`/`remove`, and a shared runtime list layout with proper reclamation.
 - **Implemented:** native codegen for list index assignment — `xs[i] = v` now compiles and runs for lists of `Int`, `Float`, `String`, and `Bool`, matching the VM. Out-of-range and negative indices print `runtime error: index out of bounds` and exit 1. This completes the native list feature set (literal, `len`, `print`, index, `push`, index store).
 - **Planned:** list `pop`/`remove`, nested list display, and float shortest-representation parity with the VM.
+- **Fixed:** `for x in list:` in native codegen — `ForNext` now detects when its iterator is a `List` and iterates by length, loading each element, instead of always decoding a packed `a..b` range. Previously list iteration ran the body zero times (a list pointer read as a range had start > end), so accumulators stayed at their initial values (`examples/ir_demo.rca` printed `0` instead of `6`).
+- **Planned:** tuple and string iteration in `ForNext`, and iterating `List` values returned directly from function calls.
