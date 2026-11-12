@@ -326,6 +326,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_float_dec_elem_id, &fmt_float_dec_elem_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_oob_data = DataDescription::new();
+    fmt_oob_data.define(
+        b"runtime error: index out of bounds\0"
+            .to_vec()
+            .into_boxed_slice(),
+    );
+    let fmt_oob_id = module
+        .declare_data("fmt_oob", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_oob_id, &fmt_oob_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let func_ret_types: Vec<StackType> = program
         .functions
@@ -398,6 +411,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_int_elem_ptr: Value,
                          fmt_str_elem_ptr: Value,
                          fmt_float_dec_elem_ptr: Value,
+                         fmt_oob_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -1304,6 +1318,70 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.ins().return_(&[ret_val]);
                     }
                 }
+                Instruction::Index => {
+                    let idx_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let obj_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let idx_pos = builder.ins().iadd_imm(sp, -1);
+                    let idx_off = builder.ins().imul_imm(idx_pos, 8);
+                    let idx_addr = builder.ins().iadd(stack_addr, idx_off);
+                    let idx = builder.ins().load(types::I64, MemFlags::new(), idx_addr, 0);
+                    let obj_pos = builder.ins().iadd_imm(sp, -2);
+                    let obj_off = builder.ins().imul_imm(obj_pos, 8);
+                    let obj_addr = builder.ins().iadd(stack_addr, obj_off);
+                    let obj = builder.ins().load(types::I64, MemFlags::new(), obj_addr, 0);
+                    if !matches!(idx_ty, StackType::Int) {
+                        return Err("list index must be Int in native".to_string());
+                    }
+                    match obj_ty {
+                        StackType::List(elem_ty) => {
+                            let zero = builder.ins().iconst(types::I64, 0);
+                            let len = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+                            let is_neg = builder.ins().icmp(IntCC::SignedLessThan, idx, zero);
+                            let is_oob_hi =
+                                builder
+                                    .ins()
+                                    .icmp(IntCC::SignedGreaterThanOrEqual, idx, len);
+                            let is_oob = builder.ins().bor(is_neg, is_oob_hi);
+                            let err_block = builder.create_block();
+                            let ok_block = builder.create_block();
+                            builder.ins().brif(is_oob, err_block, &[], ok_block, &[]);
+                            builder.seal_block(err_block);
+                            builder.seal_block(ok_block);
+                            builder.switch_to_block(err_block);
+                            builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                            let exit_arg = builder.ins().iconst(types::I32, 1);
+                            builder.ins().call(exit_ref, &[exit_arg]);
+                            if is_main {
+                                let ret = builder.ins().iconst(types::I32, 1);
+                                builder.ins().return_(&[ret]);
+                            } else {
+                                let ret = builder.ins().iconst(types::I64, 0);
+                                builder.ins().return_(&[ret]);
+                            }
+                            builder.switch_to_block(ok_block);
+                            let elem_idx = builder.ins().iadd_imm(idx, 1);
+                            let elem_off = builder.ins().imul_imm(elem_idx, 8);
+                            let elem_addr = builder.ins().iadd(obj, elem_off);
+                            let elem =
+                                builder
+                                    .ins()
+                                    .load(types::I64, MemFlags::new(), elem_addr, 0);
+                            builder.ins().store(MemFlags::new(), elem, obj_addr, 0);
+                            let sp_after = builder.ins().iadd_imm(sp, -1);
+                            builder.def_var(sp_var, sp_after);
+                            type_stack.push(match elem_ty {
+                                ElemType::Int => StackType::Int,
+                                ElemType::Float => StackType::Float,
+                                ElemType::Str => StackType::Str,
+                                ElemType::Bool => StackType::Bool,
+                            });
+                        }
+                        _ => return Err("index on non-list type in native".to_string()),
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::Neg => {
                     let ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);
@@ -1497,6 +1575,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_float_dec_elem_ptr = builder
             .ins()
             .global_value(types::I64, fmt_float_dec_elem_gv);
+        let fmt_oob_gv = module.declare_data_in_func(fmt_oob_id, builder.func);
+        let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
 
         compile_chunk(
             &mut module,
@@ -1535,6 +1615,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_int_elem_ptr,
             fmt_str_elem_ptr,
             fmt_float_dec_elem_ptr,
+            fmt_oob_ptr,
             &[],
             &program.structs,
             true,
@@ -1635,6 +1716,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_float_dec_elem_ptr = builder
                 .ins()
                 .global_value(types::I64, fmt_float_dec_elem_gv);
+            let fmt_oob_gv = module.declare_data_in_func(fmt_oob_id, builder.func);
+            let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -1681,6 +1764,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_int_elem_ptr,
                 fmt_str_elem_ptr,
                 fmt_float_dec_elem_ptr,
+                fmt_oob_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
