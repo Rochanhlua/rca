@@ -65,6 +65,7 @@ pub enum Instruction {
     MakeList(usize),
     MakeTuple(usize),
     Index,
+    IndexAt(i64),
     StoreIndex,
 
     // structs

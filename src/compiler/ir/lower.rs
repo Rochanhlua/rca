@@ -616,8 +616,12 @@ impl Compiler {
             }
             ExprKind::Index { object, index } => {
                 self.compile_expr(object)?;
-                self.compile_expr(index)?;
-                self.emit(Instruction::Index, span);
+                if let ExprKind::Int(n) = &index.kind {
+                    self.emit(Instruction::IndexAt(*n), span);
+                } else {
+                    self.compile_expr(index)?;
+                    self.emit(Instruction::Index, span);
+                }
             }
             ExprKind::Field { object, name } => {
                 if let ExprKind::Ident(en) = &object.kind
