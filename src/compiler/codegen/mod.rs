@@ -368,6 +368,28 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_rparen_sp_id, &fmt_rparen_sp_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_map_open_data = DataDescription::new();
+    fmt_map_open_data.define(b"Map(size=\0".to_vec().into_boxed_slice());
+    let fmt_map_open_id = module
+        .declare_data("fmt_map_open", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_map_open_id, &fmt_map_open_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_map_err_data = DataDescription::new();
+    fmt_map_err_data.define(
+        b"runtime error: map_get(): key not found\0"
+            .to_vec()
+            .into_boxed_slice(),
+    );
+    let fmt_map_err_id = module
+        .declare_data("fmt_map_err", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_map_err_id, &fmt_map_err_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let func_ret_types: Vec<StackType> = program
         .functions
@@ -451,6 +473,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_lparen_ptr: Value,
                          fmt_rparen_ptr: Value,
                          fmt_rparen_sp_ptr: Value,
+                         fmt_map_open_ptr: Value,
+                         fmt_map_err_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -654,6 +678,117 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MapGet => {
+                    let key_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let map_ty = type_stack.pop().unwrap_or(StackType::Map);
+                    if !matches!(map_ty, StackType::Map) {
+                        return Err("map_get() needs a Map".to_string());
+                    }
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let key_pos = builder.ins().iadd_imm(sp, -1);
+                    let key_off = builder.ins().imul_imm(key_pos, 8);
+                    let key_addr = builder.ins().iadd(stack_addr, key_off);
+                    let key = builder.ins().load(types::I64, MemFlags::new(), key_addr, 0);
+                    let map_pos = builder.ins().iadd_imm(sp, -2);
+                    let map_off = builder.ins().imul_imm(map_pos, 8);
+                    let map_addr = builder.ins().iadd(stack_addr, map_off);
+                    let map_ptr = builder.ins().load(types::I64, MemFlags::new(), map_addr, 0);
+                    let key_tag_val: i64 = match key_ty {
+                        StackType::Float => 2,
+                        StackType::Str => 3,
+                        StackType::Bool => 4,
+                        _ => 1,
+                    };
+                    let key_tag = builder.ins().iconst(types::I64, key_tag_val);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), map_ptr, 0);
+                    let neg_one = builder.ins().iconst(types::I64, -1);
+                    builder.def_var(Variable::new(2), neg_one);
+                    let zero_i = builder.ins().iconst(types::I64, 0);
+                    builder.def_var(Variable::new(3), zero_i);
+                    let header = builder.create_block();
+                    let body = builder.create_block();
+                    let after = builder.create_block();
+                    builder.ins().jump(header, &[]);
+                    builder.switch_to_block(header);
+                    let ci = builder.use_var(Variable::new(3));
+                    let in_range = builder.ins().icmp(IntCC::SignedLessThan, ci, len);
+                    builder.ins().brif(in_range, body, &[], after, &[]);
+                    builder.seal_block(body);
+                    builder.seal_block(after);
+                    builder.switch_to_block(body);
+                    let ci2 = builder.use_var(Variable::new(3));
+                    let tag_off = builder.ins().imul_imm(ci2, 24);
+                    let tag_pos = builder.ins().iadd_imm(tag_off, 8);
+                    let tag_ptr = builder.ins().iadd(map_ptr, tag_pos);
+                    let tag_i = builder.ins().load(types::I64, MemFlags::new(), tag_ptr, 0);
+                    let tags_match = builder.ins().icmp(IntCC::Equal, tag_i, key_tag);
+                    let key_off_b = builder.ins().imul_imm(ci2, 24);
+                    let key_pos_b = builder.ins().iadd_imm(key_off_b, 16);
+                    let key_ptr_b = builder.ins().iadd(map_ptr, key_pos_b);
+                    let key_i = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), key_ptr_b, 0);
+                    let cmp_result = match key_ty {
+                        StackType::Str => {
+                            let sc = builder.ins().call(strcmp_ref, &[key_i, key]);
+                            let sr = builder.inst_results(sc)[0];
+                            let zero_i32 = builder.ins().iconst(types::I32, 0);
+                            builder.ins().icmp(IntCC::Equal, sr, zero_i32)
+                        }
+                        StackType::Float => {
+                            let a = builder.ins().bitcast(types::F64, MemFlags::new(), key_i);
+                            let b = builder.ins().bitcast(types::F64, MemFlags::new(), key);
+                            builder.ins().fcmp(FloatCC::Equal, a, b)
+                        }
+                        _ => builder.ins().icmp(IntCC::Equal, key_i, key),
+                    };
+                    let match_both = builder.ins().band(tags_match, cmp_result);
+                    let current = builder.use_var(Variable::new(2));
+                    let next_found = builder.ins().select(match_both, ci2, current);
+                    builder.def_var(Variable::new(2), next_found);
+                    let next_ci = builder.ins().iadd_imm(ci2, 1);
+                    builder.def_var(Variable::new(3), next_ci);
+                    builder.ins().jump(header, &[]);
+                    builder.seal_block(header);
+                    builder.switch_to_block(after);
+                    let found = builder.use_var(Variable::new(2));
+                    let found_any =
+                        builder
+                            .ins()
+                            .icmp_imm(IntCC::SignedGreaterThanOrEqual, found, 0);
+                    let hit_blk = builder.create_block();
+                    let miss_blk = builder.create_block();
+                    builder.ins().brif(found_any, hit_blk, &[], miss_blk, &[]);
+                    builder.seal_block(hit_blk);
+                    builder.seal_block(miss_blk);
+                    builder.switch_to_block(hit_blk);
+                    let fv = builder.use_var(Variable::new(2));
+                    let val_off_found = builder.ins().imul_imm(fv, 24);
+                    let val_pos = builder.ins().iadd_imm(val_off_found, 24);
+                    let val_addr = builder.ins().iadd(map_ptr, val_pos);
+                    let result_val = builder.ins().load(types::I64, MemFlags::new(), val_addr, 0);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), result_val, map_addr, 0);
+                    let sp_after = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, sp_after);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                    builder.switch_to_block(miss_blk);
+                    builder
+                        .ins()
+                        .call(printf_ref, &[fmt_str_ptr, fmt_map_err_ptr]);
+                    let exit_arg = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[exit_arg]);
+                    if is_main {
+                        let ret = builder.ins().iconst(types::I32, 1);
+                        builder.ins().return_(&[ret]);
+                    } else {
+                        let ret = builder.ins().iconst(types::I64, 0);
+                        builder.ins().return_(&[ret]);
+                    }
                 }
                 Instruction::MapSet => {
                     let val_ty = type_stack.pop().unwrap_or(StackType::Int);
@@ -1237,7 +1372,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                     .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
                             }
                             StackType::Map => {
-                                return Err("map display not supported in native (yet)".to_string());
+                                let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, fmt_map_open_ptr]);
+                                builder.ins().call(printf_ref, &[fmt_int_elem_ptr, len]);
+                                let close_ptr = if is_last {
+                                    fmt_rparen_ptr
+                                } else {
+                                    fmt_rparen_sp_ptr
+                                };
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
                             }
                             StackType::List(elem_ty) => {
                                 builder
@@ -2239,6 +2386,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
         let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
         let fmt_rparen_sp_ptr = builder.ins().global_value(types::I64, fmt_rparen_sp_gv);
+        let fmt_map_open_gv = module.declare_data_in_func(fmt_map_open_id, builder.func);
+        let fmt_map_open_ptr = builder.ins().global_value(types::I64, fmt_map_open_gv);
+        let fmt_map_err_gv = module.declare_data_in_func(fmt_map_err_id, builder.func);
+        let fmt_map_err_ptr = builder.ins().global_value(types::I64, fmt_map_err_gv);
 
         compile_chunk(
             &mut module,
@@ -2281,6 +2432,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_lparen_ptr,
             fmt_rparen_ptr,
             fmt_rparen_sp_ptr,
+            fmt_map_open_ptr,
+            fmt_map_err_ptr,
             &[],
             &program.structs,
             true,
@@ -2393,6 +2546,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
             let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
             let fmt_rparen_sp_ptr = builder.ins().global_value(types::I64, fmt_rparen_sp_gv);
+            let fmt_map_open_gv = module.declare_data_in_func(fmt_map_open_id, builder.func);
+            let fmt_map_open_ptr = builder.ins().global_value(types::I64, fmt_map_open_gv);
+            let fmt_map_err_gv = module.declare_data_in_func(fmt_map_err_id, builder.func);
+            let fmt_map_err_ptr = builder.ins().global_value(types::I64, fmt_map_err_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -2443,6 +2600,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_lparen_ptr,
                 fmt_rparen_ptr,
                 fmt_rparen_sp_ptr,
+                fmt_map_open_ptr,
+                fmt_map_err_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
