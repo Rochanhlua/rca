@@ -74,3 +74,5 @@
 - **Planned:** `INT_MIN` source literal parsing (`-9223372036854775808` currently rejected by the lexer) and `try`/`catch` handling of runtime errors in native codegen.
 - **Implemented:** `INT_MIN` source literal — `-9223372036854775808` now parses and evaluates to `i64::MIN` via a dedicated `IntLiteralMin` token consumed by unary minus. A bare `9223372036854775808` (2^63 with no leading `-`) remains a parse error, so the earlier intermediate fix that silently mapped that literal to `i64::MIN` is corrected.
 - **Planned:** unary `Neg` in native codegen (`Neg` is currently VM-only), needed for double-negation of `INT_MIN`.
+- **Implemented:** native codegen prints `Bool` as `true`/`false` — added `StackType::Bool`, set by `PushBool` and all comparison instructions, with a `Print` arm that selects the string via `printf`. Matches the VM output; `int(bool)` is an identity and `float(bool)` uses `fcvt_from_sint`. Previously native printed `1`/`0`.
+- **Planned:** `Bool` display parity is complete; remaining float formatting (shortest representation vs fixed 3-decimal) is tracked separately.
