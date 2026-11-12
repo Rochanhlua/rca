@@ -115,12 +115,11 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                 }
                 if command == "build" {
                     let exe_path = path.trim_end_matches(".rca");
-                    let status = Command::new("clang")
-                        .arg(&out_path)
-                        .arg("-o")
-                        .arg(exe_path)
-                        .arg("-lm")
-                        .status();
+                    let mut cmd = Command::new("clang");
+                    cmd.arg(&out_path).arg("-o").arg(exe_path);
+                    #[cfg(not(windows))]
+                    cmd.arg("-lm");
+                    let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
                             println!("Successfully built executable: {}", exe_path)
@@ -254,12 +253,11 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                 }
                 if command == "build" {
                     let exe_path = path.trim_end_matches(".rca");
-                    let status = Command::new("clang")
-                        .arg(&out_path)
-                        .arg("-o")
-                        .arg(exe_path)
-                        .arg("-lm")
-                        .status();
+                    let mut cmd = Command::new("clang");
+                    cmd.arg(&out_path).arg("-o").arg(exe_path);
+                    #[cfg(not(windows))]
+                    cmd.arg("-lm");
+                    let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
                             println!("Successfully built executable: {}", exe_path)
