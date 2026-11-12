@@ -80,3 +80,5 @@
 - **Planned:** sized `rca_globals` based on the highest global slot used, and a guard for out-of-range global slots.
 - **Implemented:** native `print` with multiple arguments now matches the VM — arguments are printed left-to-right (FIFO) separated by a single space, instead of reverse order (LIFO) with one line per argument. Adds space-terminated format strings for int, str, and float; the last argument keeps the newline-terminated format. Single-argument `print` is unchanged.
 - **Planned:** trailing-space handling if a multi-arg `print` is immediately followed by another output on the same line, and struct display inside multi-arg `print`.
+- **Implemented:** function return types are now tracked in the IR and used by native `Call` — a function returning `String`, `Bool`, or `Float` prints and consumes correctly instead of being treated as `Int`. IR `Function` gains `return_type`, populated from the AST declaration (defaults to `None` when omitted); the codegen `Call` arm pushes the mapped `StackType` instead of a hardcoded `Int`.
+- **Planned:** return type inference for unannotated functions whose body returns a non-`Int` value.
