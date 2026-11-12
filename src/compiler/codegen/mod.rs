@@ -29,6 +29,7 @@ enum StackType {
     Str,
     Bool,
     List(#[allow(dead_code)] ElemType),
+    Tuple(u32),
     Struct(usize),
 }
 
@@ -339,6 +340,33 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_oob_id, &fmt_oob_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_lparen_data = DataDescription::new();
+    fmt_lparen_data.define(b"(\0".to_vec().into_boxed_slice());
+    let fmt_lparen_id = module
+        .declare_data("fmt_lparen", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_lparen_id, &fmt_lparen_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_rparen_data = DataDescription::new();
+    fmt_rparen_data.define(b")\n\0".to_vec().into_boxed_slice());
+    let fmt_rparen_id = module
+        .declare_data("fmt_rparen", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_rparen_id, &fmt_rparen_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_rparen_sp_data = DataDescription::new();
+    fmt_rparen_sp_data.define(b") \0".to_vec().into_boxed_slice());
+    let fmt_rparen_sp_id = module
+        .declare_data("fmt_rparen_sp", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_rparen_sp_id, &fmt_rparen_sp_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let func_ret_types: Vec<StackType> = program
         .functions
@@ -374,6 +402,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     // Stack slot size: 1024 bytes each. Under Windows's 4KB stack-probe threshold,
     // so Cranelift doesn't emit __chkstk calls (which have ABI naming issues with clang).
     let slot_size = 1024u32;
+
+    let tuple_types_registry: std::cell::RefCell<Vec<Vec<ElemType>>> =
+        std::cell::RefCell::new(Vec::new());
 
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
@@ -412,6 +443,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_str_elem_ptr: Value,
                          fmt_float_dec_elem_ptr: Value,
                          fmt_oob_ptr: Value,
+                         fmt_lparen_ptr: Value,
+                         fmt_rparen_ptr: Value,
+                         fmt_rparen_sp_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -519,6 +553,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::List(_) => {
                                 return Err("list -> int not supported in native".to_string());
                             }
+                            StackType::Tuple(_) => {
+                                return Err("tuple -> int not supported in native".to_string());
+                            }
                             StackType::Float => {
                                 let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
                                 let i = builder.ins().fcvt_to_sint(types::I64, f);
@@ -546,6 +583,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::List(_) => {
                                 return Err("list -> float not supported in native".to_string());
                             }
+                            StackType::Tuple(_) => {
+                                return Err("tuple -> float not supported in native".to_string());
+                            }
                             StackType::Str => {
                                 return Err("str -> float not yet supported in native".to_string());
                             }
@@ -565,6 +605,57 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
+                Instruction::MakeTuple(n) => {
+                    let mut popped = Vec::with_capacity(*n);
+                    for _ in 0..*n {
+                        popped.push(type_stack.pop().unwrap_or(StackType::Int));
+                    }
+                    popped.reverse();
+                    let elem_types: Vec<ElemType> = popped
+                        .iter()
+                        .map(|st| match st {
+                            StackType::Int => ElemType::Int,
+                            StackType::Float => ElemType::Float,
+                            StackType::Str => ElemType::Str,
+                            StackType::Bool => ElemType::Bool,
+                            _ => ElemType::Int,
+                        })
+                        .collect();
+                    let tuple_id = {
+                        let mut reg = tuple_types_registry.borrow_mut();
+                        let id = reg.len() as u32;
+                        reg.push(elem_types);
+                        id
+                    };
+                    let n_i = *n as i64;
+                    let sp = builder.use_var(sp_var);
+                    let sp_new = builder.ins().iadd_imm(sp, -n_i);
+                    let total_size = builder.ins().iconst(types::I64, (n_i + 1) * 8);
+                    let malloc_call = builder.ins().call(malloc_ref, &[total_size]);
+                    let ptr = builder.inst_results(malloc_call)[0];
+                    let len_val = builder.ins().iconst(types::I64, n_i);
+                    builder.ins().store(MemFlags::new(), len_val, ptr, 0);
+                    for i in 0..*n {
+                        let src_idx = builder.ins().iadd_imm(sp_new, i as i64);
+                        let src_off = builder.ins().imul_imm(src_idx, 8);
+                        let src_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src_final = builder.ins().iadd(src_base, src_off);
+                        let val = builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), src_final, 0);
+                        let dst_off = builder.ins().iconst(types::I64, ((i as i64) + 1) * 8);
+                        let dst_final = builder.ins().iadd(ptr, dst_off);
+                        builder.ins().store(MemFlags::new(), val, dst_final, 0);
+                    }
+                    let dst_off2 = builder.ins().imul_imm(sp_new, 8);
+                    let dst_base2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dst_final2 = builder.ins().iadd(dst_base2, dst_off2);
+                    builder.ins().store(MemFlags::new(), ptr, dst_final2, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp_new, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Tuple(tuple_id));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::MakeList(n) => {
                     let sp = builder.use_var(sp_var);
                     let n_i = *n as i64;
@@ -771,6 +862,83 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                     builder.ins().select(non_zero, fmt_true_ptr, fmt_false_ptr);
                                 let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, ptr]);
+                            }
+                            StackType::Tuple(tuple_id) => {
+                                let elem_types = {
+                                    let reg = tuple_types_registry.borrow();
+                                    reg[tuple_id as usize].clone()
+                                };
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, fmt_lparen_ptr]);
+                                for (idx, et) in elem_types.iter().enumerate() {
+                                    if idx > 0 {
+                                        builder
+                                            .ins()
+                                            .call(printf_ref, &[fmt_str_raw_ptr, fmt_comma_ptr]);
+                                    }
+                                    let off =
+                                        builder.ins().iconst(types::I64, ((idx + 1) as i64) * 8);
+                                    let addr = builder.ins().iadd(val, off);
+                                    let elem =
+                                        builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                                    match et {
+                                        ElemType::Int => {
+                                            builder
+                                                .ins()
+                                                .call(printf_ref, &[fmt_int_elem_ptr, elem]);
+                                        }
+                                        ElemType::Str => {
+                                            builder
+                                                .ins()
+                                                .call(printf_ref, &[fmt_str_elem_ptr, elem]);
+                                        }
+                                        ElemType::Bool => {
+                                            let nz =
+                                                builder.ins().icmp_imm(IntCC::NotEqual, elem, 0);
+                                            let bptr = builder.ins().select(
+                                                nz,
+                                                fmt_true_ptr,
+                                                fmt_false_ptr,
+                                            );
+                                            builder
+                                                .ins()
+                                                .call(printf_ref, &[fmt_str_raw_ptr, bptr]);
+                                        }
+                                        ElemType::Float => {
+                                            let fe = builder.ins().bitcast(
+                                                types::F64,
+                                                MemFlags::new(),
+                                                elem,
+                                            );
+                                            let th = builder.ins().f64const(1000.0);
+                                            let sc = builder.ins().fmul(fe, th);
+                                            let si = builder.ins().fcvt_to_sint(types::I64, sc);
+                                            let dv = builder.ins().iconst(types::I64, 1000);
+                                            let ip = builder.ins().sdiv(si, dv);
+                                            let dr = builder.ins().srem(si, dv);
+                                            let z3 = builder.ins().iconst(types::I64, 0);
+                                            let neg =
+                                                builder.ins().icmp(IntCC::SignedLessThan, dr, z3);
+                                            let nd = builder.ins().ineg(dr);
+                                            let dp = builder.ins().select(neg, nd, dr);
+                                            builder
+                                                .ins()
+                                                .call(printf_ref, &[fmt_float_int_ptr, ip]);
+                                            builder
+                                                .ins()
+                                                .call(printf_ref, &[fmt_float_dec_elem_ptr, dp]);
+                                        }
+                                    }
+                                }
+                                let close_ptr = if is_last {
+                                    fmt_rparen_ptr
+                                } else {
+                                    fmt_rparen_sp_ptr
+                                };
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
                             }
                             StackType::List(elem_ty) => {
                                 builder
@@ -1578,6 +1746,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             builder.ins().store(MemFlags::new(), len, src, 0);
                             type_stack.push(StackType::Int);
                         }
+                        StackType::Tuple(_) => {
+                            let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                            builder.ins().store(MemFlags::new(), len, src, 0);
+                            type_stack.push(StackType::Int);
+                        }
                         StackType::Str => {
                             let len_call = builder.ins().call(strlen_ref, &[val]);
                             let len = builder.inst_results(len_call)[0];
@@ -1694,6 +1867,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             .global_value(types::I64, fmt_float_dec_elem_gv);
         let fmt_oob_gv = module.declare_data_in_func(fmt_oob_id, builder.func);
         let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
+        let fmt_lparen_gv = module.declare_data_in_func(fmt_lparen_id, builder.func);
+        let fmt_lparen_ptr = builder.ins().global_value(types::I64, fmt_lparen_gv);
+        let fmt_rparen_gv = module.declare_data_in_func(fmt_rparen_id, builder.func);
+        let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
+        let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
+        let fmt_rparen_sp_ptr = builder.ins().global_value(types::I64, fmt_rparen_sp_gv);
 
         compile_chunk(
             &mut module,
@@ -1733,6 +1912,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_str_elem_ptr,
             fmt_float_dec_elem_ptr,
             fmt_oob_ptr,
+            fmt_lparen_ptr,
+            fmt_rparen_ptr,
+            fmt_rparen_sp_ptr,
             &[],
             &program.structs,
             true,
@@ -1835,6 +2017,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 .global_value(types::I64, fmt_float_dec_elem_gv);
             let fmt_oob_gv = module.declare_data_in_func(fmt_oob_id, builder.func);
             let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
+            let fmt_lparen_gv = module.declare_data_in_func(fmt_lparen_id, builder.func);
+            let fmt_lparen_ptr = builder.ins().global_value(types::I64, fmt_lparen_gv);
+            let fmt_rparen_gv = module.declare_data_in_func(fmt_rparen_id, builder.func);
+            let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
+            let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
+            let fmt_rparen_sp_ptr = builder.ins().global_value(types::I64, fmt_rparen_sp_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -1882,6 +2070,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_str_elem_ptr,
                 fmt_float_dec_elem_ptr,
                 fmt_oob_ptr,
+                fmt_lparen_ptr,
+                fmt_rparen_ptr,
+                fmt_rparen_sp_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
