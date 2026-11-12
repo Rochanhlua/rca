@@ -19,6 +19,7 @@ enum StackType {
     Int,
     Float,
     Str,
+    Bool,
     Struct(usize),
 }
 
@@ -181,6 +182,24 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(str_ovf_id, &str_ovf_data)
         .map_err(|e| e.to_string())?;
 
+    let mut str_true_data = DataDescription::new();
+    str_true_data.define(b"true\0".to_vec().into_boxed_slice());
+    let str_true_id = module
+        .declare_data("str_true", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_true_id, &str_true_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_false_data = DataDescription::new();
+    str_false_data.define(b"false\0".to_vec().into_boxed_slice());
+    let str_false_id = module
+        .declare_data("str_false", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(str_false_id, &str_false_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
@@ -226,6 +245,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_nan_ptr: Value,
                          fmt_inf_ptr: Value,
                          fmt_neg_inf_ptr: Value,
+                         fmt_true_ptr: Value,
+                         fmt_false_ptr: Value,
                          fmt_div0_ptr: Value,
                          fmt_ovf_ptr: Value,
                          param_types: &[Type],
@@ -287,7 +308,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().store(MemFlags::new(), val, dest, 0);
                     let sp_inc = builder.ins().iadd_imm(sp, 1);
                     builder.def_var(sp_var, sp_inc);
-                    type_stack.push(StackType::Int);
+                    type_stack.push(StackType::Bool);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::PushStr(s) => {
@@ -331,6 +352,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 return Err("struct -> int not supported".to_string());
                             }
                             StackType::Int => (val, StackType::Int),
+                            StackType::Bool => (val, StackType::Int),
                             StackType::Float => {
                                 let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
                                 let i = builder.ins().fcvt_to_sint(types::I64, f);
@@ -350,6 +372,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 (bits, StackType::Float)
                             }
                             StackType::Float => (val, StackType::Float),
+                            StackType::Bool => {
+                                let f = builder.ins().fcvt_from_sint(types::F64, val);
+                                let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
+                                (bits, StackType::Float)
+                            }
                             StackType::Str => {
                                 return Err("str -> float not yet supported in native".to_string());
                             }
@@ -518,6 +545,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Str => {
                                 builder.ins().call(printf_ref, &[fmt_str_ptr, val]);
+                            }
+                            StackType::Bool => {
+                                let non_zero = builder.ins().icmp_imm(IntCC::NotEqual, val, 0);
+                                let ptr =
+                                    builder.ins().select(non_zero, fmt_true_ptr, fmt_false_ptr);
+                                builder.ins().call(printf_ref, &[fmt_str_ptr, ptr]);
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -888,7 +921,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.ins().uextend(types::I64, cmp)
                     };
                     builder.ins().store(MemFlags::new(), r, a_addr, 0);
-                    type_stack.push(StackType::Int);
+                    type_stack.push(StackType::Bool);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::Call(id) => {
@@ -1017,6 +1050,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_inf_ptr = builder.ins().global_value(types::I64, fmt_inf_gv);
         let fmt_neg_inf_gv = module.declare_data_in_func(str_neg_inf_id, builder.func);
         let fmt_neg_inf_ptr = builder.ins().global_value(types::I64, fmt_neg_inf_gv);
+        let fmt_true_gv = module.declare_data_in_func(str_true_id, builder.func);
+        let fmt_true_ptr = builder.ins().global_value(types::I64, fmt_true_gv);
+        let fmt_false_gv = module.declare_data_in_func(str_false_id, builder.func);
+        let fmt_false_ptr = builder.ins().global_value(types::I64, fmt_false_gv);
 
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
         let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
@@ -1050,6 +1087,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_nan_ptr,
             fmt_inf_ptr,
             fmt_neg_inf_ptr,
+            fmt_true_ptr,
+            fmt_false_ptr,
             fmt_div0_ptr,
             fmt_ovf_ptr,
             &[],
@@ -1111,6 +1150,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_inf_ptr = builder.ins().global_value(types::I64, fmt_inf_gv);
             let fmt_neg_inf_gv = module.declare_data_in_func(str_neg_inf_id, builder.func);
             let fmt_neg_inf_ptr = builder.ins().global_value(types::I64, fmt_neg_inf_gv);
+            let fmt_true_gv = module.declare_data_in_func(str_true_id, builder.func);
+            let fmt_true_ptr = builder.ins().global_value(types::I64, fmt_true_gv);
+            let fmt_false_gv = module.declare_data_in_func(str_false_id, builder.func);
+            let fmt_false_ptr = builder.ins().global_value(types::I64, fmt_false_gv);
 
             let printf_ref = module.declare_func_in_func(printf_func, builder.func);
             let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
@@ -1152,6 +1195,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_nan_ptr,
                 fmt_inf_ptr,
                 fmt_neg_inf_ptr,
+                fmt_true_ptr,
+                fmt_false_ptr,
                 fmt_div0_ptr,
                 fmt_ovf_ptr,
                 &f.param_types,
