@@ -571,6 +571,36 @@ impl<'a> Vm<'a> {
                         _ => return Err(err("invalid index operation", span)),
                     }
                 }
+                Instruction::IndexAt(i) => {
+                    let i = *i;
+                    let obj = self.pop();
+                    match obj {
+                        Value::List(items) => {
+                            if i < 0 || (i as usize) >= items.len() {
+                                return Err(err(
+                                    format!(
+                                        "index {} out of bounds for list of length {}",
+                                        i,
+                                        items.len()
+                                    ),
+                                    span,
+                                ));
+                            }
+                            self.stack.push(items[i as usize].clone());
+                        }
+                        t @ Value::Tensor { .. } => {
+                            match crate::runtime::values::tensor_index(&t, i) {
+                                Ok(v) => self.stack.push(v),
+                                Err(m) => return Err(err(m, span)),
+                            }
+                        }
+                        Value::Tuple(items) => match items.get(i as usize) {
+                            Some(v) if i >= 0 => self.stack.push(v.clone()),
+                            _ => return Err(err("tuple index out of range", span)),
+                        },
+                        _ => return Err(err("invalid index operation", span)),
+                    }
+                }
                 Instruction::StoreIndex => {
                     let idx = self.pop();
                     let obj = self.pop();

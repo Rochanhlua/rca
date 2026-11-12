@@ -1568,6 +1568,69 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::IndexAt(i) => {
+                    let obj_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let elem_ty: Option<ElemType> = match obj_ty {
+                        StackType::List(e) => Some(e),
+                        StackType::Tuple(id) => {
+                            if *i < 0 {
+                                None
+                            } else {
+                                let reg = tuple_types_registry.borrow();
+                                reg.get(id as usize)
+                                    .and_then(|types| types.get(*i as usize).copied())
+                            }
+                        }
+                        _ => None,
+                    };
+                    let elem_ty =
+                        elem_ty.ok_or_else(|| "IndexAt on non-list/tuple in native".to_string())?;
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let obj_pos = builder.ins().iadd_imm(sp, -1);
+                    let obj_off = builder.ins().imul_imm(obj_pos, 8);
+                    let obj_addr = builder.ins().iadd(stack_addr, obj_off);
+                    let obj = builder.ins().load(types::I64, MemFlags::new(), obj_addr, 0);
+                    let i_v = builder.ins().iconst(types::I64, *i);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+                    let is_neg = builder.ins().icmp(IntCC::SignedLessThan, i_v, zero);
+                    let is_oob_hi = builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, i_v, len);
+                    let is_oob = builder.ins().bor(is_neg, is_oob_hi);
+                    let err_block = builder.create_block();
+                    let ok_block = builder.create_block();
+                    builder.ins().brif(is_oob, err_block, &[], ok_block, &[]);
+                    builder.seal_block(err_block);
+                    builder.seal_block(ok_block);
+                    builder.switch_to_block(err_block);
+                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                    let exit_arg = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[exit_arg]);
+                    if is_main {
+                        let ret = builder.ins().iconst(types::I32, 1);
+                        builder.ins().return_(&[ret]);
+                    } else {
+                        let ret = builder.ins().iconst(types::I64, 0);
+                        builder.ins().return_(&[ret]);
+                    }
+                    builder.switch_to_block(ok_block);
+                    let elem_idx = builder.ins().iadd_imm(i_v, 1);
+                    let elem_off = builder.ins().imul_imm(elem_idx, 8);
+                    let elem_addr = builder.ins().iadd(obj, elem_off);
+                    let elem = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), elem_addr, 0);
+                    builder.ins().store(MemFlags::new(), elem, obj_addr, 0);
+                    type_stack.push(match elem_ty {
+                        ElemType::Int => StackType::Int,
+                        ElemType::Float => StackType::Float,
+                        ElemType::Str => StackType::Str,
+                        ElemType::Bool => StackType::Bool,
+                    });
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::StoreIndex => {
                     let idx_ty = type_stack.pop().unwrap_or(StackType::Int);
                     let obj_ty = type_stack.pop().unwrap_or(StackType::Int);
