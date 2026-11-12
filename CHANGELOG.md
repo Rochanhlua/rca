@@ -86,3 +86,5 @@
 - **Planned:** `Not` (`!x`) in native codegen, which is still VM-only.
 - **Implemented:** native codegen for unary `not` — `not x`, `not (a > b)`, and `if not cond:` now compile and run for `Bool` operands, matching the VM. Uses `xor` with 1 on the 0/1 representation, in place. Non-`Bool` operands are rejected by the type checker before codegen.
 - **Planned:** short-circuit `and`/`or` in native codegen (currently VM-only), and `Not` on values produced by calls returning `Bool` in complex expressions.
+- **Implemented:** native codegen for list literals and `len()` — `[a, b, c]` now compiles (allocated as `[len][e0]…[e_{n-1}]`), and `len()` works on `List` (reads the length header) and `String` (`strlen`). Adds `StackType::List`; `print(list)` and `int()`/`float()` on lists are stubs that error cleanly. `print(list)` display follows in a separate change.
+- **Planned:** `print(list)` in the VM's `[a, b, c]` format, list indexing and `push`, and a shared runtime list layout.
