@@ -82,3 +82,5 @@
 - **Planned:** trailing-space handling if a multi-arg `print` is immediately followed by another output on the same line, and struct display inside multi-arg `print`.
 - **Implemented:** function return types are now tracked in the IR and used by native `Call` — a function returning `String`, `Bool`, or `Float` prints and consumes correctly instead of being treated as `Int`. IR `Function` gains `return_type`, populated from the AST declaration (defaults to `None` when omitted); the codegen `Call` arm pushes the mapped `StackType` instead of a hardcoded `Int`.
 - **Planned:** return type inference for unannotated functions whose body returns a non-`Int` value.
+- **Implemented:** native codegen for unary `Neg` — `-x` on an `Int` or `Float` now compiles and runs (the VM already supported it; literals worked only because the optimizer folded them). `Neg` on `i64::MIN` reports `runtime error: integer overflow` and exits 1, matching the `INT_MIN / -1` path; non-numeric operands are a compile error.
+- **Planned:** `Not` (`!x`) in native codegen, which is still VM-only.
