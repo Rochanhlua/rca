@@ -22,6 +22,33 @@ Both the interpreter and the VM report these as runtime errors
 ## 3. No unsafe code (Implemented)
 RCA programs have no raw pointers and no unsafe blocks.
 
+## 3a. Native codegen memory (Implemented, leaks known)
+
+The native (Cranelift) backend allocates on the heap but does not yet
+free anything. This is a known gap between the VM and native paths.
+
+Allocation sites in `src/compiler/codegen/mod.rs` (all `malloc`, no `free`):
+- `MakeList` — `(n+1)*8` bytes for the length header and elements.
+- `MakeTuple` — `(n+1)*8` bytes, same layout.
+- `MakeStruct` — `n*8` bytes for the fields.
+- String `+` — `strlen(a) + strlen(b) + 1` bytes.
+- `ListPush` — allocates a new buffer and copies the old one; the
+  previous buffer is not freed.
+
+Consequences:
+- Long-running native programs leak memory proportional to allocation
+  count. Short scripts are unaffected in practice.
+- Values passed to functions are copied, so the VM's value semantics
+  still hold observably; the leak is invisible in the output.
+
+Mitigation plan (Phase 4):
+- Move semantics: consume the source value on the last use so `push`
+  and string concatenation can reuse buffers instead of copying.
+- A shared runtime header (length + refcount) so `free` can be called
+  when the last reference dies, or a small region/arena strategy per
+  function for temporaries.
+- Leak regression tests once ownership lands.
+
 ## 4. Planned (NOT implemented)
 - Move semantics: avoid copying when the old variable is never used again.
 - Avoid copying on read (move semantics or shared references), once
