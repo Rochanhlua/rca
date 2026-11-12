@@ -130,6 +130,33 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_float_dec_id, &fmt_float_dec_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_int_sp_data = DataDescription::new();
+    fmt_int_sp_data.define(b"%lld \0".to_vec().into_boxed_slice());
+    let fmt_int_sp_id = module
+        .declare_data("fmt_int_sp", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_int_sp_id, &fmt_int_sp_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_str_sp_data = DataDescription::new();
+    fmt_str_sp_data.define(b"%s \0".to_vec().into_boxed_slice());
+    let fmt_str_sp_id = module
+        .declare_data("fmt_str_sp", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_str_sp_id, &fmt_str_sp_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_float_dec_sp_data = DataDescription::new();
+    fmt_float_dec_sp_data.define(b"%03lld \0".to_vec().into_boxed_slice());
+    let fmt_float_dec_sp_id = module
+        .declare_data("fmt_float_dec_sp", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_float_dec_sp_id, &fmt_float_dec_sp_data)
+        .map_err(|e| e.to_string())?;
+
     let mut str_nan_data = DataDescription::new();
     str_nan_data.define(b"nan\0".to_vec().into_boxed_slice());
     let str_nan_id = module
@@ -256,6 +283,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_neg_inf_ptr: Value,
                          fmt_true_ptr: Value,
                          fmt_false_ptr: Value,
+                         fmt_int_sp_ptr: Value,
+                         fmt_str_sp_ptr: Value,
+                         fmt_float_dec_sp_ptr: Value,
                          fmt_div0_ptr: Value,
                          fmt_ovf_ptr: Value,
                          param_types: &[Type],
@@ -536,30 +566,38 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 }
 
                 Instruction::Print(n) => {
+                    let sp_start = builder.use_var(sp_var);
+                    let n_i64 = *n as i64;
+                    let mut types = Vec::with_capacity(*n);
                     for _ in 0..*n {
-                        let ty = type_stack.pop().unwrap_or(StackType::Int);
-                        let sp = builder.use_var(sp_var);
-                        let new_sp = builder.ins().iadd_imm(sp, -1);
-                        builder.def_var(sp_var, new_sp);
-                        let sp_off = builder.ins().imul_imm(new_sp, 8);
-                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
-                        let src = builder.ins().iadd(sp_addr, sp_off);
+                        types.push(type_stack.pop().unwrap_or(StackType::Int));
+                    }
+                    types.reverse();
+                    for (i, ty) in types.into_iter().enumerate() {
+                        let is_last = i + 1 == *n;
+                        let pos = builder.ins().iadd_imm(sp_start, -n_i64 + (i as i64));
+                        let pos_off = builder.ins().imul_imm(pos, 8);
+                        let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src = builder.ins().iadd(stack_addr, pos_off);
                         let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                         match ty {
                             StackType::Struct(_) => {
                                 return Err("struct display not supported".to_string());
                             }
                             StackType::Int => {
-                                builder.ins().call(printf_ref, &[fmt_int_ptr, val]);
+                                let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
+                                builder.ins().call(printf_ref, &[fmt, val]);
                             }
                             StackType::Str => {
-                                builder.ins().call(printf_ref, &[fmt_str_ptr, val]);
+                                let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
+                                builder.ins().call(printf_ref, &[fmt, val]);
                             }
                             StackType::Bool => {
                                 let non_zero = builder.ins().icmp_imm(IntCC::NotEqual, val, 0);
                                 let ptr =
                                     builder.ins().select(non_zero, fmt_true_ptr, fmt_false_ptr);
-                                builder.ins().call(printf_ref, &[fmt_str_ptr, ptr]);
+                                let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
+                                builder.ins().call(printf_ref, &[fmt, ptr]);
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -591,7 +629,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                         .ins()
                                         .select(is_neg_inf, fmt_neg_inf_ptr, fmt_inf_ptr);
                                 let final_ptr = builder.ins().select(is_nan, fmt_nan_ptr, inf_ptr);
-                                builder.ins().call(printf_ref, &[fmt_str_ptr, final_ptr]);
+                                let str_fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
+                                builder.ins().call(printf_ref, &[str_fmt, final_ptr]);
                                 builder.ins().jump(after_block, &[]);
 
                                 builder.switch_to_block(finite_block);
@@ -609,9 +648,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_float_int_ptr, int_part]);
-                                builder
-                                    .ins()
-                                    .call(printf_ref, &[fmt_float_dec_ptr, dec_part]);
+                                let dec_fmt = if is_last {
+                                    fmt_float_dec_ptr
+                                } else {
+                                    fmt_float_dec_sp_ptr
+                                };
+                                builder.ins().call(printf_ref, &[dec_fmt, dec_part]);
                                 builder.ins().jump(after_block, &[]);
                                 builder.seal_block(after_block);
 
@@ -619,13 +661,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                         }
                     }
-                    let sp_after = builder.use_var(sp_var);
-                    let sp_off_pn = builder.ins().imul_imm(sp_after, 8);
+                    let sp_after_pop = builder.ins().iadd_imm(sp_start, -n_i64);
+                    let sp_off_pn = builder.ins().imul_imm(sp_after_pop, 8);
                     let sp_addr_pn = builder.ins().stack_addr(types::I64, stack_slot, 0);
                     let dest_pn = builder.ins().iadd(sp_addr_pn, sp_off_pn);
                     let zero_pn = builder.ins().iconst(types::I64, 0);
                     builder.ins().store(MemFlags::new(), zero_pn, dest_pn, 0);
-                    let sp_inc_pn = builder.ins().iadd_imm(sp_after, 1);
+                    let sp_inc_pn = builder.ins().iadd_imm(sp_after_pop, 1);
                     builder.def_var(sp_var, sp_inc_pn);
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
@@ -1062,6 +1104,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_true_ptr = builder.ins().global_value(types::I64, fmt_true_gv);
         let fmt_false_gv = module.declare_data_in_func(str_false_id, builder.func);
         let fmt_false_ptr = builder.ins().global_value(types::I64, fmt_false_gv);
+        let fmt_int_sp_gv = module.declare_data_in_func(fmt_int_sp_id, builder.func);
+        let fmt_int_sp_ptr = builder.ins().global_value(types::I64, fmt_int_sp_gv);
+        let fmt_str_sp_gv = module.declare_data_in_func(fmt_str_sp_id, builder.func);
+        let fmt_str_sp_ptr = builder.ins().global_value(types::I64, fmt_str_sp_gv);
+        let fmt_float_dec_sp_gv = module.declare_data_in_func(fmt_float_dec_sp_id, builder.func);
+        let fmt_float_dec_sp_ptr = builder.ins().global_value(types::I64, fmt_float_dec_sp_gv);
 
         let printf_ref = module.declare_func_in_func(printf_func, builder.func);
         let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
@@ -1097,6 +1145,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_neg_inf_ptr,
             fmt_true_ptr,
             fmt_false_ptr,
+            fmt_int_sp_ptr,
+            fmt_str_sp_ptr,
+            fmt_float_dec_sp_ptr,
             fmt_div0_ptr,
             fmt_ovf_ptr,
             &[],
@@ -1159,6 +1210,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_true_ptr = builder.ins().global_value(types::I64, fmt_true_gv);
             let fmt_false_gv = module.declare_data_in_func(str_false_id, builder.func);
             let fmt_false_ptr = builder.ins().global_value(types::I64, fmt_false_gv);
+            let fmt_int_sp_gv = module.declare_data_in_func(fmt_int_sp_id, builder.func);
+            let fmt_int_sp_ptr = builder.ins().global_value(types::I64, fmt_int_sp_gv);
+            let fmt_str_sp_gv = module.declare_data_in_func(fmt_str_sp_id, builder.func);
+            let fmt_str_sp_ptr = builder.ins().global_value(types::I64, fmt_str_sp_gv);
+            let fmt_float_dec_sp_gv =
+                module.declare_data_in_func(fmt_float_dec_sp_id, builder.func);
+            let fmt_float_dec_sp_ptr = builder.ins().global_value(types::I64, fmt_float_dec_sp_gv);
 
             let printf_ref = module.declare_func_in_func(printf_func, builder.func);
             let strlen_ref = module.declare_func_in_func(strlen_func, builder.func);
@@ -1202,6 +1260,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_neg_inf_ptr,
                 fmt_true_ptr,
                 fmt_false_ptr,
+                fmt_int_sp_ptr,
+                fmt_str_sp_ptr,
+                fmt_float_dec_sp_ptr,
                 fmt_div0_ptr,
                 fmt_ovf_ptr,
                 &f.param_types,
