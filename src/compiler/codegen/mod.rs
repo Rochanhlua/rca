@@ -30,6 +30,7 @@ enum StackType {
     Bool,
     List(#[allow(dead_code)] ElemType),
     Tuple(u32),
+    Map,
     Struct(usize),
 }
 
@@ -560,6 +561,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::Tuple(_) => {
                                 return Err("tuple -> int not supported in native".to_string());
                             }
+                            StackType::Map => {
+                                return Err("map -> int not supported in native".to_string());
+                            }
                             StackType::Float => {
                                 let f = builder.ins().bitcast(types::F64, MemFlags::new(), val);
                                 let i = builder.ins().fcvt_to_sint(types::I64, f);
@@ -589,6 +593,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Tuple(_) => {
                                 return Err("tuple -> float not supported in native".to_string());
+                            }
+                            StackType::Map => {
+                                return Err("map -> float not supported in native".to_string());
                             }
                             StackType::Str => {
                                 return Err("str -> float not yet supported in native".to_string());
@@ -646,6 +653,38 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let sp_inc = builder.ins().iadd_imm(sp, 1);
                     builder.def_var(sp_var, sp_inc);
                     type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MapNew => {
+                    let size = builder.ins().iconst(types::I64, 8);
+                    let malloc_call = builder.ins().call(malloc_ref, &[size]);
+                    let ptr = builder.inst_results(malloc_call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, ptr, 0);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), ptr, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Map);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MapLen => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    if !matches!(ty, StackType::Map) {
+                        return Err("map_len() needs a Map".to_string());
+                    }
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                    builder.ins().store(MemFlags::new(), len, src, 0);
+                    type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::MakeTuple(n) => {
@@ -982,6 +1021,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
+                            }
+                            StackType::Map => {
+                                return Err("map display not supported in native (yet)".to_string());
                             }
                             StackType::List(elem_ty) => {
                                 builder
