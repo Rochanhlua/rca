@@ -1051,16 +1051,34 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let handle = builder
                         .ins()
                         .load(types::I64, MemFlags::new(), iter_addr, 0);
-                    let start = builder.ins().ushr_imm(handle, 32);
-                    let end = builder.ins().band_imm(handle, 0xffffffff_u32 as i64);
                     let idx_off = builder.ins().iconst(types::I64, (*idx as i64) * 8);
                     let idx_addr = builder.ins().iadd(locals_addr, idx_off);
                     let i = builder.ins().load(types::I64, MemFlags::new(), idx_addr, 0);
-                    let current = builder.ins().iadd(start, i);
-                    let less = builder.ins().icmp(IntCC::SignedLessThan, current, end);
+                    let iter_ty = local_types.get(iter).copied().unwrap_or(StackType::Int);
+                    let (less, var_value) = match iter_ty {
+                        StackType::List(_) => {
+                            let len = builder.ins().load(types::I64, MemFlags::new(), handle, 0);
+                            let in_range = builder.ins().icmp(IntCC::SignedLessThan, i, len);
+                            let elem_idx = builder.ins().iadd_imm(i, 1);
+                            let elem_off = builder.ins().imul_imm(elem_idx, 8);
+                            let elem_addr = builder.ins().iadd(handle, elem_off);
+                            let elem =
+                                builder
+                                    .ins()
+                                    .load(types::I64, MemFlags::new(), elem_addr, 0);
+                            (in_range, elem)
+                        }
+                        _ => {
+                            let start = builder.ins().ushr_imm(handle, 32);
+                            let end = builder.ins().band_imm(handle, 0xffffffff_u32 as i64);
+                            let current = builder.ins().iadd(start, i);
+                            let in_range = builder.ins().icmp(IntCC::SignedLessThan, current, end);
+                            (in_range, current)
+                        }
+                    };
                     let var_off = builder.ins().iconst(types::I64, (*var as i64) * 8);
                     let var_addr = builder.ins().iadd(locals_addr, var_off);
-                    builder.ins().store(MemFlags::new(), current, var_addr, 0);
+                    builder.ins().store(MemFlags::new(), var_value, var_addr, 0);
                     let next_i = builder.ins().iadd_imm(i, 1);
                     builder.ins().store(MemFlags::new(), next_i, idx_addr, 0);
                     builder
