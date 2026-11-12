@@ -57,7 +57,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         I::StrReplace => (3, 1),
         I::MapNew => (0, 1),
         I::MapSet => (3, 1),
-        I::MapGet | I::MapHas => (2, 1),
+        I::MapGet(_) | I::MapHas => (2, 1),
         I::JsonParse => (1, 1),
         I::JsonStringify => (1, 1),
         I::TcpConnect => (2, 1),

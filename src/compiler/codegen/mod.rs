@@ -679,7 +679,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
-                Instruction::MapGet => {
+                Instruction::MapGet(val_ty) => {
                     let key_ty = type_stack.pop().unwrap_or(StackType::Int);
                     let map_ty = type_stack.pop().unwrap_or(StackType::Map);
                     if !matches!(map_ty, StackType::Map) {
@@ -774,7 +774,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         .store(MemFlags::new(), result_val, map_addr, 0);
                     let sp_after = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, sp_after);
-                    type_stack.push(StackType::Int);
+                    type_stack.push(match val_ty {
+                        Type::String => StackType::Str,
+                        Type::Float => StackType::Float,
+                        Type::Bool => StackType::Bool,
+                        _ => StackType::Int,
+                    });
                     builder.ins().jump(blocks[ip + 1], &[]);
                     builder.switch_to_block(miss_blk);
                     builder
