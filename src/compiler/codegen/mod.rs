@@ -655,6 +655,220 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::MapSet => {
+                    let val_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let key_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let map_ty = type_stack.pop().unwrap_or(StackType::Map);
+                    if !matches!(map_ty, StackType::Map) {
+                        return Err("map_set() needs a Map".to_string());
+                    }
+                    let _ = val_ty;
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let val_pos = builder.ins().iadd_imm(sp, -1);
+                    let val_off = builder.ins().imul_imm(val_pos, 8);
+                    let val_addr = builder.ins().iadd(stack_addr, val_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), val_addr, 0);
+                    let key_pos = builder.ins().iadd_imm(sp, -2);
+                    let key_off = builder.ins().imul_imm(key_pos, 8);
+                    let key_addr = builder.ins().iadd(stack_addr, key_off);
+                    let key = builder.ins().load(types::I64, MemFlags::new(), key_addr, 0);
+                    let map_pos = builder.ins().iadd_imm(sp, -3);
+                    let map_off = builder.ins().imul_imm(map_pos, 8);
+                    let map_addr = builder.ins().iadd(stack_addr, map_off);
+                    let map_ptr = builder.ins().load(types::I64, MemFlags::new(), map_addr, 0);
+                    let key_tag_val: i64 = match key_ty {
+                        StackType::Float => 2,
+                        StackType::Str => 3,
+                        StackType::Bool => 4,
+                        _ => 1,
+                    };
+                    let key_tag = builder.ins().iconst(types::I64, key_tag_val);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), map_ptr, 0);
+                    let neg_one = builder.ins().iconst(types::I64, -1);
+                    builder.def_var(Variable::new(2), neg_one);
+                    let zero_i = builder.ins().iconst(types::I64, 0);
+                    builder.def_var(Variable::new(3), zero_i);
+                    let header = builder.create_block();
+                    let body = builder.create_block();
+                    let after_lookup = builder.create_block();
+                    builder.ins().jump(header, &[]);
+                    builder.switch_to_block(header);
+                    let ci = builder.use_var(Variable::new(3));
+                    let in_range = builder.ins().icmp(IntCC::SignedLessThan, ci, len);
+                    builder.ins().brif(in_range, body, &[], after_lookup, &[]);
+                    builder.seal_block(body);
+                    builder.seal_block(after_lookup);
+                    builder.switch_to_block(body);
+                    let ci2 = builder.use_var(Variable::new(3));
+                    let tag_off = builder.ins().imul_imm(ci2, 24);
+                    let tag_pos = builder.ins().iadd_imm(tag_off, 8);
+                    let tag_ptr = builder.ins().iadd(map_ptr, tag_pos);
+                    let tag_i = builder.ins().load(types::I64, MemFlags::new(), tag_ptr, 0);
+                    let tags_match = builder.ins().icmp(IntCC::Equal, tag_i, key_tag);
+                    let key_off_b = builder.ins().imul_imm(ci2, 24);
+                    let key_pos_b = builder.ins().iadd_imm(key_off_b, 16);
+                    let key_ptr_b = builder.ins().iadd(map_ptr, key_pos_b);
+                    let key_i = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), key_ptr_b, 0);
+                    let cmp_result = match key_ty {
+                        StackType::Str => {
+                            let sc = builder.ins().call(strcmp_ref, &[key_i, key]);
+                            let sr = builder.inst_results(sc)[0];
+                            let zero_i32 = builder.ins().iconst(types::I32, 0);
+                            builder.ins().icmp(IntCC::Equal, sr, zero_i32)
+                        }
+                        StackType::Float => {
+                            let a = builder.ins().bitcast(types::F64, MemFlags::new(), key_i);
+                            let b = builder.ins().bitcast(types::F64, MemFlags::new(), key);
+                            builder.ins().fcmp(FloatCC::Equal, a, b)
+                        }
+                        _ => builder.ins().icmp(IntCC::Equal, key_i, key),
+                    };
+                    let match_both = builder.ins().band(tags_match, cmp_result);
+                    let current = builder.use_var(Variable::new(2));
+                    let next_found = builder.ins().select(match_both, ci2, current);
+                    builder.def_var(Variable::new(2), next_found);
+                    let next_ci = builder.ins().iadd_imm(ci2, 1);
+                    builder.def_var(Variable::new(3), next_ci);
+                    builder.ins().jump(header, &[]);
+                    builder.seal_block(header);
+                    builder.switch_to_block(after_lookup);
+                    let found = builder.use_var(Variable::new(2));
+                    let found_any =
+                        builder
+                            .ins()
+                            .icmp_imm(IntCC::SignedGreaterThanOrEqual, found, 0);
+                    let upd_blk = builder.create_block();
+                    let ins_blk = builder.create_block();
+                    let after_all = builder.create_block();
+                    builder.ins().brif(found_any, upd_blk, &[], ins_blk, &[]);
+                    builder.seal_block(upd_blk);
+                    builder.seal_block(ins_blk);
+                    builder.switch_to_block(upd_blk);
+                    let fv = builder.use_var(Variable::new(2));
+                    let upd_off = builder.ins().imul_imm(fv, 24);
+                    let upd_pos = builder.ins().iadd_imm(upd_off, 24);
+                    let upd_ptr = builder.ins().iadd(map_ptr, upd_pos);
+                    builder.ins().store(MemFlags::new(), val, upd_ptr, 0);
+                    builder.ins().store(MemFlags::new(), map_ptr, map_addr, 0);
+                    builder.ins().jump(after_all, &[]);
+                    builder.switch_to_block(ins_blk);
+                    let new_len = builder.ins().iadd_imm(len, 1);
+                    let slots = builder.ins().imul_imm(new_len, 3);
+                    let slots_p = builder.ins().iadd_imm(slots, 1);
+                    let bytes = builder.ins().imul_imm(slots_p, 8);
+                    let alloc = builder.ins().call(malloc_ref, &[bytes]);
+                    let new_ptr = builder.inst_results(alloc)[0];
+                    let old_slots = builder.ins().imul_imm(len, 3);
+                    let old_slots_p = builder.ins().iadd_imm(old_slots, 1);
+                    let old_bytes = builder.ins().imul_imm(old_slots_p, 8);
+                    builder
+                        .ins()
+                        .call(memcpy_ref, &[new_ptr, map_ptr, old_bytes]);
+                    let entry_off = builder.ins().imul_imm(len, 24);
+                    let entry_pos = builder.ins().iadd_imm(entry_off, 8);
+                    let entry_ptr = builder.ins().iadd(new_ptr, entry_pos);
+                    builder.ins().store(MemFlags::new(), key_tag, entry_ptr, 0);
+                    let entry_key_p = builder.ins().iadd_imm(entry_ptr, 8);
+                    builder.ins().store(MemFlags::new(), key, entry_key_p, 0);
+                    let entry_val_p = builder.ins().iadd_imm(entry_ptr, 16);
+                    builder.ins().store(MemFlags::new(), val, entry_val_p, 0);
+                    builder.ins().store(MemFlags::new(), new_len, new_ptr, 0);
+                    builder.ins().store(MemFlags::new(), new_ptr, map_addr, 0);
+                    builder.ins().jump(after_all, &[]);
+                    builder.seal_block(after_all);
+                    builder.switch_to_block(after_all);
+                    let sp_after = builder.ins().iadd_imm(sp, -2);
+                    builder.def_var(sp_var, sp_after);
+                    type_stack.push(StackType::Map);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MapHas => {
+                    let key_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let map_ty = type_stack.pop().unwrap_or(StackType::Map);
+                    if !matches!(map_ty, StackType::Map) {
+                        return Err("map_has() needs a Map".to_string());
+                    }
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let key_pos = builder.ins().iadd_imm(sp, -1);
+                    let key_off = builder.ins().imul_imm(key_pos, 8);
+                    let key_addr = builder.ins().iadd(stack_addr, key_off);
+                    let key = builder.ins().load(types::I64, MemFlags::new(), key_addr, 0);
+                    let map_pos = builder.ins().iadd_imm(sp, -2);
+                    let map_off = builder.ins().imul_imm(map_pos, 8);
+                    let map_addr = builder.ins().iadd(stack_addr, map_off);
+                    let map_ptr = builder.ins().load(types::I64, MemFlags::new(), map_addr, 0);
+                    let key_tag_val: i64 = match key_ty {
+                        StackType::Float => 2,
+                        StackType::Str => 3,
+                        StackType::Bool => 4,
+                        _ => 1,
+                    };
+                    let key_tag = builder.ins().iconst(types::I64, key_tag_val);
+                    let len = builder.ins().load(types::I64, MemFlags::new(), map_ptr, 0);
+                    let zero_i8 = builder.ins().iconst(types::I8, 0);
+                    builder.def_var(Variable::new(4), zero_i8);
+                    let zero_i64 = builder.ins().iconst(types::I64, 0);
+                    builder.def_var(Variable::new(5), zero_i64);
+                    let header = builder.create_block();
+                    let body = builder.create_block();
+                    let after = builder.create_block();
+                    builder.ins().jump(header, &[]);
+                    builder.switch_to_block(header);
+                    let ci = builder.use_var(Variable::new(5));
+                    let in_range = builder.ins().icmp(IntCC::SignedLessThan, ci, len);
+                    builder.ins().brif(in_range, body, &[], after, &[]);
+                    builder.seal_block(body);
+                    builder.seal_block(after);
+                    builder.switch_to_block(body);
+                    let ci2 = builder.use_var(Variable::new(5));
+                    let tag_off = builder.ins().imul_imm(ci2, 24);
+                    let tag_pos = builder.ins().iadd_imm(tag_off, 8);
+                    let tag_ptr = builder.ins().iadd(map_ptr, tag_pos);
+                    let tag_i = builder.ins().load(types::I64, MemFlags::new(), tag_ptr, 0);
+                    let tags_match = builder.ins().icmp(IntCC::Equal, tag_i, key_tag);
+                    let key_off_b = builder.ins().imul_imm(ci2, 24);
+                    let key_pos_b = builder.ins().iadd_imm(key_off_b, 16);
+                    let key_ptr_b = builder.ins().iadd(map_ptr, key_pos_b);
+                    let key_i = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), key_ptr_b, 0);
+                    let cmp_result = match key_ty {
+                        StackType::Str => {
+                            let sc = builder.ins().call(strcmp_ref, &[key_i, key]);
+                            let sr = builder.inst_results(sc)[0];
+                            let zero_i32 = builder.ins().iconst(types::I32, 0);
+                            builder.ins().icmp(IntCC::Equal, sr, zero_i32)
+                        }
+                        StackType::Float => {
+                            let a = builder.ins().bitcast(types::F64, MemFlags::new(), key_i);
+                            let b = builder.ins().bitcast(types::F64, MemFlags::new(), key);
+                            builder.ins().fcmp(FloatCC::Equal, a, b)
+                        }
+                        _ => builder.ins().icmp(IntCC::Equal, key_i, key),
+                    };
+                    let match_both = builder.ins().band(tags_match, cmp_result);
+                    let current = builder.use_var(Variable::new(4));
+                    let next_r = builder.ins().bor(current, match_both);
+                    builder.def_var(Variable::new(4), next_r);
+                    let next_ci = builder.ins().iadd_imm(ci2, 1);
+                    builder.def_var(Variable::new(5), next_ci);
+                    builder.ins().jump(header, &[]);
+                    builder.seal_block(header);
+                    builder.switch_to_block(after);
+                    let result_i8 = builder.use_var(Variable::new(4));
+                    let result_i64 = builder.ins().uextend(types::I64, result_i8);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), result_i64, map_addr, 0);
+                    let sp_after = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, sp_after);
+                    type_stack.push(StackType::Bool);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::MapNew => {
                     let size = builder.ins().iconst(types::I64, 8);
                     let malloc_call = builder.ins().call(malloc_ref, &[size]);
@@ -1953,6 +2167,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let sp_var = Variable::new(0);
         builder.declare_var(sp_var, types::I64);
         builder.declare_var(Variable::new(1), types::I64);
+        builder.declare_var(Variable::new(2), types::I64);
+        builder.declare_var(Variable::new(3), types::I64);
+        builder.declare_var(Variable::new(4), types::I8);
+        builder.declare_var(Variable::new(5), types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
         builder.def_var(sp_var, zero);
 
@@ -2102,6 +2320,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let sp_var = Variable::new(0);
             builder.declare_var(sp_var, types::I64);
             builder.declare_var(Variable::new(1), types::I64);
+            builder.declare_var(Variable::new(2), types::I64);
+            builder.declare_var(Variable::new(3), types::I64);
+            builder.declare_var(Variable::new(4), types::I8);
+            builder.declare_var(Variable::new(5), types::I64);
             let zero = builder.ins().iconst(types::I64, 0);
             builder.def_var(sp_var, zero);
 
