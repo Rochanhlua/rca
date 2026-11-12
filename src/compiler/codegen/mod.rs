@@ -200,6 +200,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(str_false_id, &str_false_data)
         .map_err(|e| e.to_string())?;
 
+    let mut globals_data = DataDescription::new();
+    globals_data.define_zeroinit(8192);
+    let globals_id = module
+        .declare_data("rca_globals", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(globals_id, &globals_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
@@ -230,7 +239,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          chunk: &crate::compiler::ir::Chunk,
                          stack_slot: StackSlot,
                          locals_slot: StackSlot,
-                         globals_slot: StackSlot,
+                         globals_gv: cranelift_codegen::ir::GlobalValue,
                          sp_var: Variable,
                          printf_ref: FuncRef,
                          strlen_ref: FuncRef,
@@ -664,7 +673,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let src = builder.ins().iadd(sp_addr, sp_off);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
-                    let globals_addr = builder.ins().stack_addr(types::I64, globals_slot, 0);
+                    let globals_addr = builder.ins().global_value(types::I64, globals_gv);
                     let dest = builder.ins().iadd(globals_addr, slot_off);
                     builder.ins().store(MemFlags::new(), val, dest, 0);
                     builder.ins().jump(blocks[ip + 1], &[]);
@@ -675,7 +684,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         .copied()
                         .unwrap_or(StackType::Int);
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
-                    let globals_addr = builder.ins().stack_addr(types::I64, globals_slot, 0);
+                    let globals_addr = builder.ins().global_value(types::I64, globals_gv);
                     let src = builder.ins().iadd(globals_addr, slot_off);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let sp = builder.use_var(sp_var);
@@ -1028,8 +1037,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
         let locals_slot = builder
             .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
-        let globals_slot = builder
-            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
+        let globals_gv = module.declare_data_in_func(globals_id, builder.func);
         let sp_var = Variable::new(0);
         builder.declare_var(sp_var, types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
@@ -1072,7 +1080,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             &program.main.chunk,
             stack_slot,
             locals_slot,
-            globals_slot,
+            globals_gv,
             sp_var,
             printf_ref,
             strlen_ref,
@@ -1126,10 +1134,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 StackSlotKind::ExplicitSlot,
                 slot_size,
             ));
-            let globals_slot = builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                slot_size,
-            ));
+            let globals_gv = module.declare_data_in_func(globals_id, builder.func);
             let sp_var = Variable::new(0);
             builder.declare_var(sp_var, types::I64);
             let zero = builder.ins().iconst(types::I64, 0);
@@ -1180,7 +1185,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 &f.chunk,
                 stack_slot,
                 locals_slot,
-                globals_slot,
+                globals_gv,
                 sp_var,
                 printf_ref,
                 strlen_ref,
