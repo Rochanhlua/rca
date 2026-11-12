@@ -119,6 +119,7 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                         .arg(&out_path)
                         .arg("-o")
                         .arg(exe_path)
+                        .arg("-lm")
                         .status();
                     match status {
                         Ok(s) if s.success() => {
@@ -257,6 +258,7 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                         .arg(&out_path)
                         .arg("-o")
                         .arg(exe_path)
+                        .arg("-lm")
                         .status();
                     match status {
                         Ok(s) if s.success() => {

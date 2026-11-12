@@ -103,6 +103,35 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("strcmp", Linkage::Import, &strcmp_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut pow_sig = module.make_signature();
+    pow_sig.params.push(AbiParam::new(types::F64));
+    pow_sig.params.push(AbiParam::new(types::F64));
+    pow_sig.returns.push(AbiParam::new(types::F64));
+    let pow_func = module
+        .declare_function("pow", Linkage::Import, &pow_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut floor_sig = module.make_signature();
+    floor_sig.params.push(AbiParam::new(types::F64));
+    floor_sig.returns.push(AbiParam::new(types::F64));
+    let floor_func = module
+        .declare_function("floor", Linkage::Import, &floor_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut ceil_sig = module.make_signature();
+    ceil_sig.params.push(AbiParam::new(types::F64));
+    ceil_sig.returns.push(AbiParam::new(types::F64));
+    let ceil_func = module
+        .declare_function("ceil", Linkage::Import, &ceil_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut round_sig = module.make_signature();
+    round_sig.params.push(AbiParam::new(types::F64));
+    round_sig.returns.push(AbiParam::new(types::F64));
+    let round_func = module
+        .declare_function("round", Linkage::Import, &round_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -446,6 +475,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          memcpy_ref: FuncRef,
                          strcmp_ref: FuncRef,
                          exit_ref: FuncRef,
+                         pow_ref: FuncRef,
+                         floor_ref: FuncRef,
+                         ceil_ref: FuncRef,
+                         round_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
@@ -2277,6 +2310,97 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::MathAbs => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let r = match ty {
+                        StackType::Float => {
+                            let mask = builder
+                                .ins()
+                                .iconst(types::I64, 0x7FFF_FFFF_FFFF_FFFF_u64 as i64);
+                            builder.ins().band(val, mask)
+                        }
+                        StackType::Int => {
+                            let zero = builder.ins().iconst(types::I64, 0);
+                            let neg = builder.ins().icmp(IntCC::SignedLessThan, val, zero);
+                            let neg_val = builder.ins().ineg(val);
+                            builder.ins().select(neg, neg_val, val)
+                        }
+                        _ => return Err("abs() needs a number".to_string()),
+                    };
+                    builder.ins().store(MemFlags::new(), r, src, 0);
+                    type_stack.push(ty);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MathPow => {
+                    let ty_b = type_stack.pop().unwrap_or(StackType::Int);
+                    let ty_a = type_stack.pop().unwrap_or(StackType::Int);
+                    let both_int = matches!(ty_a, StackType::Int) && matches!(ty_b, StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let b_off = builder.ins().imul_imm(new_sp, 8);
+                    let b_addr = builder.ins().iadd(stack_addr, b_off);
+                    let b_bits = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let a_addr = builder.ins().iadd_imm(b_addr, -8);
+                    let a_bits = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let b_f = if matches!(ty_b, StackType::Int) {
+                        builder.ins().fcvt_from_sint(types::F64, b_bits)
+                    } else {
+                        builder.ins().bitcast(types::F64, MemFlags::new(), b_bits)
+                    };
+                    let a_f = if matches!(ty_a, StackType::Int) {
+                        builder.ins().fcvt_from_sint(types::F64, a_bits)
+                    } else {
+                        builder.ins().bitcast(types::F64, MemFlags::new(), a_bits)
+                    };
+                    let call = builder.ins().call(pow_ref, &[a_f, b_f]);
+                    let r_f = builder.inst_results(call)[0];
+                    let r_bits = if both_int {
+                        builder.ins().fcvt_to_sint(types::I64, r_f)
+                    } else {
+                        builder.ins().bitcast(types::I64, MemFlags::new(), r_f)
+                    };
+                    builder.ins().store(MemFlags::new(), r_bits, a_addr, 0);
+                    type_stack.push(if both_int {
+                        StackType::Int
+                    } else {
+                        StackType::Float
+                    });
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MathFloor | Instruction::MathCeil | Instruction::MathRound => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let f_val = match ty {
+                        StackType::Int => builder.ins().fcvt_from_sint(types::F64, val),
+                        StackType::Float => builder.ins().bitcast(types::F64, MemFlags::new(), val),
+                        _ => {
+                            return Err("math function needs a number".to_string());
+                        }
+                    };
+                    let call = match ins {
+                        Instruction::MathFloor => builder.ins().call(floor_ref, &[f_val]),
+                        Instruction::MathCeil => builder.ins().call(ceil_ref, &[f_val]),
+                        _ => builder.ins().call(round_ref, &[f_val]),
+                    };
+                    let r_f = builder.inst_results(call)[0];
+                    let r_bits = builder.ins().bitcast(types::I64, MemFlags::new(), r_f);
+                    builder.ins().store(MemFlags::new(), r_bits, src, 0);
+                    type_stack.push(StackType::Float);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -2358,6 +2482,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
         let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
         let exit_ref = module.declare_func_in_func(exit_func, builder.func);
+        let pow_ref = module.declare_func_in_func(pow_func, builder.func);
+        let floor_ref = module.declare_func_in_func(floor_func, builder.func);
+        let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
+        let round_ref = module.declare_func_in_func(round_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
         let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -2410,6 +2538,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             memcpy_ref,
             strcmp_ref,
             exit_ref,
+            pow_ref,
+            floor_ref,
+            ceil_ref,
+            round_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_int_ptr,
@@ -2518,6 +2650,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let memcpy_ref = module.declare_func_in_func(memcpy_func, builder.func);
             let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
             let exit_ref = module.declare_func_in_func(exit_func, builder.func);
+            let pow_ref = module.declare_func_in_func(pow_func, builder.func);
+            let floor_ref = module.declare_func_in_func(floor_func, builder.func);
+            let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
+            let round_ref = module.declare_func_in_func(round_func, builder.func);
             let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
             let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
             let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -2578,6 +2714,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 memcpy_ref,
                 strcmp_ref,
                 exit_ref,
+                pow_ref,
+                floor_ref,
+                ceil_ref,
+                round_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_int_ptr,
