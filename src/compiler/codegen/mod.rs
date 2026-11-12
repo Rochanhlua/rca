@@ -1382,6 +1382,46 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::ListPush => {
+                    let list_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let _val_ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let stack_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let val_pos = builder.ins().iadd_imm(sp, -2);
+                    let val_off = builder.ins().imul_imm(val_pos, 8);
+                    let val_addr = builder.ins().iadd(stack_addr, val_off);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), val_addr, 0);
+                    let list_pos = builder.ins().iadd_imm(sp, -1);
+                    let list_off = builder.ins().imul_imm(list_pos, 8);
+                    let list_addr = builder.ins().iadd(stack_addr, list_off);
+                    let list_ptr = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), list_addr, 0);
+                    let elem_ty = match list_ty {
+                        StackType::List(e) => e,
+                        _ => return Err("push() needs a List".to_string()),
+                    };
+                    let old_len = builder.ins().load(types::I64, MemFlags::new(), list_ptr, 0);
+                    let new_len = builder.ins().iadd_imm(old_len, 1);
+                    let size_elems = builder.ins().iadd_imm(old_len, 2);
+                    let size_bytes = builder.ins().imul_imm(size_elems, 8);
+                    let malloc_call = builder.ins().call(malloc_ref, &[size_bytes]);
+                    let new_ptr = builder.inst_results(malloc_call)[0];
+                    let old_size_elems = builder.ins().iadd_imm(old_len, 1);
+                    let old_size_bytes = builder.ins().imul_imm(old_size_elems, 8);
+                    builder
+                        .ins()
+                        .call(memcpy_ref, &[new_ptr, list_ptr, old_size_bytes]);
+                    let new_elem_off = builder.ins().imul_imm(new_len, 8);
+                    let new_elem_addr = builder.ins().iadd(new_ptr, new_elem_off);
+                    builder.ins().store(MemFlags::new(), val, new_elem_addr, 0);
+                    builder.ins().store(MemFlags::new(), new_len, new_ptr, 0);
+                    builder.ins().store(MemFlags::new(), new_ptr, val_addr, 0);
+                    let sp_after = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, sp_after);
+                    type_stack.push(StackType::List(elem_ty));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::Neg => {
                     let ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);

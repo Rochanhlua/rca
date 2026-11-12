@@ -92,3 +92,5 @@
 - **Planned:** float shortest-representation parity with the VM, list indexing (`xs[i]`) and `push` in native codegen, and nested list display.
 - **Implemented:** native codegen for list indexing — `xs[i]` on an `Int` index now compiles and runs for lists of `Int`, `Float`, `String`, and `Bool`, matching the VM. Out-of-range and negative indices print `runtime error: index out of bounds` and exit 1; the VM's message also carries the index and length, and span-aware errors remain a separate milestone.
 - **Planned:** source-span-aware runtime error messages, list `push`, and `StoreIndex` (`xs[i] = v`).
+- **Implemented:** native codegen for `xs.push(v)` — appending to a list of `Int`, `Float`, `String`, or `Bool` now compiles and runs, matching the VM. The push allocates a new `(len+2)*8` buffer, copies the old header and elements, writes the new element, and stores the updated header; the previous buffer is not freed (native has no GC yet, so this matches the VM's observable behavior).
+- **Planned:** `StoreIndex` (`xs[i] = v`), list `pop`/`remove`, and a shared runtime list layout with proper reclamation.
