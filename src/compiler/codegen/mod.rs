@@ -406,6 +406,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let tuple_types_registry: std::cell::RefCell<Vec<Vec<ElemType>>> =
         std::cell::RefCell::new(Vec::new());
 
+    let enum_strs: std::cell::RefCell<
+        std::collections::HashMap<(String, String), cranelift_module::DataId>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
                          chunk: &crate::compiler::ir::Chunk,
@@ -605,6 +609,45 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
+                Instruction::PushEnum(name, variant) => {
+                    let key = (name.clone(), variant.clone());
+                    let data_id = {
+                        let mut reg = enum_strs.borrow_mut();
+                        if let Some(&existing) = reg.get(&key) {
+                            existing
+                        } else {
+                            let mut data = DataDescription::new();
+                            let mut bytes = format!("{}.{}", name, variant).into_bytes();
+                            bytes.push(0);
+                            data.define(bytes.into_boxed_slice());
+                            let n = reg.len();
+                            let new_id = module
+                                .declare_data(
+                                    &format!("enum_str_{}", n),
+                                    Linkage::Local,
+                                    false,
+                                    false,
+                                )
+                                .map_err(|e| e.to_string())?;
+                            module
+                                .define_data(new_id, &data)
+                                .map_err(|e| e.to_string())?;
+                            reg.insert(key, new_id);
+                            new_id
+                        }
+                    };
+                    let gv = module.declare_data_in_func(data_id, builder.func);
+                    let ptr = builder.ins().global_value(types::I64, gv);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(sp_addr, sp_off);
+                    builder.ins().store(MemFlags::new(), ptr, dest, 0);
+                    let sp_inc = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, sp_inc);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::MakeTuple(n) => {
                     let mut popped = Vec::with_capacity(*n);
                     for _ in 0..*n {
