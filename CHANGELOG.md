@@ -76,3 +76,5 @@
 - **Planned:** unary `Neg` in native codegen (`Neg` is currently VM-only), needed for double-negation of `INT_MIN`.
 - **Implemented:** native codegen prints `Bool` as `true`/`false` — added `StackType::Bool`, set by `PushBool` and all comparison instructions, with a `Print` arm that selects the string via `printf`. Matches the VM output; `int(bool)` is an identity and `float(bool)` uses `fcvt_from_sint`. Previously native printed `1`/`0`.
 - **Planned:** `Bool` display parity is complete; remaining float formatting (shortest representation vs fixed 3-decimal) is tracked separately.
+- **Implemented:** globals are now shared across functions in native codegen — replaced the per-function globals stack slot with a module-level 8 KiB `rca_globals` data section resolved through `global_value`, so a global or const written in `main` is visible to every user function. Previously each function had a private zeroed slot, so `return g + 1` with `let g = 100` yielded `1` instead of `101`.
+- **Planned:** sized `rca_globals` based on the highest global slot used, and a guard for out-of-range global slots.
