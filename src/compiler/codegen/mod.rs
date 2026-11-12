@@ -1052,6 +1052,52 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         builder.ins().return_(&[ret_val]);
                     }
                 }
+                Instruction::Neg => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    match ty {
+                        StackType::Int => {
+                            let int_min_v = builder.ins().iconst(types::I64, i64::MIN);
+                            let is_int_min = builder.ins().icmp(IntCC::Equal, val, int_min_v);
+                            let err_block = builder.create_block();
+                            let ok_block = builder.create_block();
+                            builder
+                                .ins()
+                                .brif(is_int_min, err_block, &[], ok_block, &[]);
+                            builder.seal_block(err_block);
+                            builder.seal_block(ok_block);
+                            builder.switch_to_block(err_block);
+                            builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_ovf_ptr]);
+                            let exit_arg = builder.ins().iconst(types::I32, 1);
+                            builder.ins().call(exit_ref, &[exit_arg]);
+                            if is_main {
+                                let ret = builder.ins().iconst(types::I32, 1);
+                                builder.ins().return_(&[ret]);
+                            } else {
+                                let ret = builder.ins().iconst(types::I64, 0);
+                                builder.ins().return_(&[ret]);
+                            }
+                            builder.switch_to_block(ok_block);
+                            let r = builder.ins().ineg(val);
+                            builder.ins().store(MemFlags::new(), r, src, 0);
+                            type_stack.push(StackType::Int);
+                        }
+                        StackType::Float => {
+                            let f_v = builder.ins().bitcast(types::F64, MemFlags::new(), val);
+                            let fneg = builder.ins().fneg(f_v);
+                            let r = builder.ins().bitcast(types::I64, MemFlags::new(), fneg);
+                            builder.ins().store(MemFlags::new(), r, src, 0);
+                            type_stack.push(StackType::Float);
+                        }
+                        _ => return Err("neg on non-numeric".to_string()),
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
