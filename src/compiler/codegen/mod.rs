@@ -237,6 +237,17 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())?;
 
     // Declare user functions
+    let func_ret_types: Vec<StackType> = program
+        .functions
+        .iter()
+        .map(|f| match &f.return_type {
+            Type::Float => StackType::Float,
+            Type::String => StackType::Str,
+            Type::Bool => StackType::Bool,
+            _ => StackType::Int,
+        })
+        .collect();
+
     let mut func_ids: Vec<FuncId> = Vec::new();
     for f in &program.functions {
         let mut sig = module.make_signature();
@@ -1005,7 +1016,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().store(MemFlags::new(), ret_val, dest, 0);
                     let sp_inc = builder.ins().iadd_imm(sp, 1);
                     builder.def_var(sp_var, sp_inc);
-                    type_stack.push(StackType::Int);
+                    type_stack.push(func_ret_types[*id]);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::Jump(target) => {

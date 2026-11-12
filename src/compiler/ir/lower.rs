@@ -110,6 +110,7 @@ impl Compiler {
                 arity: 0,
                 num_locals: self.state.next_slot,
                 param_types: vec![],
+                return_type: Type::None,
                 chunk: self.state.chunk,
             },
             functions: self.functions,
@@ -166,6 +167,11 @@ impl Compiler {
                                 }
                             })
                             .collect(),
+                        return_type: f
+                            .return_type
+                            .as_ref()
+                            .map(|te| Type::from_name(&te.name).unwrap_or(Type::Unknown))
+                            .unwrap_or(Type::None),
                         chunk: Chunk::default(),
                     });
                 }
@@ -301,6 +307,11 @@ impl Compiler {
                     }
                 })
                 .collect(),
+            return_type: f
+                .return_type
+                .as_ref()
+                .map(|te| Type::from_name(&te.name).unwrap_or(Type::Unknown))
+                .unwrap_or(Type::None),
             chunk: state.chunk,
         };
         Ok(())

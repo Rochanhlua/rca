@@ -166,6 +166,7 @@ pub struct Function {
     pub arity: usize,
     pub num_locals: usize,
     pub param_types: Vec<Type>,
+    pub return_type: Type,
     pub chunk: Chunk,
 }
 

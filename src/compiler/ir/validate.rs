@@ -249,6 +249,7 @@ mod tests {
                 arity: 0,
                 num_locals: 1,
                 param_types: vec![],
+                return_type: crate::compiler::types::Type::None,
                 chunk: Chunk { code, spans },
             },
             functions: vec![],
