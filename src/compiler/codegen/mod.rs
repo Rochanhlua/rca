@@ -15,12 +15,20 @@ use std::collections::HashMap;
 use crate::compiler::ir::{ConvKind, Instruction, IrProgram, StructInfo};
 
 #[derive(Clone, Copy)]
+enum ElemType {
+    Int,
+    Float,
+    Str,
+    Bool,
+}
+
+#[derive(Clone, Copy)]
 enum StackType {
     Int,
     Float,
     Str,
     Bool,
-    List,
+    List(#[allow(dead_code)] ElemType),
     Struct(usize),
 }
 
@@ -237,6 +245,87 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(globals_id, &globals_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_str_raw_data = DataDescription::new();
+    fmt_str_raw_data.define(b"%s\0".to_vec().into_boxed_slice());
+    let fmt_str_raw_id = module
+        .declare_data("fmt_str_raw", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_str_raw_id, &fmt_str_raw_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_lb_data = DataDescription::new();
+    fmt_lb_data.define(b"[\0".to_vec().into_boxed_slice());
+    let fmt_lb_id = module
+        .declare_data("fmt_lb", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_lb_id, &fmt_lb_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_rb_data = DataDescription::new();
+    fmt_rb_data.define(b"]\n\0".to_vec().into_boxed_slice());
+    let fmt_rb_id = module
+        .declare_data("fmt_rb", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_rb_id, &fmt_rb_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_rb_sp_data = DataDescription::new();
+    fmt_rb_sp_data.define(b"] \0".to_vec().into_boxed_slice());
+    let fmt_rb_sp_id = module
+        .declare_data("fmt_rb_sp", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_rb_sp_id, &fmt_rb_sp_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_comma_data = DataDescription::new();
+    fmt_comma_data.define(b", \0".to_vec().into_boxed_slice());
+    let fmt_comma_id = module
+        .declare_data("fmt_comma", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_comma_id, &fmt_comma_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_empty_data = DataDescription::new();
+    fmt_empty_data.define(b"\0".to_vec().into_boxed_slice());
+    let fmt_empty_id = module
+        .declare_data("fmt_empty", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_empty_id, &fmt_empty_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_int_elem_data = DataDescription::new();
+    fmt_int_elem_data.define(b"%lld\0".to_vec().into_boxed_slice());
+    let fmt_int_elem_id = module
+        .declare_data("fmt_int_elem", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_int_elem_id, &fmt_int_elem_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_str_elem_data = DataDescription::new();
+    fmt_str_elem_data.define(b"\"%s\"\0".to_vec().into_boxed_slice());
+    let fmt_str_elem_id = module
+        .declare_data("fmt_str_elem", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_str_elem_id, &fmt_str_elem_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_float_dec_elem_data = DataDescription::new();
+    fmt_float_dec_elem_data.define(b"%03lld\0".to_vec().into_boxed_slice());
+    let fmt_float_dec_elem_id = module
+        .declare_data("fmt_float_dec_elem", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_float_dec_elem_id, &fmt_float_dec_elem_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let func_ret_types: Vec<StackType> = program
         .functions
@@ -300,6 +389,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_float_dec_sp_ptr: Value,
                          fmt_div0_ptr: Value,
                          fmt_ovf_ptr: Value,
+                         fmt_str_raw_ptr: Value,
+                         fmt_lb_ptr: Value,
+                         fmt_rb_ptr: Value,
+                         fmt_rb_sp_ptr: Value,
+                         fmt_comma_ptr: Value,
+                         fmt_empty_ptr: Value,
+                         fmt_int_elem_ptr: Value,
+                         fmt_str_elem_ptr: Value,
+                         fmt_float_dec_elem_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
@@ -404,7 +502,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Int => (val, StackType::Int),
                             StackType::Bool => (val, StackType::Int),
-                            StackType::List => {
+                            StackType::List(_) => {
                                 return Err("list -> int not supported in native".to_string());
                             }
                             StackType::Float => {
@@ -431,7 +529,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
                                 (bits, StackType::Float)
                             }
-                            StackType::List => {
+                            StackType::List(_) => {
                                 return Err("list -> float not supported in native".to_string());
                             }
                             StackType::Str => {
@@ -480,10 +578,20 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().store(MemFlags::new(), ptr, dst_final2, 0);
                     let sp_inc = builder.ins().iadd_imm(sp_new, 1);
                     builder.def_var(sp_var, sp_inc);
-                    for _ in 0..*n {
-                        type_stack.pop();
+                    let mut elem_ty = ElemType::Int;
+                    for i in 0..*n {
+                        let popped = type_stack.pop().unwrap_or(StackType::Int);
+                        if i + 1 == *n {
+                            elem_ty = match popped {
+                                StackType::Int => ElemType::Int,
+                                StackType::Float => ElemType::Float,
+                                StackType::Str => ElemType::Str,
+                                StackType::Bool => ElemType::Bool,
+                                _ => ElemType::Int,
+                            };
+                        }
                     }
-                    type_stack.push(StackType::List);
+                    type_stack.push(StackType::List(elem_ty));
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::MakeStruct(id) => {
@@ -650,10 +758,109 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, ptr]);
                             }
-                            StackType::List => {
-                                return Err(
-                                    "list display not supported in native (yet)".to_string()
-                                );
+                            StackType::List(elem_ty) => {
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, fmt_lb_ptr]);
+                                let counter_var = Variable::new(1);
+                                let zero_c = builder.ins().iconst(types::I64, 0);
+                                builder.def_var(counter_var, zero_c);
+                                let header = builder.create_block();
+                                let body = builder.create_block();
+                                let after = builder.create_block();
+                                builder.ins().jump(header, &[]);
+                                builder.switch_to_block(header);
+                                let ci = builder.use_var(counter_var);
+                                let clen = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                                let in_range = builder.ins().icmp(IntCC::SignedLessThan, ci, clen);
+                                builder.ins().brif(in_range, body, &[], after, &[]);
+                                builder.seal_block(body);
+                                builder.seal_block(after);
+                                builder.switch_to_block(body);
+                                let ci2 = builder.use_var(counter_var);
+                                let zero2 = builder.ins().iconst(types::I64, 0);
+                                let has_sep =
+                                    builder.ins().icmp(IntCC::SignedGreaterThan, ci2, zero2);
+                                let sep_ptr =
+                                    builder.ins().select(has_sep, fmt_comma_ptr, fmt_empty_ptr);
+                                builder.ins().call(printf_ref, &[fmt_str_raw_ptr, sep_ptr]);
+                                let elem_idx = builder.ins().iadd_imm(ci2, 1);
+                                let elem_off = builder.ins().imul_imm(elem_idx, 8);
+                                let elem_addr = builder.ins().iadd(val, elem_off);
+                                let elem =
+                                    builder
+                                        .ins()
+                                        .load(types::I64, MemFlags::new(), elem_addr, 0);
+                                match elem_ty {
+                                    ElemType::Int => {
+                                        builder.ins().call(printf_ref, &[fmt_int_elem_ptr, elem]);
+                                    }
+                                    ElemType::Str => {
+                                        builder.ins().call(printf_ref, &[fmt_str_elem_ptr, elem]);
+                                    }
+                                    ElemType::Bool => {
+                                        let nz = builder.ins().icmp_imm(IntCC::NotEqual, elem, 0);
+                                        let bptr =
+                                            builder.ins().select(nz, fmt_true_ptr, fmt_false_ptr);
+                                        builder.ins().call(printf_ref, &[fmt_str_raw_ptr, bptr]);
+                                    }
+                                    ElemType::Float => {
+                                        let fe = builder.ins().bitcast(
+                                            types::F64,
+                                            MemFlags::new(),
+                                            elem,
+                                        );
+                                        let is_nan = builder.ins().fcmp(FloatCC::NotEqual, fe, fe);
+                                        let pos_inf = builder.ins().f64const(f64::INFINITY);
+                                        let neg_inf = builder.ins().f64const(f64::NEG_INFINITY);
+                                        let is_pi = builder.ins().fcmp(FloatCC::Equal, fe, pos_inf);
+                                        let is_ni = builder.ins().fcmp(FloatCC::Equal, fe, neg_inf);
+                                        let is_inf = builder.ins().bor(is_pi, is_ni);
+                                        let is_sp = builder.ins().bor(is_nan, is_inf);
+                                        let sp_blk = builder.create_block();
+                                        let fin_blk = builder.create_block();
+                                        let after_e = builder.create_block();
+                                        builder.ins().brif(is_sp, sp_blk, &[], fin_blk, &[]);
+                                        builder.seal_block(sp_blk);
+                                        builder.seal_block(fin_blk);
+                                        builder.switch_to_block(sp_blk);
+                                        let inf_ptr = builder.ins().select(
+                                            is_ni,
+                                            fmt_neg_inf_ptr,
+                                            fmt_inf_ptr,
+                                        );
+                                        let fp = builder.ins().select(is_nan, fmt_nan_ptr, inf_ptr);
+                                        builder.ins().call(printf_ref, &[fmt_str_raw_ptr, fp]);
+                                        builder.ins().jump(after_e, &[]);
+                                        builder.switch_to_block(fin_blk);
+                                        let th = builder.ins().f64const(1000.0);
+                                        let sc = builder.ins().fmul(fe, th);
+                                        let si = builder.ins().fcvt_to_sint(types::I64, sc);
+                                        let dv = builder.ins().iconst(types::I64, 1000);
+                                        let ip = builder.ins().sdiv(si, dv);
+                                        let dr = builder.ins().srem(si, dv);
+                                        let z3 = builder.ins().iconst(types::I64, 0);
+                                        let neg = builder.ins().icmp(IntCC::SignedLessThan, dr, z3);
+                                        let nd = builder.ins().ineg(dr);
+                                        let dp = builder.ins().select(neg, nd, dr);
+                                        builder.ins().call(printf_ref, &[fmt_float_int_ptr, ip]);
+                                        builder
+                                            .ins()
+                                            .call(printf_ref, &[fmt_float_dec_elem_ptr, dp]);
+                                        builder.ins().jump(after_e, &[]);
+                                        builder.seal_block(after_e);
+                                        builder.switch_to_block(after_e);
+                                    }
+                                }
+                                let next_i = builder.ins().iadd_imm(ci2, 1);
+                                builder.def_var(counter_var, next_i);
+                                builder.ins().jump(header, &[]);
+                                builder.seal_block(header);
+                                builder.switch_to_block(after);
+                                let close_ptr = if is_last { fmt_rb_ptr } else { fmt_rb_sp_ptr };
+                                builder
+                                    .ins()
+                                    .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -1171,7 +1378,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let src = builder.ins().iadd_imm(top, -8);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     match ty {
-                        StackType::List => {
+                        StackType::List(_) => {
                             let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
                             builder.ins().store(MemFlags::new(), len, src, 0);
                             type_stack.push(StackType::Int);
@@ -1229,6 +1436,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let globals_gv = module.declare_data_in_func(globals_id, builder.func);
         let sp_var = Variable::new(0);
         builder.declare_var(sp_var, types::I64);
+        builder.declare_var(Variable::new(1), types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
         builder.def_var(sp_var, zero);
 
@@ -1268,6 +1476,27 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
         let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
         let fmt_ovf_ptr = builder.ins().global_value(types::I64, fmt_ovf_gv);
+        let fmt_str_raw_gv = module.declare_data_in_func(fmt_str_raw_id, builder.func);
+        let fmt_str_raw_ptr = builder.ins().global_value(types::I64, fmt_str_raw_gv);
+        let fmt_lb_gv = module.declare_data_in_func(fmt_lb_id, builder.func);
+        let fmt_lb_ptr = builder.ins().global_value(types::I64, fmt_lb_gv);
+        let fmt_rb_gv = module.declare_data_in_func(fmt_rb_id, builder.func);
+        let fmt_rb_ptr = builder.ins().global_value(types::I64, fmt_rb_gv);
+        let fmt_rb_sp_gv = module.declare_data_in_func(fmt_rb_sp_id, builder.func);
+        let fmt_rb_sp_ptr = builder.ins().global_value(types::I64, fmt_rb_sp_gv);
+        let fmt_comma_gv = module.declare_data_in_func(fmt_comma_id, builder.func);
+        let fmt_comma_ptr = builder.ins().global_value(types::I64, fmt_comma_gv);
+        let fmt_empty_gv = module.declare_data_in_func(fmt_empty_id, builder.func);
+        let fmt_empty_ptr = builder.ins().global_value(types::I64, fmt_empty_gv);
+        let fmt_int_elem_gv = module.declare_data_in_func(fmt_int_elem_id, builder.func);
+        let fmt_int_elem_ptr = builder.ins().global_value(types::I64, fmt_int_elem_gv);
+        let fmt_str_elem_gv = module.declare_data_in_func(fmt_str_elem_id, builder.func);
+        let fmt_str_elem_ptr = builder.ins().global_value(types::I64, fmt_str_elem_gv);
+        let fmt_float_dec_elem_gv =
+            module.declare_data_in_func(fmt_float_dec_elem_id, builder.func);
+        let fmt_float_dec_elem_ptr = builder
+            .ins()
+            .global_value(types::I64, fmt_float_dec_elem_gv);
 
         compile_chunk(
             &mut module,
@@ -1297,6 +1526,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_float_dec_sp_ptr,
             fmt_div0_ptr,
             fmt_ovf_ptr,
+            fmt_str_raw_ptr,
+            fmt_lb_ptr,
+            fmt_rb_ptr,
+            fmt_rb_sp_ptr,
+            fmt_comma_ptr,
+            fmt_empty_ptr,
+            fmt_int_elem_ptr,
+            fmt_str_elem_ptr,
+            fmt_float_dec_elem_ptr,
             &[],
             &program.structs,
             true,
@@ -1335,6 +1573,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let globals_gv = module.declare_data_in_func(globals_id, builder.func);
             let sp_var = Variable::new(0);
             builder.declare_var(sp_var, types::I64);
+            builder.declare_var(Variable::new(1), types::I64);
             let zero = builder.ins().iconst(types::I64, 0);
             builder.def_var(sp_var, zero);
 
@@ -1375,6 +1614,27 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
             let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
             let fmt_ovf_ptr = builder.ins().global_value(types::I64, fmt_ovf_gv);
+            let fmt_str_raw_gv = module.declare_data_in_func(fmt_str_raw_id, builder.func);
+            let fmt_str_raw_ptr = builder.ins().global_value(types::I64, fmt_str_raw_gv);
+            let fmt_lb_gv = module.declare_data_in_func(fmt_lb_id, builder.func);
+            let fmt_lb_ptr = builder.ins().global_value(types::I64, fmt_lb_gv);
+            let fmt_rb_gv = module.declare_data_in_func(fmt_rb_id, builder.func);
+            let fmt_rb_ptr = builder.ins().global_value(types::I64, fmt_rb_gv);
+            let fmt_rb_sp_gv = module.declare_data_in_func(fmt_rb_sp_id, builder.func);
+            let fmt_rb_sp_ptr = builder.ins().global_value(types::I64, fmt_rb_sp_gv);
+            let fmt_comma_gv = module.declare_data_in_func(fmt_comma_id, builder.func);
+            let fmt_comma_ptr = builder.ins().global_value(types::I64, fmt_comma_gv);
+            let fmt_empty_gv = module.declare_data_in_func(fmt_empty_id, builder.func);
+            let fmt_empty_ptr = builder.ins().global_value(types::I64, fmt_empty_gv);
+            let fmt_int_elem_gv = module.declare_data_in_func(fmt_int_elem_id, builder.func);
+            let fmt_int_elem_ptr = builder.ins().global_value(types::I64, fmt_int_elem_gv);
+            let fmt_str_elem_gv = module.declare_data_in_func(fmt_str_elem_id, builder.func);
+            let fmt_str_elem_ptr = builder.ins().global_value(types::I64, fmt_str_elem_gv);
+            let fmt_float_dec_elem_gv =
+                module.declare_data_in_func(fmt_float_dec_elem_id, builder.func);
+            let fmt_float_dec_elem_ptr = builder
+                .ins()
+                .global_value(types::I64, fmt_float_dec_elem_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -1412,6 +1672,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_float_dec_sp_ptr,
                 fmt_div0_ptr,
                 fmt_ovf_ptr,
+                fmt_str_raw_ptr,
+                fmt_lb_ptr,
+                fmt_rb_ptr,
+                fmt_rb_sp_ptr,
+                fmt_comma_ptr,
+                fmt_empty_ptr,
+                fmt_int_elem_ptr,
+                fmt_str_elem_ptr,
+                fmt_float_dec_elem_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
