@@ -1098,6 +1098,25 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     }
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::Not => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    match ty {
+                        StackType::Bool => {
+                            let one = builder.ins().iconst(types::I64, 1);
+                            let r = builder.ins().bxor(val, one);
+                            builder.ins().store(MemFlags::new(), r, src, 0);
+                            type_stack.push(StackType::Bool);
+                        }
+                        _ => return Err("not on non-bool".to_string()),
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",

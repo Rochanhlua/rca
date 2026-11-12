@@ -84,3 +84,5 @@
 - **Planned:** return type inference for unannotated functions whose body returns a non-`Int` value.
 - **Implemented:** native codegen for unary `Neg` — `-x` on an `Int` or `Float` now compiles and runs (the VM already supported it; literals worked only because the optimizer folded them). `Neg` on `i64::MIN` reports `runtime error: integer overflow` and exits 1, matching the `INT_MIN / -1` path; non-numeric operands are a compile error.
 - **Planned:** `Not` (`!x`) in native codegen, which is still VM-only.
+- **Implemented:** native codegen for unary `not` — `not x`, `not (a > b)`, and `if not cond:` now compile and run for `Bool` operands, matching the VM. Uses `xor` with 1 on the 0/1 representation, in place. Non-`Bool` operands are rejected by the type checker before codegen.
+- **Planned:** short-circuit `and`/`or` in native codegen (currently VM-only), and `Not` on values produced by calls returning `Bool` in complex expressions.
