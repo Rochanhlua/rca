@@ -2621,9 +2621,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::PopHandler => {
-                    if try_depth > 0 {
-                        try_depth -= 1;
-                    }
+                    try_depth = try_depth.saturating_sub(1);
                     handler_stack.pop();
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
