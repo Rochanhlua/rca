@@ -557,6 +557,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let compile_chunk = |module: &mut ObjectModule,
                          builder: &mut FunctionBuilder,
                          chunk: &crate::compiler::ir::Chunk,
+                         num_locals: usize,
                          stack_slot: StackSlot,
                          locals_slot: StackSlot,
                          globals_gv: cranelift_codegen::ir::GlobalValue,
@@ -1572,9 +1573,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
+                                emit_decref(builder, val, free_ref);
                             }
                             StackType::Map => {
-                                let len = builder.ins().load(types::I64, MemFlags::new(), val, 0);
+                                let len = builder.ins().load(types::I64, MemFlags::new(), val, 8);
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_str_raw_ptr, fmt_map_open_ptr]);
@@ -1587,6 +1589,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
+                                emit_decref(builder, val, free_ref);
                             }
                             StackType::List(elem_ty) => {
                                 builder
@@ -1691,6 +1694,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_str_raw_ptr, close_ptr]);
+                                emit_decref(builder, val, free_ref);
                             }
                             StackType::Float => {
                                 let f_val = builder.ins().bitcast(types::F64, MemFlags::new(), val);
@@ -2200,6 +2204,24 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
                         let src = builder.ins().iadd(sp_addr, sp_off);
                         let ret_val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                        for owner_slot in 0..num_locals {
+                            let owner_ty = local_types
+                                .get(&owner_slot)
+                                .copied()
+                                .unwrap_or(StackType::Int);
+                            if is_heap(&owner_ty) {
+                                let owner_off =
+                                    builder.ins().iconst(types::I64, (owner_slot as i64) * 8);
+                                let owner_base =
+                                    builder.ins().stack_addr(types::I64, locals_slot, 0);
+                                let owner_src = builder.ins().iadd(owner_base, owner_off);
+                                let owner_val =
+                                    builder
+                                        .ins()
+                                        .load(types::I64, MemFlags::new(), owner_src, 0);
+                                emit_decref(builder, owner_val, free_ref);
+                            }
+                        }
                         builder.ins().return_(&[ret_val]);
                     }
                 }
@@ -2916,6 +2938,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             &mut module,
             &mut builder,
             &program.main.chunk,
+            program.main.num_locals,
             stack_slot,
             locals_slot,
             globals_gv,
@@ -3108,6 +3131,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 &mut module,
                 &mut builder,
                 &f.chunk,
+                f.num_locals,
                 stack_slot,
                 locals_slot,
                 globals_gv,
