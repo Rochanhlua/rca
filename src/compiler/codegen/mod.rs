@@ -34,7 +34,6 @@ enum StackType {
     Struct(usize),
 }
 
-#[allow(dead_code)]
 fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
     let zero = builder.ins().iconst(types::I64, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, ptr, zero);
@@ -51,7 +50,6 @@ fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
     builder.seal_block(cont_blk);
 }
 
-#[allow(dead_code)]
 fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     let zero = builder.ins().iconst(types::I64, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, ptr, zero);
@@ -59,6 +57,7 @@ fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     let then_blk = builder.create_block();
     builder.ins().brif(is_null, cont_blk, &[], then_blk, &[]);
     builder.switch_to_block(then_blk);
+    builder.seal_block(then_blk);
     let rc = builder.ins().load(types::I64, MemFlags::new(), ptr, 0);
     let rc_new = builder.ins().iadd_imm(rc, -1);
     builder.ins().store(MemFlags::new(), rc_new, ptr, 0);
@@ -77,7 +76,6 @@ fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     builder.seal_block(cont_blk);
 }
 
-#[allow(dead_code)]
 fn is_heap(ty: &StackType) -> bool {
     matches!(
         ty,
@@ -573,7 +571,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          floor_ref: FuncRef,
                          ceil_ref: FuncRef,
                          round_ref: FuncRef,
-                         _free_ref: FuncRef,
+                         free_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
@@ -642,6 +640,16 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 type_stack.push(StackType::Str);
             }
             builder.switch_to_block(this_block);
+            if ip == 0 {
+                let zstart = param_types.len().min(128);
+                let zbase = builder.ins().stack_addr(types::I64, locals_slot, 0);
+                let zval = builder.ins().iconst(types::I64, 0);
+                for zi in zstart..128 {
+                    let zoff = builder.ins().iconst(types::I64, (zi as i64) * 8);
+                    let zdst = builder.ins().iadd(zbase, zoff);
+                    builder.ins().store(MemFlags::new(), zval, zdst, 0);
+                }
+            }
             match ins {
                 Instruction::PushInt(n) => {
                     let val = builder.ins().iconst(types::I64, *n);
@@ -1440,10 +1448,17 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 }
 
                 Instruction::Pop => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);
                     let sp_dec = builder.ins().iadd_imm(sp, -1);
+                    if is_heap(&ty) {
+                        let sp_off = builder.ins().imul_imm(sp_dec, 8);
+                        let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let src = builder.ins().iadd(sp_addr, sp_off);
+                        let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                        emit_decref(builder, val, free_ref);
+                    }
                     builder.def_var(sp_var, sp_dec);
-                    type_stack.pop();
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
 
@@ -1752,6 +1767,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 }
                 Instruction::StoreLocal(slot) => {
                     let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let is_h = is_heap(&ty);
                     local_types.insert(*slot, ty);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
@@ -1763,6 +1779,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
                     let dest = builder.ins().iadd(locals_addr, slot_off);
+                    if is_h {
+                        let old_val = builder.ins().load(types::I64, MemFlags::new(), dest, 0);
+                        emit_decref(builder, old_val, free_ref);
+                    }
                     builder.ins().store(MemFlags::new(), val, dest, 0);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -1772,6 +1792,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
                     let src = builder.ins().iadd(locals_addr, slot_off);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    if is_heap(&ty) {
+                        emit_incref(builder, val);
+                    }
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
@@ -1784,6 +1807,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 }
                 Instruction::StoreGlobal(slot) => {
                     let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let is_h = is_heap(&ty);
                     local_types.insert(100000 + slot, ty);
                     let sp = builder.use_var(sp_var);
                     let new_sp = builder.ins().iadd_imm(sp, -1);
@@ -1795,6 +1819,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let slot_off = builder.ins().iconst(types::I64, (*slot as i64) * 8);
                     let globals_addr = builder.ins().global_value(types::I64, globals_gv);
                     let dest = builder.ins().iadd(globals_addr, slot_off);
+                    if is_h {
+                        let old_val = builder.ins().load(types::I64, MemFlags::new(), dest, 0);
+                        emit_decref(builder, old_val, free_ref);
+                    }
                     builder.ins().store(MemFlags::new(), val, dest, 0);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
@@ -1807,6 +1835,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let globals_addr = builder.ins().global_value(types::I64, globals_gv);
                     let src = builder.ins().iadd(globals_addr, slot_off);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    if is_heap(&ty) {
+                        emit_incref(builder, val);
+                    }
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
@@ -2832,8 +2863,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let floor_ref = module.declare_func_in_func(floor_func, builder.func);
         let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
         let round_ref = module.declare_func_in_func(round_func, builder.func);
-        let _free_ref = module.declare_func_in_func(free_func, builder.func);
-        let _free_ref = module.declare_func_in_func(free_func, builder.func);
+        #[allow(unused_variables)]
+        let free_ref = module.declare_func_in_func(free_func, builder.func);
+        let free_ref = module.declare_func_in_func(free_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
         let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -2898,7 +2930,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             floor_ref,
             ceil_ref,
             round_ref,
-            _free_ref,
+            free_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_int_ptr,
@@ -3015,8 +3047,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let floor_ref = module.declare_func_in_func(floor_func, builder.func);
             let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
             let round_ref = module.declare_func_in_func(round_func, builder.func);
-            let _free_ref = module.declare_func_in_func(free_func, builder.func);
-            let _free_ref = module.declare_func_in_func(free_func, builder.func);
+            #[allow(unused_variables)]
+            let free_ref = module.declare_func_in_func(free_func, builder.func);
+            let free_ref = module.declare_func_in_func(free_func, builder.func);
             let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
             let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
             let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -3089,7 +3122,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 floor_ref,
                 ceil_ref,
                 round_ref,
-                _free_ref,
+                free_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_int_ptr,
