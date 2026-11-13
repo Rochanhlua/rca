@@ -1,0 +1,22 @@
+# Phase 6.4 — inference pipeline: train, then forward-only predict.
+
+fn predict(x: Tensor, w: Tensor, b: Tensor) -> Tensor:
+    return linear(x, w, b)
+
+fn train_weights() -> Tensor:
+    let x = Tensor([[1.0, 2.0]])
+    let y = Tensor([[3.0]])
+    mut w = Tensor([[0.1], [0.1]])
+    mut b = Tensor([0.0])
+    for i in 0..3:
+        let wt = track(w)
+        let bt = track(b)
+        let pred = linear(x, wt, bt)
+        let loss = mse(pred, y)
+        w = sgd(w, grad(loss, wt), 0.05)
+        b = sgd(b, grad(loss, bt), 0.05)
+    return w
+
+let w = train_weights()
+let b = Tensor([0.0])
+print(predict(Tensor([[2.0, 3.0]]), w, b))
