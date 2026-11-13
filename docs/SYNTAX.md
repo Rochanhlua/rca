@@ -7,7 +7,9 @@ listed under "Implemented" is not available yet; see "Not implemented".
 - Indentation (4 spaces) defines blocks
 - Comments begin with #
 - Variables: `let` (immutable), `mut` (mutable)
-- Types: Int, Float, Bool, String, Char, Tensor, tuple types such as `(Int, String)`
+- Types: Int, Float, Bool, String, Tensor, tuple types such as `(Int, String)`.
+  `Char` is a reserved type name, but there are no character literals and no
+  Char values yet.
 - Functions: `fn name(a: Int) -> Int:`
 - Keywords: let mut fn return if else elif for while in break
   continue struct enum type import from as pub private try catch
@@ -90,8 +92,9 @@ listed under "Implemented" is not available yet; see "Not implemented".
 - The VM and the tree-walking interpreter must give identical results
 
 ## Not implemented
-- Generics, type aliases, `private` as a modifier (declarations are private
-  by default)
+- Character literals and Char values
+- Generics, type aliases, `private` as a modifier (the word is reserved, the
+  parser does not use it; declarations are private by default)
 - List and Map type annotations such as `List[Int]` (lists are inferred from
   literals; maps are used through the `map_*` functions)
 - Enum payloads, match expressions, guards, nested patterns
