@@ -763,6 +763,14 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::Conv2d => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match crate::runtime::values::tensor_conv2d(&a, &b) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::Track => {
                     let v = self.pop();
                     match crate::runtime::values::tensor_track(&v) {

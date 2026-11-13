@@ -1404,3 +1404,72 @@ pub fn tensor_softmax(v: &Value) -> Result<Value, String> {
         data: out.into(),
     })
 }
+
+/// Conv2d — valid padding, stride 1.
+/// input:  [N, C, H, W]
+/// kernel: [O, C, KH, KW]
+/// output: [N, O, H-KH+1, W-KW+1]
+pub fn tensor_conv2d(input: &Value, kernel: &Value) -> Result<Value, String> {
+    let (ishape, idata) = match input {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("conv2d() needs Tensor arguments".to_string()),
+    };
+    let (kshape, kdata) = match kernel {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("conv2d() needs Tensor arguments".to_string()),
+    };
+    if ishape.len() != 4 {
+        return Err(format!(
+            "conv2d() input needs rank 4 [N,C,H,W], found rank {}",
+            ishape.len()
+        ));
+    }
+    if kshape.len() != 4 {
+        return Err(format!(
+            "conv2d() kernel needs rank 4 [O,C,KH,KW], found rank {}",
+            kshape.len()
+        ));
+    }
+    let (n, c, h, w) = (ishape[0], ishape[1], ishape[2], ishape[3]);
+    let (o, kc, kh, kw) = (kshape[0], kshape[1], kshape[2], kshape[3]);
+    if kc != c {
+        return Err(format!(
+            "conv2d() channel mismatch: input {} vs kernel {}",
+            c, kc
+        ));
+    }
+    if kh > h || kw > w {
+        return Err("conv2d() kernel larger than input".to_string());
+    }
+    let oh = h - kh + 1;
+    let ow = w - kw + 1;
+    let total = n
+        .checked_mul(o)
+        .and_then(|x| x.checked_mul(oh))
+        .and_then(|x| x.checked_mul(ow))
+        .ok_or_else(|| "conv2d() output is too large".to_string())?;
+    let mut out = vec![0.0f64; total];
+    for ni in 0..n {
+        for oi in 0..o {
+            for y in 0..oh {
+                for x in 0..ow {
+                    let mut acc = 0.0f64;
+                    for ci in 0..c {
+                        for ky in 0..kh {
+                            for kx in 0..kw {
+                                let iv = idata[((ni * c + ci) * h + (y + ky)) * w + (x + kx)];
+                                let kv = kdata[((oi * c + ci) * kh + ky) * kw + kx];
+                                acc += iv * kv;
+                            }
+                        }
+                    }
+                    out[((ni * o + oi) * oh + y) * ow + x] = acc;
+                }
+            }
+        }
+    }
+    Ok(Value::Tensor {
+        shape: vec![n, o, oh, ow],
+        data: out.into(),
+    })
+}

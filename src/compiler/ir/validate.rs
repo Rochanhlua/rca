@@ -89,6 +89,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::TensorMap(_)
         | I::TensorSoftmax
         | I::Track => (1, 1),
+        I::Conv2d => (2, 1),
         I::Jump(_) | I::ForNext { .. } | I::PushHandler(_) | I::PopHandler => (0, 0),
         I::Return | I::Throw => (1, 0),
         I::StoreIndex => (3, 1),

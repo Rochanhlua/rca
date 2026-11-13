@@ -781,6 +781,15 @@ impl Compiler {
             self.emit(Instruction::TensorSoftmax, span);
             return Ok(());
         }
+        if name == "conv2d" {
+            if args.len() != 2 {
+                return Err(err("conv2d() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::Conv2d, span);
+            return Ok(());
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));
