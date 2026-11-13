@@ -28,6 +28,61 @@ pub const MODULES: &[(&str, &[(&str, &str)])] = &[
         "json",
         &[("parse", "json_parse"), ("stringify", "json_stringify")],
     ),
+    (
+        "tensor",
+        &[
+            ("matmul", "matmul"),
+            ("zeros", "zeros"),
+            ("ones", "ones"),
+            ("shape", "shape"),
+            ("reshape", "reshape"),
+            ("transpose", "transpose"),
+            ("sum", "sum"),
+            ("mean", "mean"),
+            ("max", "max"),
+            ("min", "min"),
+        ],
+    ),
+    (
+        "matrix",
+        &[("matmul", "matmul"), ("transpose", "transpose")],
+    ),
+    ("ai", &[("track", "track"), ("grad", "grad")]),
+    ("ml", &[("mse", "mse"), ("sgd", "sgd")]),
+    (
+        "nn",
+        &[
+            ("linear", "linear"),
+            ("relu", "relu"),
+            ("sigmoid", "sigmoid"),
+            ("tanh", "tanh"),
+            ("softmax", "softmax"),
+            ("conv2d", "conv2d"),
+        ],
+    ),
+    (
+        "net",
+        &[
+            ("connect", "tcp_connect"),
+            ("send", "tcp_send"),
+            ("recv", "tcp_recv"),
+            ("close", "tcp_close"),
+        ],
+    ),
+    ("http", &[("get", "http_get")]),
+    ("crypto", &[("sha256", "sha256")]),
+    (
+        "collections",
+        &[
+            ("len", "len"),
+            ("push", "push"),
+            ("map_new", "map_new"),
+            ("map_get", "map_get"),
+            ("map_set", "map_set"),
+            ("map_has", "map_has"),
+            ("map_len", "map_len"),
+        ],
+    ),
 ];
 
 pub fn is_stdlib_module(name: &str) -> bool {

@@ -1,0 +1,21 @@
+# Phase 7 — all blueprint §8 stdlib modules.
+# Module-qualified calls route to existing builtins.
+
+import math
+import tensor
+import ai
+import ml
+import nn
+import crypto
+import collections
+
+print(math.abs(-5))
+print(tensor.shape(tensor.zeros([2, 3])))
+print(tensor.sum(tensor.ones([3, 3])))
+let w = ai.track(Tensor([2.0]))
+let y = w * w
+print(ai.grad(y, w))
+print(ml.mse(Tensor([1.0]), Tensor([3.0])))
+print(nn.relu(Tensor([[-1.0, 2.0]])))
+print(crypto.sha256("hi"))
+print(collections.len([1, 2, 3]))
