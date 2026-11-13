@@ -924,6 +924,24 @@ impl Checker {
             return Type::Tensor;
         }
 
+        if name == "linear" {
+            if args.len() != 3 {
+                self.error("linear() takes exactly 3 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            for a in args.iter() {
+                let t = self.check_expr(&a.value);
+                if !matches!(t, Type::Tensor | Type::Unknown) {
+                    self.error(
+                        format!("linear() needs Tensor arguments, found {}", t),
+                        &a.value.span,
+                    );
+                }
+            }
+            return Type::Tensor;
+        }
+
         if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
             let ret = if name == "transpose" {
                 Type::Tensor

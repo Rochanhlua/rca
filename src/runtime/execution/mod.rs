@@ -607,6 +607,16 @@ impl Interpreter {
             return crate::runtime::values::tensor_matmul(&a, &b).map_err(|m| err(m, span));
         }
 
+        if name == "linear" {
+            if args.len() != 3 {
+                return Err(err("linear() takes exactly 3 arguments", span));
+            }
+            let x = self.eval_expr(&args[0].value)?;
+            let w = self.eval_expr(&args[1].value)?;
+            let b = self.eval_expr(&args[2].value)?;
+            return crate::runtime::values::tensor_linear(&x, &w, &b).map_err(|m| err(m, span));
+        }
+
         if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));
