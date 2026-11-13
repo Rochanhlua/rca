@@ -1,104 +1,102 @@
-# RCA Syntax Specification v0.1
+# RCA Syntax Specification
 
+Status: describes what the compiler accepts today (Nov 2026). Anything not
+listed under "Implemented" is not available yet; see "Not implemented".
+
+## Basics
 - Indentation (4 spaces) defines blocks
 - Comments begin with #
-- Variables: let (immutable), mut (mutable)
-- Types: Int, Float, Bool, String, Char
-- Functions: fn name(a: Int) -> Int:
+- Variables: `let` (immutable), `mut` (mutable)
+- Types: Int, Float, Bool, String, Char, Tensor, tuple types such as `(Int, String)`
+- Functions: `fn name(a: Int) -> Int:`
 - Keywords: let mut fn return if else elif for while in break
   continue struct enum type import from as pub private try catch
   throw and or not const true false none match
 
-## Implemented in v0.1 (Phase 1)
-- let / mut declarations with optional type annotation
+## Implemented
+
+### Declarations and statements
+- `let` / `mut` with an optional type annotation; types are inferred otherwise
+- Tuple destructuring: `let (a, b) = p` and `mut (a, b) = p`
+- `const NAME: Type = value` or `const NAME = value` (see Constants)
 - Assignment, expression statements
-- fn with typed params, default values, return type
-- struct declarations, named constructor arguments
-- if / elif / else, while, for ... in a..b
-- return, break, continue
-- Operators: + - * / %  == != < <= > >=  and or not  ..
-- Lists [1, 2, 3], indexing, field access, calls
+- `if` / `elif` / `else`, `while`, `for ... in a..b`, `break`, `continue`, `return`
 
-## Planned (not yet parsed)
-- import / from / as, enum, match, try / catch / throw
-- const, pub / private, type aliases, generics
-
-## Type checking (v0.2, Phase 2)
-- Strict static typing: Int and Float cannot be mixed in arithmetic
-- Type inference for let / mut without annotation
-- Functions: parameter types, return types, default values, named arguments,
-  forward calls, recursion, "must return on all paths" check
-- Structs: constructors, field access, field assignment (requires mut)
-- Scopes: block scopes, shadowing in inner scopes, no redeclaration in same scope
-- Built-in: print(...)
-
-## Deferred
-- Modules (import / from / as): after execution engine and stdlib exist
-- enum, match, try / catch / throw, const, pub / private, generics
-- List type annotations (e.g. List[Int]); lists are inferred from literals only
-
-## Execution (v0.3, Phase 3)
-- `rca run file.rca` type-checks, then runs the program (tree-walking interpreter)
+### Expressions
+- Operators: `+ - * / %  == != < <= > >=  and or not  ..`
+- Lists `[1, 2, 3]`, indexing `xs[i]`, index assignment `xs[i] = v`,
+  `xs.push(v)`, field access, calls
+- Tuples with 2 or more elements: `(1, "a")`, literal indexing `p[0]`,
+  `len(p)`, `==` / `!=`. Tuples are immutable (see `tuple.md`).
+- Tensors (Float only): `Tensor([[1.0, 2.0], [3.0, 4.0]])`, `a[i]`,
+  `+ - * /` with broadcasting and Float scalars (see `tensor.md`)
 - Ranges are end-exclusive: `0..3` yields 0, 1, 2
-- Values are copied on assignment (value semantics)
-- Runtime errors: division by zero, index out of bounds, integer overflow, stack overflow
 
-## Current status (v0.5) - supersedes "Planned" and "Deferred" above
-Implemented since v0.1:
-- try / catch / throw (throw takes a String; break/continue inside try is handled)
-- import, import as, from ... import [as], pub fn, pub struct, module-qualified calls (utils.add(1, 2))
-- Built-ins: print, len, str, int, float, list push
-- Runtime checks: list bounds, integer overflow, division by zero, call depth
+### Functions and structs
+- `fn` with typed parameters, default values, named arguments, return type
+- Forward calls, recursion, "must return on all paths" check
+- `struct` declarations, named constructor arguments, field access,
+  field assignment (requires `mut`)
 
-Still not implemented (per the lists above):
-- enum, match, const, private, type aliases, generics
-- List type annotations (lists are inferred from literals only)
-- pub on let / const
-
-## Current status (v0.9) - tensors
-Implemented since v0.5 (details in tensor.md):
-- Type `Tensor` (Float only)
-- Built-ins: Tensor, zeros, ones, shape, matmul, sum, mean, max, min, transpose, reshape
-- Tensor indexing `a[i]`, and `+ - * /` with broadcasting and Float scalars
-
-Still not implemented:
-- Method syntax on tensors (`a.matmul(b)`), `a[i, j]`, `a[i] = x`
-- Automatic differentiation
-
-## Current status (v1.0) - enum and match
-Implemented (details in enum.md):
+### Enums and match (see `enum.md`)
 - `enum Name:` with simple variants, `pub enum`, `Name.Variant`
-- `match` statement: enum variants, Int/String/Bool literals, `_`
-- Exhaustiveness, duplicate and unreachable-arm checks
+- `match` statement over enum variants, Int/String/Bool literals and `_`
+- Exhaustiveness, duplicate-arm and unreachable-arm checks
 
-Still not implemented:
-- enum payloads, match expressions, guards, nested patterns
-- private, type aliases, generics, pub const
-
-## Current status (v1.1) - const
-Implemented:
+### Constants
 - `const NAME: Type = value` or `const NAME = value`
-- Top-level only; the value must be a literal or other constants (operators allowed)
+- Top-level only; the value must be a literal or other constants
+  (operators allowed)
 - Assigning to a constant is an error: `cannot assign to constant 'NAME'`
 - Constants can be read inside functions
 
-Still not implemented:
-- `pub const` and importing constants from other modules
+### Errors
+- `try` / `catch` / `throw` (`throw` takes a String; `break` and `continue`
+  inside `try` are handled)
+- Runtime errors are catchable: list bounds, integer overflow, division by
+  zero, call depth
 
-## Current status (v1.2) - tuple
-Implemented (details in tuple.md):
-- Tuple literals with 2 or more elements: `(1, "a")`
-- Literal indexing `p[0]` with exact element types, `len(p)`, `==` / `!=`
-- Tuples are immutable
+### Modules (see `modules.md`)
+- `import`, `import as`, `from ... import [as]`, `pub fn`, `pub struct`,
+  module-qualified calls: `utils.add(1, 2)`
+- Standard library modules: `import math`, `import fs`, and so on
 
-Still not implemented:
-- Empty and 1-element tuples
-- Map
+### Built-ins
+- Core: `print`, `len`, `str`, `int`, `float`
+- Math: `abs`, `pow`, `floor`, `ceil`, `round`
+- String: `trim`, `split`, `replace`
+- Files and time: `read_file`, `write_file`, `file_exists`, `now`, `sleep`
+- Map: `map_new`, `map_set`, `map_get`, `map_has`, `map_len`
+- JSON: `json_parse`, `json_stringify`
+- Network: `tcp_connect`, `tcp_send`, `tcp_recv`, `tcp_close`,
+  `udp_bind`, `udp_send`, `udp_recv`, `udp_close`, `http_get`, `http_post`
+- Crypto: `sha256`
+- Tensors and autodiff: `Tensor`, `zeros`, `ones`, `shape`, `matmul`, `sum`,
+  `mean`, `max`, `min`, `transpose`, `reshape`, `track`, `grad`
+  (see `tensor.md` and `autodiff-design.md`)
+- Neural network: `linear`, `relu`, `sigmoid`, `tanh`, `softmax`, `conv2d`,
+  `mse`, `sgd` (see `nn.md`)
 
-## Current status (v1.3) - tuple type annotations
-- `(Int, String)` works in let annotations, function parameters and return types.
-- Still not implemented: Map.
+## Execution
+- `rca file.rca` type-checks, then runs the program on the bytecode VM
+  (it calls `rcac run`)
+- `rcac run-tree file.rca` uses the tree-walking interpreter instead.
+  It does not support `import` yet.
+- `rcac compile file.rca` writes a native object file (Cranelift);
+  `rcac build file.rca` also links an executable (needs `clang`).
+  Native code generation covers a subset of the language, see `README.md`
+  and `memory-model.md`.
+- Values are copied on assignment (value semantics)
+- The VM and the tree-walking interpreter must give identical results
 
-## Current status (v1.4) - tuple destructuring
-- `let (a, b) = p` and `mut (a, b) = p` are implemented (see `docs/tuple.md`).
-- Still not implemented: nested patterns, Map.
+## Not implemented
+- Generics, type aliases, `private` as a modifier (declarations are private
+  by default)
+- List and Map type annotations such as `List[Int]` (lists are inferred from
+  literals; maps are used through the `map_*` functions)
+- Enum payloads, match expressions, guards, nested patterns
+- Empty and 1-element tuples; nested destructuring patterns
+- `pub let` and `pub const`, importing constants from other modules
+- Tensor method syntax (`a.matmul(b)`), `a[i, j]`, `a[i] = x`
+- Autodiff for `max` and `min`
+- Borrowing and references
