@@ -419,6 +419,42 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .define_data(fmt_map_err_id, &fmt_map_err_data)
         .map_err(|e| e.to_string())?;
 
+    let mut fmt_div0_msg_data = DataDescription::new();
+    fmt_div0_msg_data.define(b"division by zero\0".to_vec().into_boxed_slice());
+    let fmt_div0_msg_id = module
+        .declare_data("fmt_div0_msg", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_div0_msg_id, &fmt_div0_msg_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_ovf_msg_data = DataDescription::new();
+    fmt_ovf_msg_data.define(b"integer overflow\0".to_vec().into_boxed_slice());
+    let fmt_ovf_msg_id = module
+        .declare_data("fmt_ovf_msg", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_ovf_msg_id, &fmt_ovf_msg_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_oob_msg_data = DataDescription::new();
+    fmt_oob_msg_data.define(b"index out of bounds\0".to_vec().into_boxed_slice());
+    let fmt_oob_msg_id = module
+        .declare_data("fmt_oob_msg", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_oob_msg_id, &fmt_oob_msg_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_map_err_msg_data = DataDescription::new();
+    fmt_map_err_msg_data.define(b"map_get(): key not found\0".to_vec().into_boxed_slice());
+    let fmt_map_err_msg_id = module
+        .declare_data("fmt_map_err_msg", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_map_err_msg_id, &fmt_map_err_msg_data)
+        .map_err(|e| e.to_string())?;
+
     // Declare user functions
     let func_ret_types: Vec<StackType> = program
         .functions
@@ -508,12 +544,21 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_rparen_sp_ptr: Value,
                          fmt_map_open_ptr: Value,
                          fmt_map_err_ptr: Value,
+                         fmt_div0_msg_ptr: Value,
+                         fmt_ovf_msg_ptr: Value,
+                         fmt_oob_msg_ptr: Value,
+                         fmt_map_err_msg_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
                          is_main: bool|
      -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
         let mut local_types: HashMap<usize, StackType> = HashMap::new();
+        let try_state_slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 1024));
+        let mut try_depth: usize = 0;
+        let mut handler_stack: Vec<cranelift_codegen::ir::Block> = Vec::new();
+        let mut pending_seals: Vec<cranelift_codegen::ir::Block> = Vec::new();
         for (i, ty) in param_types.iter().enumerate() {
             let st = match ty {
                 Type::Int | Type::Bool => StackType::Int,
@@ -531,7 +576,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         builder.ins().jump(blocks[0], &[]);
 
         for (ip, ins) in code.iter().enumerate() {
-            builder.switch_to_block(blocks[ip]);
+            let this_block = blocks[ip];
+            if pending_seals.contains(&this_block) {
+                pending_seals.retain(|&b| b != this_block);
+                type_stack.clear();
+                type_stack.push(StackType::Str);
+            }
+            builder.switch_to_block(this_block);
             match ins {
                 Instruction::PushInt(n) => {
                     let val = builder.ins().iconst(types::I64, *n);
@@ -815,17 +866,42 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     });
                     builder.ins().jump(blocks[ip + 1], &[]);
                     builder.switch_to_block(miss_blk);
-                    builder
-                        .ins()
-                        .call(printf_ref, &[fmt_str_ptr, fmt_map_err_ptr]);
-                    let exit_arg = builder.ins().iconst(types::I32, 1);
-                    builder.ins().call(exit_ref, &[exit_arg]);
-                    if is_main {
-                        let ret = builder.ins().iconst(types::I32, 1);
-                        builder.ins().return_(&[ret]);
+                    if try_depth > 0 {
+                        let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                        let off = builder
+                            .ins()
+                            .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                        let saved_src = builder.ins().iadd(base, off);
+                        let saved_sp =
+                            builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), saved_src, 0);
+                        let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let m_off = builder.ins().imul_imm(saved_sp, 8);
+                        let m_dest = builder.ins().iadd(sp2, m_off);
+                        builder
+                            .ins()
+                            .store(MemFlags::new(), fmt_map_err_msg_ptr, m_dest, 0);
+                        let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                        builder.def_var(sp_var, new_sp_v);
+                        let handler = *handler_stack.last().unwrap();
+                        if !pending_seals.contains(&handler) {
+                            pending_seals.push(handler);
+                        }
+                        builder.ins().jump(handler, &[]);
                     } else {
-                        let ret = builder.ins().iconst(types::I64, 0);
-                        builder.ins().return_(&[ret]);
+                        builder
+                            .ins()
+                            .call(printf_ref, &[fmt_str_ptr, fmt_map_err_ptr]);
+                        let exit_arg = builder.ins().iconst(types::I32, 1);
+                        builder.ins().call(exit_ref, &[exit_arg]);
+                        if is_main {
+                            let ret = builder.ins().iconst(types::I32, 1);
+                            builder.ins().return_(&[ret]);
+                        } else {
+                            let ret = builder.ins().iconst(types::I64, 0);
+                            builder.ins().return_(&[ret]);
+                        }
                     }
                 }
                 Instruction::MapSet => {
@@ -1812,17 +1888,52 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                     builder.seal_block(ok_block);
 
                                     builder.switch_to_block(err_block);
-                                    let err_ptr =
-                                        builder.ins().select(is_zero, fmt_div0_ptr, fmt_ovf_ptr);
-                                    builder.ins().call(printf_ref, &[fmt_str_ptr, err_ptr]);
-                                    let exit_arg = builder.ins().iconst(types::I32, 1);
-                                    builder.ins().call(exit_ref, &[exit_arg]);
-                                    if is_main {
-                                        let ret = builder.ins().iconst(types::I32, 1);
-                                        builder.ins().return_(&[ret]);
+                                    let err_ptr = builder.ins().select(
+                                        is_zero,
+                                        fmt_div0_msg_ptr,
+                                        fmt_ovf_msg_ptr,
+                                    );
+                                    if try_depth > 0 {
+                                        let base =
+                                            builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                                        let off = builder
+                                            .ins()
+                                            .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                                        let saved_src = builder.ins().iadd(base, off);
+                                        let saved_sp = builder.ins().load(
+                                            types::I64,
+                                            MemFlags::new(),
+                                            saved_src,
+                                            0,
+                                        );
+                                        let sp2 =
+                                            builder.ins().stack_addr(types::I64, stack_slot, 0);
+                                        let m_off = builder.ins().imul_imm(saved_sp, 8);
+                                        let m_dest = builder.ins().iadd(sp2, m_off);
+                                        builder.ins().store(MemFlags::new(), err_ptr, m_dest, 0);
+                                        let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                                        builder.def_var(sp_var, new_sp_v);
+                                        let handler = *handler_stack.last().unwrap();
+                                        if !pending_seals.contains(&handler) {
+                                            pending_seals.push(handler);
+                                        }
+                                        builder.ins().jump(handler, &[]);
                                     } else {
-                                        let ret = builder.ins().iconst(types::I64, 0);
-                                        builder.ins().return_(&[ret]);
+                                        let err_ptr_p = builder.ins().select(
+                                            is_zero,
+                                            fmt_div0_ptr,
+                                            fmt_ovf_ptr,
+                                        );
+                                        builder.ins().call(printf_ref, &[fmt_str_ptr, err_ptr_p]);
+                                        let exit_arg = builder.ins().iconst(types::I32, 1);
+                                        builder.ins().call(exit_ref, &[exit_arg]);
+                                        if is_main {
+                                            let ret = builder.ins().iconst(types::I32, 1);
+                                            builder.ins().return_(&[ret]);
+                                        } else {
+                                            let ret = builder.ins().iconst(types::I64, 0);
+                                            builder.ins().return_(&[ret]);
+                                        }
                                     }
 
                                     builder.switch_to_block(ok_block);
@@ -2020,15 +2131,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             builder.seal_block(err_block);
                             builder.seal_block(ok_block);
                             builder.switch_to_block(err_block);
-                            builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
-                            let exit_arg = builder.ins().iconst(types::I32, 1);
-                            builder.ins().call(exit_ref, &[exit_arg]);
-                            if is_main {
-                                let ret = builder.ins().iconst(types::I32, 1);
-                                builder.ins().return_(&[ret]);
+                            if try_depth > 0 {
+                                let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                                let off = builder
+                                    .ins()
+                                    .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                                let saved_src = builder.ins().iadd(base, off);
+                                let saved_sp =
+                                    builder
+                                        .ins()
+                                        .load(types::I64, MemFlags::new(), saved_src, 0);
+                                let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                                let m_off = builder.ins().imul_imm(saved_sp, 8);
+                                let m_dest = builder.ins().iadd(sp2, m_off);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), fmt_oob_msg_ptr, m_dest, 0);
+                                let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                                builder.def_var(sp_var, new_sp_v);
+                                let handler = *handler_stack.last().unwrap();
+                                if !pending_seals.contains(&handler) {
+                                    pending_seals.push(handler);
+                                }
+                                builder.ins().jump(handler, &[]);
                             } else {
-                                let ret = builder.ins().iconst(types::I64, 0);
-                                builder.ins().return_(&[ret]);
+                                builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                                let exit_arg = builder.ins().iconst(types::I32, 1);
+                                builder.ins().call(exit_ref, &[exit_arg]);
+                                if is_main {
+                                    let ret = builder.ins().iconst(types::I32, 1);
+                                    builder.ins().return_(&[ret]);
+                                } else {
+                                    let ret = builder.ins().iconst(types::I64, 0);
+                                    builder.ins().return_(&[ret]);
+                                }
                             }
                             builder.switch_to_block(ok_block);
                             let elem_idx = builder.ins().iadd_imm(idx, 1);
@@ -2089,15 +2225,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.seal_block(err_block);
                     builder.seal_block(ok_block);
                     builder.switch_to_block(err_block);
-                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
-                    let exit_arg = builder.ins().iconst(types::I32, 1);
-                    builder.ins().call(exit_ref, &[exit_arg]);
-                    if is_main {
-                        let ret = builder.ins().iconst(types::I32, 1);
-                        builder.ins().return_(&[ret]);
+                    if try_depth > 0 {
+                        let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                        let off = builder
+                            .ins()
+                            .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                        let saved_src = builder.ins().iadd(base, off);
+                        let saved_sp =
+                            builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), saved_src, 0);
+                        let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let m_off = builder.ins().imul_imm(saved_sp, 8);
+                        let m_dest = builder.ins().iadd(sp2, m_off);
+                        builder
+                            .ins()
+                            .store(MemFlags::new(), fmt_oob_msg_ptr, m_dest, 0);
+                        let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                        builder.def_var(sp_var, new_sp_v);
+                        let handler = *handler_stack.last().unwrap();
+                        if !pending_seals.contains(&handler) {
+                            pending_seals.push(handler);
+                        }
+                        builder.ins().jump(handler, &[]);
                     } else {
-                        let ret = builder.ins().iconst(types::I64, 0);
-                        builder.ins().return_(&[ret]);
+                        builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                        let exit_arg = builder.ins().iconst(types::I32, 1);
+                        builder.ins().call(exit_ref, &[exit_arg]);
+                        if is_main {
+                            let ret = builder.ins().iconst(types::I32, 1);
+                            builder.ins().return_(&[ret]);
+                        } else {
+                            let ret = builder.ins().iconst(types::I64, 0);
+                            builder.ins().return_(&[ret]);
+                        }
                     }
                     builder.switch_to_block(ok_block);
                     let elem_idx = builder.ins().iadd_imm(i_v, 1);
@@ -2153,15 +2314,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.seal_block(err_block);
                     builder.seal_block(ok_block);
                     builder.switch_to_block(err_block);
-                    builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
-                    let exit_arg = builder.ins().iconst(types::I32, 1);
-                    builder.ins().call(exit_ref, &[exit_arg]);
-                    if is_main {
-                        let ret = builder.ins().iconst(types::I32, 1);
-                        builder.ins().return_(&[ret]);
+                    if try_depth > 0 {
+                        let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                        let off = builder
+                            .ins()
+                            .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                        let saved_src = builder.ins().iadd(base, off);
+                        let saved_sp =
+                            builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), saved_src, 0);
+                        let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let m_off = builder.ins().imul_imm(saved_sp, 8);
+                        let m_dest = builder.ins().iadd(sp2, m_off);
+                        builder
+                            .ins()
+                            .store(MemFlags::new(), fmt_oob_msg_ptr, m_dest, 0);
+                        let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                        builder.def_var(sp_var, new_sp_v);
+                        let handler = *handler_stack.last().unwrap();
+                        if !pending_seals.contains(&handler) {
+                            pending_seals.push(handler);
+                        }
+                        builder.ins().jump(handler, &[]);
                     } else {
-                        let ret = builder.ins().iconst(types::I64, 0);
-                        builder.ins().return_(&[ret]);
+                        builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_oob_ptr]);
+                        let exit_arg = builder.ins().iconst(types::I32, 1);
+                        builder.ins().call(exit_ref, &[exit_arg]);
+                        if is_main {
+                            let ret = builder.ins().iconst(types::I32, 1);
+                            builder.ins().return_(&[ret]);
+                        } else {
+                            let ret = builder.ins().iconst(types::I64, 0);
+                            builder.ins().return_(&[ret]);
+                        }
                     }
                     builder.switch_to_block(ok_block);
                     let elem_idx = builder.ins().iadd_imm(idx, 1);
@@ -2234,15 +2420,38 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             builder.seal_block(err_block);
                             builder.seal_block(ok_block);
                             builder.switch_to_block(err_block);
-                            builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_ovf_ptr]);
-                            let exit_arg = builder.ins().iconst(types::I32, 1);
-                            builder.ins().call(exit_ref, &[exit_arg]);
-                            if is_main {
-                                let ret = builder.ins().iconst(types::I32, 1);
-                                builder.ins().return_(&[ret]);
+                            if try_depth > 0 {
+                                let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                                let off = builder
+                                    .ins()
+                                    .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                                let saved_src = builder.ins().iadd(base, off);
+                                let saved_sp =
+                                    builder
+                                        .ins()
+                                        .load(types::I64, MemFlags::new(), saved_src, 0);
+                                let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                                let m_off = builder.ins().imul_imm(saved_sp, 8);
+                                let m_dest = builder.ins().iadd(sp2, m_off);
+                                builder.ins().store(MemFlags::new(), fmt_ovf_ptr, m_dest, 0);
+                                let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                                builder.def_var(sp_var, new_sp_v);
+                                let handler = *handler_stack.last().unwrap();
+                                if !pending_seals.contains(&handler) {
+                                    pending_seals.push(handler);
+                                }
+                                builder.ins().jump(handler, &[]);
                             } else {
-                                let ret = builder.ins().iconst(types::I64, 0);
-                                builder.ins().return_(&[ret]);
+                                builder.ins().call(printf_ref, &[fmt_str_ptr, fmt_ovf_ptr]);
+                                let exit_arg = builder.ins().iconst(types::I32, 1);
+                                builder.ins().call(exit_ref, &[exit_arg]);
+                                if is_main {
+                                    let ret = builder.ins().iconst(types::I32, 1);
+                                    builder.ins().return_(&[ret]);
+                                } else {
+                                    let ret = builder.ins().iconst(types::I64, 0);
+                                    builder.ins().return_(&[ret]);
+                                }
                             }
                             builder.switch_to_block(ok_block);
                             let r = builder.ins().ineg(val);
@@ -2401,6 +2610,68 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Float);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::PushHandler(target) => {
+                    let sp = builder.use_var(sp_var);
+                    let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                    let off = builder.ins().iconst(types::I64, (try_depth * 8) as i64);
+                    let dest = builder.ins().iadd(base, off);
+                    builder.ins().store(MemFlags::new(), sp, dest, 0);
+                    handler_stack.push(blocks[*target]);
+                    try_depth += 1;
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::PopHandler => {
+                    if try_depth > 0 {
+                        try_depth -= 1;
+                    }
+                    handler_stack.pop();
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::Throw => {
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let sp_addr = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(sp_addr, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let msg_ptr = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    type_stack.pop();
+                    if try_depth > 0 {
+                        let base = builder.ins().stack_addr(types::I64, try_state_slot, 0);
+                        let off = builder
+                            .ins()
+                            .iconst(types::I64, ((try_depth - 1) * 8) as i64);
+                        let saved_src = builder.ins().iadd(base, off);
+                        let saved_sp =
+                            builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), saved_src, 0);
+                        let sp2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                        let m_off = builder.ins().imul_imm(saved_sp, 8);
+                        let m_dest = builder.ins().iadd(sp2, m_off);
+                        builder.ins().store(MemFlags::new(), msg_ptr, m_dest, 0);
+                        let new_sp_v = builder.ins().iadd_imm(saved_sp, 1);
+                        builder.def_var(sp_var, new_sp_v);
+                        type_stack.push(StackType::Str);
+                        let handler = *handler_stack.last().unwrap();
+                        if !pending_seals.contains(&handler) {
+                            pending_seals.push(handler);
+                        }
+                        builder.ins().jump(handler, &[]);
+                    } else {
+                        let new_sp = builder.ins().iadd_imm(sp, -1);
+                        builder.def_var(sp_var, new_sp);
+                        builder.ins().call(printf_ref, &[fmt_str_ptr, msg_ptr]);
+                        let exit_arg = builder.ins().iconst(types::I32, 1);
+                        builder.ins().call(exit_ref, &[exit_arg]);
+                        if is_main {
+                            let ret = builder.ins().iconst(types::I32, 1);
+                            builder.ins().return_(&[ret]);
+                        } else {
+                            let ret = builder.ins().iconst(types::I64, 0);
+                            builder.ins().return_(&[ret]);
+                        }
+                    }
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -2523,6 +2794,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_map_open_ptr = builder.ins().global_value(types::I64, fmt_map_open_gv);
         let fmt_map_err_gv = module.declare_data_in_func(fmt_map_err_id, builder.func);
         let fmt_map_err_ptr = builder.ins().global_value(types::I64, fmt_map_err_gv);
+        let fmt_div0_msg_gv = module.declare_data_in_func(fmt_div0_msg_id, builder.func);
+        let fmt_div0_msg_ptr = builder.ins().global_value(types::I64, fmt_div0_msg_gv);
+        let fmt_ovf_msg_gv = module.declare_data_in_func(fmt_ovf_msg_id, builder.func);
+        let fmt_ovf_msg_ptr = builder.ins().global_value(types::I64, fmt_ovf_msg_gv);
+        let fmt_oob_msg_gv = module.declare_data_in_func(fmt_oob_msg_id, builder.func);
+        let fmt_oob_msg_ptr = builder.ins().global_value(types::I64, fmt_oob_msg_gv);
+        let fmt_map_err_msg_gv = module.declare_data_in_func(fmt_map_err_msg_id, builder.func);
+        let fmt_map_err_msg_ptr = builder.ins().global_value(types::I64, fmt_map_err_msg_gv);
 
         compile_chunk(
             &mut module,
@@ -2571,6 +2850,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_rparen_sp_ptr,
             fmt_map_open_ptr,
             fmt_map_err_ptr,
+            fmt_div0_msg_ptr,
+            fmt_ovf_msg_ptr,
+            fmt_oob_msg_ptr,
+            fmt_map_err_msg_ptr,
             &[],
             &program.structs,
             true,
@@ -2691,6 +2974,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_map_open_ptr = builder.ins().global_value(types::I64, fmt_map_open_gv);
             let fmt_map_err_gv = module.declare_data_in_func(fmt_map_err_id, builder.func);
             let fmt_map_err_ptr = builder.ins().global_value(types::I64, fmt_map_err_gv);
+            let fmt_div0_msg_gv = module.declare_data_in_func(fmt_div0_msg_id, builder.func);
+            let fmt_div0_msg_ptr = builder.ins().global_value(types::I64, fmt_div0_msg_gv);
+            let fmt_ovf_msg_gv = module.declare_data_in_func(fmt_ovf_msg_id, builder.func);
+            let fmt_ovf_msg_ptr = builder.ins().global_value(types::I64, fmt_ovf_msg_gv);
+            let fmt_oob_msg_gv = module.declare_data_in_func(fmt_oob_msg_id, builder.func);
+            let fmt_oob_msg_ptr = builder.ins().global_value(types::I64, fmt_oob_msg_gv);
+            let fmt_map_err_msg_gv = module.declare_data_in_func(fmt_map_err_msg_id, builder.func);
+            let fmt_map_err_msg_ptr = builder.ins().global_value(types::I64, fmt_map_err_msg_gv);
 
             let params = builder.block_params(entry_block).to_vec();
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -2747,6 +3038,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_rparen_sp_ptr,
                 fmt_map_open_ptr,
                 fmt_map_err_ptr,
+                fmt_div0_msg_ptr,
+                fmt_ovf_msg_ptr,
+                fmt_oob_msg_ptr,
+                fmt_map_err_msg_ptr,
                 &f.param_types,
                 &program.structs,
                 false,
