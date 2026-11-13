@@ -674,6 +674,15 @@ impl Interpreter {
             let b = self.eval_expr(&args[1].value)?;
             return crate::runtime::values::tensor_mse(&a, &b).map_err(|m| err(m, span));
         }
+        if name == "sgd" {
+            if args.len() != 3 {
+                return Err(err("sgd() takes exactly 3 arguments", span));
+            }
+            let w = self.eval_expr(&args[0].value)?;
+            let g = self.eval_expr(&args[1].value)?;
+            let lr = self.eval_expr(&args[2].value)?;
+            return crate::runtime::values::tensor_sgd(&w, &g, &lr).map_err(|m| err(m, span));
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));

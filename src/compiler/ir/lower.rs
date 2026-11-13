@@ -799,6 +799,16 @@ impl Compiler {
             self.emit(Instruction::TensorMse, span);
             return Ok(());
         }
+        if name == "sgd" {
+            if args.len() != 3 {
+                return Err(err("sgd() takes exactly 3 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.compile_expr(&args[2].value)?;
+            self.emit(Instruction::TensorSgd, span);
+            return Ok(());
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));

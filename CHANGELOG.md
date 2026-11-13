@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §6.4 `sgd(w, grad, lr)` optimizer builtin — `w - lr * grad`, exact-shape match, lr accepts Float or Int. New `TensorSgd` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/sgd.rs`).
 - **Implemented:** §6.4 `mse(pred, target)` loss builtin — mean squared error, exact-shape match, returns rank-1 `[loss]` tensor so it composes with tensor ops and grad. New `TensorMse` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/mse.rs`).
 - **Implemented:** §6.4 `conv2d(input, kernel)` builtin — valid padding, stride 1; input `[N,C,H,W]`, kernel `[O,C,KH,KW]`, output `[N,O,H-KH+1,W-KW+1]`. New `Conv2d` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/conv2d.rs`).
 - **Implemented:** §6.4 NN engine — `linear(x, w, b)` builtin (CPU), composed from `matmul` + broadcast `add`. Checker, IR lowering, tree interpreter, VM bytecode, and differential tests (`tests/nn.rs`).
