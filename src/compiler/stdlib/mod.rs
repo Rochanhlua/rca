@@ -73,7 +73,7 @@ pub const MODULES: &[(&str, &[(&str, &str)])] = &[
             ("udp_close", "udp_close"),
         ],
     ),
-    ("http", &[("get", "http_get")]),
+    ("http", &[("get", "http_get"), ("post", "http_post")]),
     ("crypto", &[("sha256", "sha256")]),
     (
         "collections",

@@ -972,6 +972,15 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "http_post" {
+            if args.len() != 2 {
+                return Err(err("http_post() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::HttpPost, span);
+            return Ok(());
+        }
         if name == "http_get" {
             if args.len() != 1 {
                 return Err(err("http_get() takes exactly 1 argument", span));

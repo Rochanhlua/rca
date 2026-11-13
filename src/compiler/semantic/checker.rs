@@ -1556,6 +1556,28 @@ impl Checker {
             return Type::None;
         }
 
+        if name == "http_post" {
+            if args.len() != 2 {
+                self.error("http_post() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::String;
+            }
+            let ut = self.check_expr(&args[0].value);
+            if !matches!(ut, Type::String | Type::Unknown) {
+                self.error(
+                    format!("http_post() needs String URL, found {}", ut),
+                    &args[0].value.span,
+                );
+            }
+            let bt = self.check_expr(&args[1].value);
+            if !matches!(bt, Type::String | Type::Unknown) {
+                self.error(
+                    format!("http_post() needs String body, found {}", bt),
+                    &args[1].value.span,
+                );
+            }
+            return Type::String;
+        }
         if name == "http_get" {
             if args.len() != 1 {
                 self.error("http_get() takes exactly 1 argument".to_string(), span);
