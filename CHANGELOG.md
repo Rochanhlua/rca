@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 HTTP POST — `http.post(url, body)` sends `text/plain` with Content-Length; returns response body. New `HttpPost` IR opcode, wired through checker/lower/VM/tree. Module-qualified via `import http`. New `tests/http_post.rs` loopback test (verifies request line, Content-Length, body, and response). `examples/http_post_demo.rca`. HTTPS not yet supported (needs TLS dependency).
 - **Implemented:** §7 UDP networking — udp_bind/udp_send/udp_recv/udp_close. New UdpSocket value variant, 4 IR opcodes, wired through checker/lower/VM/tree. udp_recv returns (data, src_host, src_port) tuple. Module-qualified via import net. New tests/udp.rs (4 tests), examples/udp_loopback.rca.
 - **Implemented:** §7 stdlib registry completion — all blueprint §8 modules route through `builtin_name()`: `tensor`, `matrix`, `ai`, `ml`, `nn`, `net`, `http`, `crypto`, `collections` (joining `math`, `fs`, `time`, `string`, `json`). 14 modules total. New `examples/stdlib_all_modules.rca`.
 - **Implemented:** §7 stdlib modules — `import math|fs|time|string|json` route to builtins via `builtin_name()` registry. Module loader skips stdlib names; checker and IR lower redirect qualified calls to the underlying builtin. New `tests/stdlib_modules.rs` (6 tests), `examples/stdlib_modules.rca`.

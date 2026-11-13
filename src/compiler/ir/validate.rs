@@ -69,6 +69,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         I::UdpRecv => (2, 1),
         I::UdpClose => (1, 1),
         I::HttpGet => (1, 1),
+        I::HttpPost => (2, 1),
         I::Sha256 => (1, 1),
         I::MapLen => (1, 1),
         I::StrTrim => (1, 1),

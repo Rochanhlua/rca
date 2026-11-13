@@ -1045,6 +1045,23 @@ impl Interpreter {
             return Ok(Value::None);
         }
 
+        if name == "http_post" {
+            if args.len() != 2 {
+                return Err(err("http_post() takes exactly 2 arguments", span));
+            }
+            let url = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("http_post() needs a String URL", span)),
+            };
+            let body = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("http_post() needs a String body", span)),
+            };
+            return match crate::runtime::http::http_post(&url, &body) {
+                Ok(b) => Ok(Value::Str(b)),
+                Err(m) => Err(err(format!("http_post(): {}", m), span)),
+            };
+        }
         if name == "http_get" {
             if args.len() != 1 {
                 return Err(err("http_get() takes exactly 1 argument", span));

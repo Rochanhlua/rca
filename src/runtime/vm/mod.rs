@@ -429,6 +429,24 @@ impl<'a> Vm<'a> {
                     self.stack
                         .push(Value::Str(crate::runtime::crypto::sha256(&s)));
                 }
+                Instruction::HttpPost => {
+                    let body = self.pop();
+                    let url = self.pop();
+                    match (url, body) {
+                        (Value::Str(u), Value::Str(b)) => {
+                            match crate::runtime::http::http_post(&u, &b) {
+                                Ok(s) => self.stack.push(Value::Str(s)),
+                                Err(m) => return Err(err(format!("http_post(): {}", m), span)),
+                            }
+                        }
+                        _ => {
+                            return Err(err(
+                                "http_post() needs (String, String)".to_string(),
+                                span,
+                            ));
+                        }
+                    }
+                }
                 Instruction::HttpGet => {
                     let url = match self.pop() {
                         Value::Str(s) => s,

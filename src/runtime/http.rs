@@ -52,3 +52,33 @@ fn parse_url(url: &str) -> Result<(String, u16, String), String> {
     }
     Ok((host.to_string(), port, path.to_string()))
 }
+
+/// HTTP POST. Sends `body` as text/plain; returns the response body.
+pub fn http_post(url: &str, body: &str) -> Result<String, String> {
+    let url = url.trim();
+    let (host, port, path) = parse_url(url)?;
+    let addr = format!("{}:{}", host, port);
+    let mut stream =
+        TcpStream::connect(&addr).map_err(|e| format!("http_post connect failed: {}", e))?;
+    let req = format!(
+        "POST {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: RCA/0.1\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+        path,
+        host,
+        body.len(),
+        body
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("http_post write failed: {}", e))?;
+    let mut resp = String::new();
+    stream
+        .read_to_string(&mut resp)
+        .map_err(|e| format!("http_post read failed: {}", e))?;
+    if let Some(pos) = resp.find("\r\n\r\n") {
+        Ok(resp[pos + 4..].to_string())
+    } else if let Some(pos) = resp.find("\n\n") {
+        Ok(resp[pos + 2..].to_string())
+    } else {
+        Ok(resp)
+    }
+}

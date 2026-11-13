@@ -1,0 +1,9 @@
+# Phase 7 — HTTP POST (blueprint §8).
+# Sends a plain-text body; returns the response body.
+# Point at any http:// endpoint that accepts POST.
+
+import http
+
+# Replace with a real URL you control; will fail with a connect error otherwise.
+let body = http.post("http://127.0.0.1:8080/echo", "hello")
+print(body)

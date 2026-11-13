@@ -145,6 +145,7 @@ pub enum Instruction {
 
     // HTTP
     HttpGet,
+    HttpPost,
 
     // crypto
     Sha256,
