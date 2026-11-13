@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §6.4 `conv2d(input, kernel)` builtin — valid padding, stride 1; input `[N,C,H,W]`, kernel `[O,C,KH,KW]`, output `[N,O,H-KH+1,W-KW+1]`. New `Conv2d` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/conv2d.rs`).
 - **Implemented:** §6.4 NN engine — `linear(x, w, b)` builtin (CPU), composed from `matmul` + broadcast `add`. Checker, IR lowering, tree interpreter, VM bytecode, and differential tests (`tests/nn.rs`).
 - **Implemented:** §6.4 `softmax(x)` builtin — last-axis softmax with per-slice max subtraction for numerical stability; wired through checker, IR (`TensorSoftmax`), tree interpreter, VM bytecode, and differential tests (`tests/softmax.rs`).
 - **Implemented:** §1 binary naming — `rcac` (compiler) and `rca` (executable); `rca` delegates to `rcac run` until direct VM entry is wired.
