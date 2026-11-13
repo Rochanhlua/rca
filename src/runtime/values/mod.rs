@@ -1505,3 +1505,39 @@ pub fn tensor_mse(pred: &Value, target: &Value) -> Result<Value, String> {
         data: vec![loss].into(),
     })
 }
+
+/// SGD update: returns w - lr * grad. w and grad must have identical shape.
+/// lr may be Float or Int (Int is coerced to Float).
+pub fn tensor_sgd(w: &Value, grad: &Value, lr: &Value) -> Result<Value, String> {
+    let (ws, wd) = match w {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("sgd() needs Tensor w".to_string()),
+    };
+    let (gs, gd) = match grad {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("sgd() needs Tensor grad".to_string()),
+    };
+    let rate = match lr {
+        Value::Float(f) => *f,
+        Value::Int(i) => *i as f64,
+        _ => return Err("sgd() needs Float or Int learning rate".to_string()),
+    };
+    if ws != gs {
+        return Err(format!(
+            "sgd() shapes do not match: w {:?} vs grad {:?}",
+            ws, gs
+        ));
+    }
+    let mut out = Vec::with_capacity(wd.len());
+    for (a, b) in wd.iter().zip(gd.iter()) {
+        let y = a - rate * b;
+        if !y.is_finite() {
+            return Err("sgd() result is not finite".to_string());
+        }
+        out.push(y);
+    }
+    Ok(Value::Tensor {
+        shape: ws,
+        data: out.into(),
+    })
+}

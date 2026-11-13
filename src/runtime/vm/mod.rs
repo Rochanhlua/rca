@@ -779,6 +779,15 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::TensorSgd => {
+                    let lr = self.pop();
+                    let g = self.pop();
+                    let w = self.pop();
+                    match crate::runtime::values::tensor_sgd(&w, &g, &lr) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::Track => {
                     let v = self.pop();
                     match crate::runtime::values::tensor_track(&v) {

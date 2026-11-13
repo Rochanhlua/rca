@@ -1016,6 +1016,35 @@ impl Checker {
             }
             return Type::Tensor;
         }
+        if name == "sgd" {
+            if args.len() != 3 {
+                self.error("sgd() takes exactly 3 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            let wt = self.check_expr(&args[0].value);
+            if !matches!(wt, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("sgd() needs Tensor w, found {}", wt),
+                    &args[0].value.span,
+                );
+            }
+            let gt = self.check_expr(&args[1].value);
+            if !matches!(gt, Type::Tensor | Type::Unknown) {
+                self.error(
+                    format!("sgd() needs Tensor grad, found {}", gt),
+                    &args[1].value.span,
+                );
+            }
+            let lt = self.check_expr(&args[2].value);
+            if !matches!(lt, Type::Float | Type::Int | Type::Unknown) {
+                self.error(
+                    format!("sgd() needs Float lr, found {}", lt),
+                    &args[2].value.span,
+                );
+            }
+            return Type::Tensor;
+        }
         if name == "track" {
             if args.len() != 1 {
                 self.error("track() takes exactly 1 argument".to_string(), span);
