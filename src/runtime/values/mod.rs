@@ -590,15 +590,8 @@ pub fn tensor_matmul(l: &Value, r: &Value) -> Result<Value, String> {
         Some(total) if total <= MAX_TENSOR_ELEMENTS => {}
         _ => return Err("tensor is too large".to_string()),
     }
-    let mut out = vec![0.0; m * p];
-    for i in 0..m {
-        for k in 0..n {
-            let a = d1[i * n + k];
-            for j in 0..p {
-                out[i * p + j] += a * d2[k * p + j];
-            }
-        }
-    }
+    let out = matmul_par_or_seq(m, n, p, d1, d2);
+
     Ok(Value::Tensor {
         shape: vec![m, p],
         data: out.into(),
@@ -1545,4 +1538,64 @@ pub fn tensor_sgd(w: &Value, grad: &Value, lr: &Value) -> Result<Value, String> 
         shape: ws,
         data: out.into(),
     })
+}
+
+/// Parallel matmul when output is large; sequential otherwise.
+/// d1: [m, n] row-major, d2: [n, p] row-major -> [m, p] row-major.
+fn matmul_par_or_seq(
+    m: usize,
+    n: usize,
+    p: usize,
+    d1: &Arc<Vec<f64>>,
+    d2: &Arc<Vec<f64>>,
+) -> Vec<f64> {
+    let total = m.saturating_mul(n).saturating_mul(p);
+    let cores = std::thread::available_parallelism()
+        .map(|c| c.get())
+        .unwrap_or(1);
+    let use_par = cores > 1 && total >= 10_000_000 && std::env::var_os("RCA_NO_PARALLEL").is_none();
+    let mut out = vec![0.0; m * p];
+    if !use_par {
+        let mut k0 = 0;
+        while k0 < n {
+            let k1 = (k0 + 64).min(n);
+            for i in 0..m {
+                for k in k0..k1 {
+                    let a = d1[i * n + k];
+                    let row = i * p;
+                    for j in 0..p {
+                        out[row + j] += a * d2[k * p + j];
+                    }
+                }
+            }
+            k0 = k1;
+        }
+        return out;
+    }
+    let nthreads = cores.min(m.max(1));
+    let rows_per = m.div_ceil(nthreads);
+    std::thread::scope(|s| {
+        for (ti, out_chunk) in out.chunks_mut(rows_per * p).enumerate() {
+            let start = ti * rows_per;
+            let local_rows = out_chunk.len() / p;
+            s.spawn(move || {
+                let mut k0 = 0;
+                while k0 < n {
+                    let k1 = (k0 + 64).min(n);
+                    for li in 0..local_rows {
+                        let i = start + li;
+                        for k in k0..k1 {
+                            let a = d1[i * n + k];
+                            let off = li * p;
+                            for j in 0..p {
+                                out_chunk[off + j] += a * d2[k * p + j];
+                            }
+                        }
+                    }
+                    k0 = k1;
+                }
+            });
+        }
+    });
+    out
 }

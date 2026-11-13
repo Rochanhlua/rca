@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Implemented:** §6.5 parallel matmul — `std::thread::scope`, threshold 10M mults, `RCA_NO_PARALLEL=1` env var. §7 loop optimization: k-blocking (block=64) on both sequential and parallel matmul. Release profile: LTO fat, opt-level 3, codegen-units=1, panic=abort. Correctness verified (341 unit + 130+ integration, 512³ = 134217728.0, 64×64 = 64.0).
+- **Docs:** BENCHMARKS.md section 2 — honest matmul numbers with thermal caveat and BLAS-not-linked disclaimer.
 - **Implemented:** §6.4 inference pipeline — forward-only `predict()` user-fn (no track/grad). New `tests/inference.rs` (3 tests), `examples/inference_linear.rca`.
 - **Implemented:** §6.4 multi-layer NN models via composition — 2-layer MLP trains end-to-end. New `tests/mlp.rs` (4 tests), `examples/mlp_train.rca`, `docs/nn.md`.
 - **Implemented:** §6.4 training pipeline — `track` + `linear` + `mse` + `grad` + `sgd` compose end-to-end. `mse()` now accepts tracked tensors (dispatches to `tensor_arith` + `tensor_reduce` for autodiff). New `tests/training.rs` with 5 tests (loss value, loss decrease, weight update, tree-vs-VM differential). `examples/train_linear.rca` shows a 5-step SGD loop.
