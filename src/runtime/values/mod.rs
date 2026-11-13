@@ -1369,3 +1369,38 @@ mod tensor_map_tests {
         assert!(tensor_map(&Value::Float(1.0), 'e').is_err());
     }
 }
+
+/// Softmax along the last axis. Subtracts per-slice max before exp for numerical stability.
+pub fn tensor_softmax(v: &Value) -> Result<Value, String> {
+    let (shape, data) = match v {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("softmax() needs a Tensor".to_string()),
+    };
+    if shape.is_empty() {
+        return Err("softmax() needs a tensor with at least one dimension".to_string());
+    }
+    let last = *shape.last().unwrap();
+    if last == 0 {
+        return Err("softmax() needs a non-empty last axis".to_string());
+    }
+    let mut out = Vec::with_capacity(data.len());
+    for chunk in data.chunks(last) {
+        let m = chunk.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let exps: Vec<f64> = chunk.iter().map(|x| (*x - m).exp()).collect();
+        let s: f64 = exps.iter().sum();
+        if s == 0.0 || !s.is_finite() {
+            return Err("softmax() normalization is not finite".to_string());
+        }
+        for e in exps {
+            let y = e / s;
+            if !y.is_finite() {
+                return Err("softmax() result is not finite".to_string());
+            }
+            out.push(y);
+        }
+    }
+    Ok(Value::Tensor {
+        shape,
+        data: out.into(),
+    })
+}
