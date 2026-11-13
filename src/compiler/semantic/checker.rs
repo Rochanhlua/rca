@@ -1429,6 +1429,55 @@ impl Checker {
             return Type::String;
         }
 
+        if name == "udp_bind" {
+            if args.len() != 2 {
+                self.error("udp_bind() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Unknown;
+            }
+            let ht = self.check_expr(&args[0].value);
+            let pt = self.check_expr(&args[1].value);
+            if !matches!(ht, Type::String | Type::Unknown) {
+                self.error(
+                    format!("udp_bind() needs String host, found {}", ht),
+                    &args[0].value.span,
+                );
+            }
+            if !matches!(pt, Type::Int | Type::Unknown) {
+                self.error(
+                    format!("udp_bind() needs Int port, found {}", pt),
+                    &args[1].value.span,
+                );
+            }
+            return Type::Unknown;
+        }
+        if name == "udp_send" {
+            if args.len() != 4 {
+                self.error("udp_send() takes exactly 4 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Int;
+            }
+            self.check_arg_exprs(args);
+            return Type::Int;
+        }
+        if name == "udp_recv" {
+            if args.len() != 2 {
+                self.error("udp_recv() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Unknown;
+            }
+            self.check_arg_exprs(args);
+            return Type::Unknown;
+        }
+        if name == "udp_close" {
+            if args.len() != 1 {
+                self.error("udp_close() takes exactly 1 argument".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::None;
+            }
+            self.check_arg_exprs(args);
+            return Type::None;
+        }
         if name == "tcp_connect" {
             if args.len() != 2 {
                 self.error("tcp_connect() takes exactly 2 arguments".to_string(), span);

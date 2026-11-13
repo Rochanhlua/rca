@@ -1129,6 +1129,49 @@ impl Interpreter {
     }
 }
 
+pub fn udp_bind_rt(host: &str, port: u16) -> Result<Value, String> {
+    let addr = format!("{}:{}", host, port);
+    match std::net::UdpSocket::bind(&addr) {
+        Ok(s) => Ok(Value::UdpSocket(crate::runtime::net::UdpSocket {
+            socket: std::sync::Arc::new(std::sync::Mutex::new(s)),
+        })),
+        Err(e) => Err(format!("udp_bind failed: {}", e)),
+    }
+}
+
+/// UDP runtime: send datagram to (host, port).
+pub fn udp_send_rt(
+    sock: &crate::runtime::net::UdpSocket,
+    host: &str,
+    port: u16,
+    data: &str,
+) -> Result<i64, String> {
+    let addr = format!("{}:{}", host, port);
+    let s = sock.socket.lock().unwrap();
+    match s.send_to(data.as_bytes(), &addr) {
+        Ok(n) => Ok(n as i64),
+        Err(e) => Err(format!("udp_send failed: {}", e)),
+    }
+}
+
+/// UDP runtime: receive a datagram, returns (data, src_host, src_port).
+pub fn udp_recv_rt(sock: &crate::runtime::net::UdpSocket, max: usize) -> Result<Value, String> {
+    let mut buf = vec![0u8; max];
+    let s = sock.socket.lock().unwrap();
+    match s.recv_from(&mut buf) {
+        Ok((n, src)) => {
+            let data = String::from_utf8_lossy(&buf[..n]).to_string();
+            let host = src.ip().to_string();
+            let port = src.port() as i64;
+            Ok(Value::Tuple(vec![
+                Value::Str(data),
+                Value::Str(host),
+                Value::Int(port),
+            ]))
+        }
+        Err(e) => Err(format!("udp_recv failed: {}", e)),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

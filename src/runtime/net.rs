@@ -20,3 +20,23 @@ impl PartialEq for Socket {
         Arc::ptr_eq(&self.stream, &other.stream)
     }
 }
+
+/// UDP socket wrapper.
+#[derive(Debug)]
+pub struct UdpSocket {
+    pub socket: Arc<Mutex<std::net::UdpSocket>>,
+}
+
+impl Clone for UdpSocket {
+    fn clone(&self) -> Self {
+        Self {
+            socket: Arc::clone(&self.socket),
+        }
+    }
+}
+
+impl PartialEq for UdpSocket {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.socket, &other.socket)
+    }
+}
