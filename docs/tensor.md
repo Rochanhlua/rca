@@ -59,12 +59,19 @@ Not implemented yet: automatic differentiation, method-call syntax, GPU, `a[i] =
 - IR instructions: MakeTensor, FillTensor, TensorShape, MatMul, TensorSum,
   TensorMean, TensorMax, TensorMin, TensorTranspose, TensorReshape.
 
-## 7. Not implemented yet (planned)
-- Automatic differentiation (computational graph, then reverse-mode).
+## 7. Beyond this document
+Implemented since this document was first written:
+- Automatic differentiation: `track` and `grad` (see `autodiff-design.md`).
+- Neural network builtins: `linear`, `softmax`, `conv2d`, `mse`, `sgd`
+  (see `nn.md`).
+- Large `matmul` calls run in parallel and in blocks (set `RCA_NO_PARALLEL=1`
+  to turn the parallel path off).
+
+## 7a. Not implemented yet (planned)
 - Method-call syntax (`a.matmul(b)`, `a.sum()`); today only functions exist.
 - `a[i, j]` multi-index and `a[i] = x` assignment.
 - matmul for rank 1 and rank 3+; axis-wise reductions; `Tensor` of Int.
-- Neural network layers, GPU abstraction, benchmarks against NumPy/PyTorch.
+- GPU abstraction, benchmarks against NumPy/PyTorch.
 
 ## 8. Rules for future changes
 - Interpreter and VM must give identical results.

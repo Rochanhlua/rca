@@ -1,6 +1,8 @@
 # Design: Shared Tensor Storage
 
-Status: DECIDED, NOT IMPLEMENTED. Nothing in this document is in the code yet.
+Status: DECIDED. `Value::Tensor` now stores its data as `Arc<Vec<f64>>` in
+`src/runtime/values/mod.rs`. The only copy-on-read measurement is `BENCHMARKS.md`
+section 1 (2026-11-08); it has not been repeated since.
 
 ## 1. Problem
 BENCHMARKS.md shows that reading a variable clones the whole value
