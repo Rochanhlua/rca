@@ -6,7 +6,7 @@ fn test_native_build() {
     std::fs::write(&temp, "print(42)\n").unwrap();
 
     let exe = temp.with_extension("");
-    let build = Command::new(env!("CARGO_BIN_EXE_rca"))
+    let build = Command::new(env!("CARGO_BIN_EXE_rcac"))
         .args(["build", temp.to_str().unwrap()])
         .output()
         .unwrap();

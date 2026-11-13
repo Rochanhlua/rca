@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §1 binary naming — `rcac` (compiler) and `rca` (executable); `rca` delegates to `rcac run` until direct VM entry is wired.
 - Lexer, parser, type checker, bytecode compiler, optimizer, validator, VM and tree interpreter.
 - Modules, enum and match, const, tuples (with destructuring), CPU tensors.
 - MIT license, CI (fmt, clippy, test).
