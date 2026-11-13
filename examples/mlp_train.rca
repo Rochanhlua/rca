@@ -1,0 +1,24 @@
+# Phase 6.4 — 2-layer MLP (linear + relu + linear) trained end-to-end.
+# Weights: 2 -> 2 -> 1. x = [1, 2], y = [1].
+# Composes: track + linear + relu + mse + grad + sgd. No new builtins.
+
+let x = Tensor([[1.0, 2.0]])
+let y = Tensor([[1.0]])
+mut w1 = Tensor([[0.1, 0.2], [0.3, 0.4]])
+mut b1 = Tensor([0.0, 0.0])
+mut w2 = Tensor([[0.5], [0.6]])
+mut b2 = Tensor([0.0])
+
+for i in 0..3:
+    let w1t = track(w1)
+    let b1t = track(b1)
+    let w2t = track(w2)
+    let b2t = track(b2)
+    let h = relu(linear(x, w1t, b1t))
+    let pred = linear(h, w2t, b2t)
+    let loss = mse(pred, y)
+    w1 = sgd(w1, grad(loss, w1t), 0.05)
+    b1 = sgd(b1, grad(loss, b1t), 0.05)
+    w2 = sgd(w2, grad(loss, w2t), 0.05)
+    b2 = sgd(b2, grad(loss, b2t), 0.05)
+    print(loss)

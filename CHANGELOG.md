@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §6.4 multi-layer NN models via composition — 2-layer MLP trains end-to-end. New `tests/mlp.rs` (4 tests), `examples/mlp_train.rca`, `docs/nn.md`.
 - **Implemented:** §6.4 training pipeline — `track` + `linear` + `mse` + `grad` + `sgd` compose end-to-end. `mse()` now accepts tracked tensors (dispatches to `tensor_arith` + `tensor_reduce` for autodiff). New `tests/training.rs` with 5 tests (loss value, loss decrease, weight update, tree-vs-VM differential). `examples/train_linear.rca` shows a 5-step SGD loop.
 - **Implemented:** §6.4 `sgd(w, grad, lr)` optimizer builtin — `w - lr * grad`, exact-shape match, lr accepts Float or Int. New `TensorSgd` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/sgd.rs`).
 - **Implemented:** §6.4 `mse(pred, target)` loss builtin — mean squared error, exact-shape match, returns rank-1 `[loss]` tensor so it composes with tensor ops and grad. New `TensorMse` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/mse.rs`).
