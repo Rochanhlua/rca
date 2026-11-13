@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §6.4 NN engine — `linear(x, w, b)` builtin (CPU), composed from `matmul` + broadcast `add`. Checker, IR lowering, tree interpreter, VM bytecode, and differential tests (`tests/nn.rs`).
 - **Implemented:** §1 binary naming — `rcac` (compiler) and `rca` (executable); `rca` delegates to `rcac run` until direct VM entry is wired.
 - Lexer, parser, type checker, bytecode compiler, optimizer, validator, VM and tree interpreter.
 - Modules, enum and match, const, tuples (with destructuring), CPU tensors.

@@ -725,6 +725,18 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "linear" {
+            if args.len() != 3 {
+                return Err(err("linear() takes exactly 3 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::MatMul, span);
+            self.compile_expr(&args[2].value)?;
+            self.emit(Instruction::Add, span);
+            return Ok(());
+        }
+
         if matches!(name.as_str(), "sum" | "mean" | "max" | "min" | "transpose") {
             if args.len() != 1 {
                 return Err(err(format!("{}() takes exactly 1 argument", name), span));

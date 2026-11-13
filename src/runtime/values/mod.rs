@@ -1295,6 +1295,10 @@ pub fn tensor_map(v: &Value, kind: char) -> Result<Value, String> {
     })
 }
 
+pub fn tensor_linear(x: &Value, w: &Value, b: &Value) -> Result<Value, String> {
+    let xw = tensor_matmul(x, w)?;
+    tensor_arith('+', &xw, b)
+}
 #[cfg(test)]
 mod tensor_map_tests {
     use super::*;
