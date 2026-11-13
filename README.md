@@ -2,10 +2,11 @@
 
 Built for the Intelligence Era.
 
-RCA is an independent, statically typed programming language with a
-Python-inspired, indentation-based syntax. The compiler (`rca`) is written
-in Rust. The long-term goal is an AI-native language with a native tensor
-engine. See `docs/` for design documents.
+RCA is an independent, statically typed programming language with an
+indentation-based syntax. The compiler is written in Rust. It has built-in
+tensors and automatic differentiation, and it can compile to native code.
+The long-term goal is an AI-native language with a native tensor engine.
+See `docs/` for design documents.
 
 **Status: early development. Not ready for production use.**
 
@@ -16,15 +17,25 @@ Creator: TH Lalrochanhlua
     cargo build --release
     cargo test
 
+This produces two binaries:
+
+- `rcac` is the compiler and tool driver.
+- `rca` is the executable front end. `rca <file.rca>` runs a program
+  (it delegates to `rcac run`).
+
 ## Usage
 
-    rca lex <file.rca>        show tokens
-    rca parse <file.rca>      show the syntax tree
-    rca check <file.rca>      type check only
-    rca ir <file.rca>         show bytecode
-    rca ir-opt <file.rca>     show optimized bytecode
-    rca run <file.rca>        run on the bytecode VM
-    rca run-tree <file.rca>   run on the tree-walking interpreter
+    rca  <file.rca>           run a program
+
+    rcac lex <file.rca>       show tokens
+    rcac parse <file.rca>     show the syntax tree
+    rcac check <file.rca>     type check only
+    rcac ir <file.rca>        show bytecode
+    rcac ir-opt <file.rca>    show optimized bytecode
+    rcac run <file.rca>       run on the bytecode VM
+    rcac run-tree <file.rca>  run on the tree-walking interpreter
+    rcac compile <file.rca>   compile to a native object file (<file>.rca.o)
+    rcac build <file.rca>     compile and link a native executable (needs clang)
 
 ## Example
 
@@ -41,36 +52,66 @@ Tensor example:
     print(matmul(a, b))
     print(a + Tensor([10.0, 20.0]))
 
+Training example (see `examples/mlp_train.rca` and `docs/nn.md`):
+`track`, `linear`, `mse`, `grad` and `sgd` compose into a training loop.
+
 More programs are in `examples/`.
 
 ## What works today
 
+Language:
+
 - Lexer, parser, diagnostics with line and column
 - Static type checker with type inference
-- Variables (let, mut), functions, structs, lists
-- if/else, while, for, break, continue
-- try / catch / throw
-- Built-ins: print, len, str, int, float, list push
-- Modules: import, import as, from-import, pub, module-qualified calls
-- Bytecode compiler, optimizer, validator and VM
+- Variables (`let`, `mut`), `const` (top-level, constant values only)
+- Functions, structs, lists, tuples (with destructuring), maps
+- `if`/`else`, `while`, `for`, `break`, `continue`
+- `try` / `catch` / `throw`
+- `enum` and `match` statement (see `docs/enum.md`)
+- Modules: `import`, `import as`, `from`-import, `pub`, module-qualified
+  calls (see `docs/modules.md`)
 - Runtime checks: list bounds, integer overflow, division by zero, call depth
-- enum and match statement (see `docs/enum.md`)
-- const declarations (top-level, constant values only)
-- tuples: `(1, "a")`, literal indexing, `len`, `==`, destructuring `let (a, b) = p` (see `docs/tuple.md`)
-- Tensors (CPU, Float only): construction, indexing, elementwise + - * /,
-  broadcasting, matmul (rank 2), sum/mean/max/min, transpose, reshape.
-  See `docs/tensor.md`.
-- Automatic differentiation (reverse-mode, CPU, with broadcasting in `+ - * /`): `track(t)` and `grad(y, x)`. Tracked tensors support `+ - * /`, `sum`, `mean`, rank 2 `matmul`, `transpose`, `reshape`, `exp`, `log`, `sqrt`, `tanh`, `relu` and `sigmoid`, also mixed with plain tensors or Floats (treated as constants). `sum` and `mean` of a tracked tensor give a one-element Tensor, not a Float. See `docs/autodiff-design.md`.
+
+Execution:
+
+- Bytecode compiler, optimizer, validator and VM
+- Tree-walking interpreter
+- Native code generation (Cranelift) for a growing subset: arithmetic,
+  control flow, loops, functions, floats, strings, structs, lists, tuples,
+  enums and match, maps, math builtins, try/catch/throw. Heap objects carry
+  a refcount header. Some allocation gaps remain; see `docs/memory-model.md`.
+
+Tensors and AI (CPU, Float only):
+
+- Tensors: construction, indexing, elementwise `+ - * /`, broadcasting,
+  matmul (rank 2, parallel and blocked for large sizes), sum/mean/max/min,
+  transpose, reshape. See `docs/tensor.md`.
+- Automatic differentiation (reverse-mode): `track(t)` and `grad(y, x)`.
+  Tracked tensors support `+ - * /`, `sum`, `mean`, rank 2 `matmul`,
+  `transpose`, `reshape`, `exp`, `log`, `sqrt`, `tanh`, `relu` and `sigmoid`,
+  also mixed with plain tensors or Floats (treated as constants). `sum` and
+  `mean` of a tracked tensor give a one-element Tensor, not a Float.
+  See `docs/autodiff-design.md`.
+- Neural network builtins: `linear`, `softmax`, `conv2d` (valid padding,
+  stride 1), `mse`, `sgd`. Multi-layer models are built by composition,
+  and forward-only inference works with a plain `predict` function.
+  See `docs/nn.md`.
+
+Standard library (via `import <module>`; 14 modules):
+
+`math`, `fs`, `time`, `string`, `json`, `tensor`, `matrix`, `ai`, `ml`, `nn`,
+`net` (TCP and UDP), `http` (`get` and `post`), `crypto` (`sha256`),
+`collections`. The same functions also work as plain builtins.
 
 ## Not implemented yet
 
-- Native code generation
 - Borrowing and references
-- Map, generics, enum payloads, match expressions, pub const
-- Autodiff for max and min; tensor method syntax; GPU support
-- Standard library modules
+- Generics, enum payloads, match expressions, `pub const`
+- Native code generation for the whole language (tensors, autodiff and
+  most of the stdlib run on the VM only)
+- Autodiff for `max` and `min`; tensor method syntax; GPU support
+- HTTPS (needs a TLS dependency)
 - Package manager
-- Benchmarks (no performance claims are made)
 
 ## Documentation
 
@@ -78,8 +119,11 @@ More programs are in `examples/`.
 - `docs/memory-model.md` memory model
 - `docs/modules.md` modules
 - `docs/tensor.md` tensors
+- `docs/autodiff-design.md` automatic differentiation
+- `docs/nn.md` neural network builtins
 - `docs/enum.md` enum and match
 - `docs/tuple.md` tuples
+- `docs/BENCHMARKS.md` benchmarks (no general performance claims are made)
 
 ## Development
 
