@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §6.4 inference pipeline — forward-only `predict()` user-fn (no track/grad). New `tests/inference.rs` (3 tests), `examples/inference_linear.rca`.
 - **Implemented:** §6.4 multi-layer NN models via composition — 2-layer MLP trains end-to-end. New `tests/mlp.rs` (4 tests), `examples/mlp_train.rca`, `docs/nn.md`.
 - **Implemented:** §6.4 training pipeline — `track` + `linear` + `mse` + `grad` + `sgd` compose end-to-end. `mse()` now accepts tracked tensors (dispatches to `tensor_arith` + `tensor_reduce` for autodiff). New `tests/training.rs` with 5 tests (loss value, loss decrease, weight update, tree-vs-VM differential). `examples/train_linear.rca` shows a 5-step SGD loop.
 - **Implemented:** §6.4 `sgd(w, grad, lr)` optimizer builtin — `w - lr * grad`, exact-shape match, lr accepts Float or Int. New `TensorSgd` IR opcode; wired through checker, tree interpreter, VM bytecode; differential tests (`tests/sgd.rs`).
