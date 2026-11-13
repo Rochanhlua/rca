@@ -651,6 +651,13 @@ impl Interpreter {
             return crate::runtime::values::tensor_map(&v, kind).map_err(|m| err(m, span));
         }
 
+        if name == "softmax" {
+            if args.len() != 1 {
+                return Err(err("softmax() takes exactly 1 argument", span));
+            }
+            let v = self.eval_expr(&args[0].value)?;
+            return crate::runtime::values::tensor_softmax(&v).map_err(|m| err(m, span));
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));

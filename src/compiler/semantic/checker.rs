@@ -965,7 +965,7 @@ impl Checker {
 
         if matches!(
             name.as_str(),
-            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid"
+            "exp" | "log" | "sqrt" | "tanh" | "relu" | "sigmoid" | "softmax"
         ) {
             if args.len() != 1 {
                 self.error(format!("{}() takes exactly 1 argument", name), span);

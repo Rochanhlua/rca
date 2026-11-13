@@ -756,6 +756,13 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(m, span)),
                     }
                 }
+                Instruction::TensorSoftmax => {
+                    let v = self.pop();
+                    match crate::runtime::values::tensor_softmax(&v) {
+                        Ok(t) => self.stack.push(t),
+                        Err(m) => return Err(err(m, span)),
+                    }
+                }
                 Instruction::Track => {
                     let v = self.pop();
                     match crate::runtime::values::tensor_track(&v) {

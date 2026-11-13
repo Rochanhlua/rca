@@ -86,6 +86,7 @@ pub enum Instruction {
     TensorMin,
     TensorTranspose,
     TensorMap(char),
+    TensorSoftmax,
     Track,
     Grad,
     TensorReshape,

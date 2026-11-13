@@ -773,6 +773,14 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "softmax" {
+            if args.len() != 1 {
+                return Err(err("softmax() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::TensorSoftmax, span);
+            return Ok(());
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));

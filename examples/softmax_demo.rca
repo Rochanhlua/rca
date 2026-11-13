@@ -1,0 +1,8 @@
+# Phase 6.4 — softmax on CPU tensors.
+let logits = Tensor([1.0, 2.0, 3.0])
+print(softmax(logits))
+
+let batch = Tensor([[1.0, 2.0], [3.0, 4.0]])
+print(softmax(batch))
+
+print(softmax(Tensor([1000.0, 1001.0])))
