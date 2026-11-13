@@ -35,7 +35,6 @@ enum StackType {
 }
 
 #[allow(dead_code)]
-#[allow(dead_code)]
 fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
     let zero = builder.ins().iconst(types::I64, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, ptr, zero);
@@ -52,7 +51,6 @@ fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
     builder.seal_block(cont_blk);
 }
 
-#[allow(dead_code)]
 #[allow(dead_code)]
 fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     let zero = builder.ins().iconst(types::I64, 0);
@@ -79,7 +77,6 @@ fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     builder.seal_block(cont_blk);
 }
 
-#[allow(dead_code)]
 #[allow(dead_code)]
 fn is_heap(ty: &StackType) -> bool {
     matches!(
@@ -576,7 +573,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          floor_ref: FuncRef,
                          ceil_ref: FuncRef,
                          round_ref: FuncRef,
-                         free_ref: FuncRef,
+                         _free_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
@@ -2835,8 +2832,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let floor_ref = module.declare_func_in_func(floor_func, builder.func);
         let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
         let round_ref = module.declare_func_in_func(round_func, builder.func);
-        let free_ref = module.declare_func_in_func(free_func, builder.func);
-        let free_ref = module.declare_func_in_func(free_func, builder.func);
+        let _free_ref = module.declare_func_in_func(free_func, builder.func);
+        let _free_ref = module.declare_func_in_func(free_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
         let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -2901,7 +2898,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             floor_ref,
             ceil_ref,
             round_ref,
-            free_ref,
+            _free_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_int_ptr,
@@ -3018,8 +3015,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let floor_ref = module.declare_func_in_func(floor_func, builder.func);
             let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
             let round_ref = module.declare_func_in_func(round_func, builder.func);
-            let free_ref = module.declare_func_in_func(free_func, builder.func);
-            let free_ref = module.declare_func_in_func(free_func, builder.func);
+            let _free_ref = module.declare_func_in_func(free_func, builder.func);
+            let _free_ref = module.declare_func_in_func(free_func, builder.func);
             let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
             let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
             let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -3092,7 +3089,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 floor_ref,
                 ceil_ref,
                 round_ref,
-                free_ref,
+                _free_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_int_ptr,
