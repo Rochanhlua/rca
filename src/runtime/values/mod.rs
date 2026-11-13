@@ -1473,3 +1473,35 @@ pub fn tensor_conv2d(input: &Value, kernel: &Value) -> Result<Value, String> {
         data: out.into(),
     })
 }
+
+/// Mean squared error: mean((pred - target)^2). Shapes must match exactly.
+/// Returns a rank-1 tensor [loss] (so it composes with tensor ops and grad).
+pub fn tensor_mse(pred: &Value, target: &Value) -> Result<Value, String> {
+    let (ps, pd) = match pred {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("mse() needs Tensor arguments".to_string()),
+    };
+    let (ts, td) = match target {
+        Value::Tensor { shape, data } => (shape.clone(), data.clone()),
+        _ => return Err("mse() needs Tensor arguments".to_string()),
+    };
+    if ps != ts {
+        return Err(format!("mse() shapes do not match: {:?} and {:?}", ps, ts));
+    }
+    if pd.is_empty() {
+        return Err("mse() needs non-empty tensors".to_string());
+    }
+    let mut acc = 0.0f64;
+    for (a, b) in pd.iter().zip(td.iter()) {
+        let d = a - b;
+        acc += d * d;
+    }
+    let loss = acc / pd.len() as f64;
+    if !loss.is_finite() {
+        return Err("mse() result is not finite".to_string());
+    }
+    Ok(Value::Tensor {
+        shape: vec![1],
+        data: vec![loss].into(),
+    })
+}

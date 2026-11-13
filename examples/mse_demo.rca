@@ -1,0 +1,12 @@
+# Phase 6.4 — mean squared error loss on CPU tensors.
+# Perfect prediction: loss = 0
+print(mse(Tensor([1.0, 2.0, 3.0]), Tensor([1.0, 2.0, 3.0])))
+
+# Every element off by 2: loss = 4
+print(mse(Tensor([1.0, 2.0]), Tensor([3.0, 4.0])))
+
+# Single element, off by 3: loss = 9
+print(mse(Tensor([2.0]), Tensor([5.0])))
+
+# Batched rank-2: loss over all elements
+print(mse(Tensor([[1.0, 2.0], [3.0, 4.0]]), Tensor([[0.0, 0.0], [0.0, 0.0]])))

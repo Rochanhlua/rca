@@ -88,6 +88,7 @@ pub enum Instruction {
     TensorMap(char),
     TensorSoftmax,
     Conv2d,
+    TensorMse,
     Track,
     Grad,
     TensorReshape,

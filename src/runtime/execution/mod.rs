@@ -666,6 +666,14 @@ impl Interpreter {
             let b = self.eval_expr(&args[1].value)?;
             return crate::runtime::values::tensor_conv2d(&a, &b).map_err(|m| err(m, span));
         }
+        if name == "mse" {
+            if args.len() != 2 {
+                return Err(err("mse() takes exactly 2 arguments", span));
+            }
+            let a = self.eval_expr(&args[0].value)?;
+            let b = self.eval_expr(&args[1].value)?;
+            return crate::runtime::values::tensor_mse(&a, &b).map_err(|m| err(m, span));
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));

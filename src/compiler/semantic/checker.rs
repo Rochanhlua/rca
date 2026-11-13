@@ -999,6 +999,23 @@ impl Checker {
             }
             return Type::Tensor;
         }
+        if name == "mse" {
+            if args.len() != 2 {
+                self.error("mse() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::Tensor;
+            }
+            for arg in args {
+                let t = self.check_expr(&arg.value);
+                if !matches!(t, Type::Tensor | Type::Unknown) {
+                    self.error(
+                        format!("mse() needs Tensor arguments, found {}", t),
+                        &arg.value.span,
+                    );
+                }
+            }
+            return Type::Tensor;
+        }
         if name == "track" {
             if args.len() != 1 {
                 self.error("track() takes exactly 1 argument".to_string(), span);
