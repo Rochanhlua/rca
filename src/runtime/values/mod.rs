@@ -1477,6 +1477,11 @@ pub fn tensor_conv2d(input: &Value, kernel: &Value) -> Result<Value, String> {
 /// Mean squared error: mean((pred - target)^2). Shapes must match exactly.
 /// Returns a rank-1 tensor [loss] (so it composes with tensor ops and grad).
 pub fn tensor_mse(pred: &Value, target: &Value) -> Result<Value, String> {
+    if matches!(pred, Value::Tracked(_)) || matches!(target, Value::Tracked(_)) {
+        let err = tensor_arith('-', pred, target)?;
+        let sq = tensor_arith('*', &err, &err)?;
+        return tensor_reduce(&sq, 'a');
+    }
     let (ps, pd) = match pred {
         Value::Tensor { shape, data } => (shape.clone(), data.clone()),
         _ => return Err("mse() needs Tensor arguments".to_string()),

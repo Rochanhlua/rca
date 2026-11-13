@@ -1,0 +1,23 @@
+# Phase 6.4 — end-to-end training pipeline.
+# Linear regression: pred = x @ w + b, loss = mse(pred, y), SGD step.
+# x = [1, 2], y = [3], start w = [0.1, 0.1], b = 0.
+# Gradients flow through linear + mse via track/grad.
+
+let x = Tensor([[1.0, 2.0]])
+let y = Tensor([[3.0]])
+mut w = Tensor([[0.1], [0.1]])
+mut b = Tensor([0.0])
+
+for i in 0..5:
+    let wt = track(w)
+    let bt = track(b)
+    let pred = linear(x, wt, bt)
+    let loss = mse(pred, y)
+    let gw = grad(loss, wt)
+    let gb = grad(loss, bt)
+    w = sgd(w, gw, 0.05)
+    b = sgd(b, gb, 0.05)
+    print(loss)
+
+print(w)
+print(b)
