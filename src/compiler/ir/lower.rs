@@ -790,6 +790,15 @@ impl Compiler {
             self.emit(Instruction::Conv2d, span);
             return Ok(());
         }
+        if name == "mse" {
+            if args.len() != 2 {
+                return Err(err("mse() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::TensorMse, span);
+            return Ok(());
+        }
         if name == "track" {
             if args.len() != 1 {
                 return Err(err("track() takes exactly 1 argument", span));
