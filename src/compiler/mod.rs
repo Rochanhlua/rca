@@ -7,4 +7,5 @@ pub mod modules;
 pub mod optimizer;
 pub mod parser;
 pub mod semantic;
+pub mod stdlib;
 pub mod types;

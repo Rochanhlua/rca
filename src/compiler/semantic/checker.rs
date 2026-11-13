@@ -2114,11 +2114,16 @@ impl Checker {
                         alias.clone().unwrap_or_else(|| module.clone()),
                         module.clone(),
                     );
-                    if !self.imports.contains_key(module) {
+                    if !self.imports.contains_key(module)
+                        && !crate::compiler::stdlib::is_stdlib_module(module)
+                    {
                         self.error(format!("cannot find module '{}'", module), &stmt.span);
                     }
                 }
                 StmtKind::FromImport { module, names } => {
+                    if crate::compiler::stdlib::is_stdlib_module(module) {
+                        continue;
+                    }
                     let exports = match self.imports.get(module).cloned() {
                         Some(e) => e,
                         None => {
@@ -2282,6 +2287,13 @@ impl Checker {
         span: &Span,
         callee_span: &Span,
     ) -> Type {
+        if let Some(builtin) = crate::compiler::stdlib::builtin_name(module, item) {
+            let ident = Expr {
+                kind: ExprKind::Ident(builtin),
+                span: callee_span.clone(),
+            };
+            return self.check_call(&ident, args, span);
+        }
         let exports = match self.imports.get(module).cloned() {
             Some(e) => e,
             None => {

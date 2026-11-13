@@ -1,0 +1,12 @@
+# Phase 7 — stdlib modules (blueprint §8).
+# Each import routes to the existing builtins.
+
+import math
+import fs
+import string
+
+print(math.abs(-5))
+print(math.pow(2, 10))
+print(math.floor(3.7))
+print(fs.exists("Cargo.toml"))
+print(string.trim("  hi  "))

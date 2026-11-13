@@ -683,6 +683,13 @@ impl Compiler {
             && let Some(module) = self.module_aliases.get(m).cloned()
             && self.resolve(m).is_none()
         {
+            if let Some(builtin) = crate::compiler::stdlib::builtin_name(&module, item) {
+                let ident = Expr {
+                    kind: ExprKind::Ident(builtin),
+                    span: callee.span.clone(),
+                };
+                return self.compile_call(&ident, args, span);
+            }
             let key = format!("{}::{}", module, item);
             if let Some(&id) = self.func_ids.get(&key) {
                 let sig = self.func_sigs[id].clone();

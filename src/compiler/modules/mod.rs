@@ -57,6 +57,9 @@ impl Loader {
                 StmtKind::Import { module, .. } | StmtKind::FromImport { module, .. } => module,
                 _ => continue,
             };
+            if crate::compiler::stdlib::is_stdlib_module(module) {
+                continue;
+            }
 
             let target = dir.join(format!("{}.rca", module));
             let canonical = match fs::canonicalize(&target) {
