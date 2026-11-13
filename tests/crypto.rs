@@ -13,7 +13,7 @@ print(h)
     )
     .unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_rca"))
+    let out = Command::new(env!("CARGO_BIN_EXE_rcac"))
         .arg("run")
         .arg(&temp_file)
         .output()

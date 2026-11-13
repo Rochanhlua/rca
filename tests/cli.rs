@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn rca() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_rca"))
+    Command::new(env!("CARGO_BIN_EXE_rcac"))
 }
 
 fn example(name: &str) -> PathBuf {

@@ -5,6 +5,20 @@ edition = "2024"
 license = "MIT"
 description = "RCA: an AI-native programming language (early development)"
 
+[lib]
+name = "rca"
+path = "src/lib.rs"
+
+# §1: RCA compiler
+[[bin]]
+name = "rcac"
+path = "src/main.rs"
+
+# §1: RCA language executable
+[[bin]]
+name = "rca"
+path = "src/bin/rca.rs"
+
 [dependencies]
 sha2 = "0.10"
 cranelift = "0.107"
