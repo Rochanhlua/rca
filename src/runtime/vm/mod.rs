@@ -439,6 +439,58 @@ impl<'a> Vm<'a> {
                         Err(m) => return Err(err(format!("http_get(): {}", m), span)),
                     }
                 }
+                Instruction::UdpBind => {
+                    let port = self.pop();
+                    let host = self.pop();
+                    match (host, port) {
+                        (Value::Str(h), Value::Int(p)) => {
+                            match crate::runtime::execution::udp_bind_rt(&h, p as u16) {
+                                Ok(s) => self.stack.push(s),
+                                Err(m) => return Err(err(m, span)),
+                            }
+                        }
+                        _ => return Err(err("udp_bind() needs (String, Int)".to_string(), span)),
+                    }
+                }
+                Instruction::UdpSend => {
+                    let data = self.pop();
+                    let port = self.pop();
+                    let host = self.pop();
+                    let sock = self.pop();
+                    match (sock, host, port, data) {
+                        (Value::UdpSocket(s), Value::Str(h), Value::Int(p), Value::Str(d)) => {
+                            match crate::runtime::execution::udp_send_rt(&s, &h, p as u16, &d) {
+                                Ok(n) => self.stack.push(Value::Int(n)),
+                                Err(m) => return Err(err(m, span)),
+                            }
+                        }
+                        _ => {
+                            return Err(err(
+                                "udp_send() needs (UdpSocket, String, Int, String)".to_string(),
+                                span,
+                            ));
+                        }
+                    }
+                }
+                Instruction::UdpRecv => {
+                    let max = self.pop();
+                    let sock = self.pop();
+                    match (sock, max) {
+                        (Value::UdpSocket(s), Value::Int(m)) => {
+                            match crate::runtime::execution::udp_recv_rt(&s, m as usize) {
+                                Ok(t) => self.stack.push(t),
+                                Err(m) => return Err(err(m, span)),
+                            }
+                        }
+                        _ => {
+                            return Err(err("udp_recv() needs (UdpSocket, Int)".to_string(), span));
+                        }
+                    }
+                }
+                Instruction::UdpClose => {
+                    let _sock = self.pop();
+                    self.stack.push(Value::None);
+                }
                 Instruction::TcpClose => {
                     let _sock = match self.pop() {
                         Value::Socket(s) => s,

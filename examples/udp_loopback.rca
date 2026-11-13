@@ -1,0 +1,11 @@
+# Phase 7 — UDP networking (blueprint §8).
+# Loopback: bind, send, recv, close.
+
+import net
+
+let s = net.udp_bind("127.0.0.1", 0)
+let n = net.udp_send(s, "127.0.0.1", 0, "hello")
+print(n)
+let reply = net.udp_recv(s, 64)
+print(reply)
+net.udp_close(s)

@@ -138,6 +138,10 @@ pub enum Instruction {
     TcpSend,
     TcpRecv,
     TcpClose,
+    UdpBind,
+    UdpSend,
+    UdpRecv,
+    UdpClose,
 
     // HTTP
     HttpGet,

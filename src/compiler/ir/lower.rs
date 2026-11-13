@@ -900,6 +900,42 @@ impl Compiler {
             return Ok(());
         }
 
+        if name == "udp_bind" {
+            if args.len() != 2 {
+                return Err(err("udp_bind() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::UdpBind, span);
+            return Ok(());
+        }
+        if name == "udp_send" {
+            if args.len() != 4 {
+                return Err(err("udp_send() takes exactly 4 arguments", span));
+            }
+            for a in args {
+                self.compile_expr(&a.value)?;
+            }
+            self.emit(Instruction::UdpSend, span);
+            return Ok(());
+        }
+        if name == "udp_recv" {
+            if args.len() != 2 {
+                return Err(err("udp_recv() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::UdpRecv, span);
+            return Ok(());
+        }
+        if name == "udp_close" {
+            if args.len() != 1 {
+                return Err(err("udp_close() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::UdpClose, span);
+            return Ok(());
+        }
         if name == "tcp_connect" {
             if args.len() != 2 {
                 return Err(err("tcp_connect() takes exactly 2 arguments", span));

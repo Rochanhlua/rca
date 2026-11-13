@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 UDP networking — udp_bind/udp_send/udp_recv/udp_close. New UdpSocket value variant, 4 IR opcodes, wired through checker/lower/VM/tree. udp_recv returns (data, src_host, src_port) tuple. Module-qualified via import net. New tests/udp.rs (4 tests), examples/udp_loopback.rca.
 - **Implemented:** §7 stdlib registry completion — all blueprint §8 modules route through `builtin_name()`: `tensor`, `matrix`, `ai`, `ml`, `nn`, `net`, `http`, `crypto`, `collections` (joining `math`, `fs`, `time`, `string`, `json`). 14 modules total. New `examples/stdlib_all_modules.rca`.
 - **Implemented:** §7 stdlib modules — `import math|fs|time|string|json` route to builtins via `builtin_name()` registry. Module loader skips stdlib names; checker and IR lower redirect qualified calls to the underlying builtin. New `tests/stdlib_modules.rs` (6 tests), `examples/stdlib_modules.rca`.
 - **Implemented:** §6.5 parallel matmul — `std::thread::scope`, threshold 10M mults, `RCA_NO_PARALLEL=1` env var. §7 loop optimization: k-blocking (block=64) on both sequential and parallel matmul. Release profile: LTO fat, opt-level 3, codegen-units=1, panic=abort. Correctness verified (341 unit + 130+ integration, 512³ = 134217728.0, 64×64 = 64.0).
