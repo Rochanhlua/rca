@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 package manager — `rcac pkg add <name> <source>` inserts or updates a dependency in `rca.json` (parse → mutate `dependencies` map → stringify). Refuses without a manifest; duplicate name updates in place (no dup key). New `tests/pkg_add.rs` (4 tests). Milestone 2/4.
 - **Implemented:** §7 package manager — `rcac pkg init` creates `rca.json` manifest (name from current directory, version 0.1.0, empty dependencies). Refuses to overwrite existing manifest. New `tests/pkg_init.rs` (2 tests). First of 4 package-manager milestones; `pkg add` / `pkg install` / package-aware module loader are planned follow-ups.
 - **Implemented:** §7 HMAC-SHA256 — `crypto.hmac_sha256(key, msg)` returns 64-char hex. Uses the audited RustCrypto `hmac` crate (§9) over the existing `sha2`; only additive transitive deps (`hmac 0.12.1`, `subtle 2.6.1`). Wired through checker, IR (`HmacSha256` opcode), lower, VM, tree interpreter. Module-qualified via `import crypto`. RFC 4231 known-answer tests (`tests/crypto_hmac.rs`, 5 tests). `examples/crypto_hmac_demo.rca`.
 - **Implemented:** §7 SHA-512 — `crypto.sha512(s)` returns 128-char hex. Uses the existing `sha2` crate's `Sha512` (no new dependency). Wired through checker, IR (`Sha512` opcode), lower, VM, tree interpreter. Module-qualified via `import crypto`. Known-answer tests (`tests/crypto_sha512.rs`, 3 tests) for empty string and "abc". `examples/crypto_sha512_demo.rca`.
