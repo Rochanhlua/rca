@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 HTTPS — `http_get`/`http_post` auto-detect `https://` URLs and use rustls 0.23 + webpki-roots 0.26 (aws-lc-rs backend). Cert verification on. Plain `http://` unchanged. New `tests/http_https.rs` (live test `#[ignore]`d, bad-host, arity). `examples/https_get.rca`.
 - **Implemented:** §7 developer tooling — `rcac --version`/`-V` prints `rcac <semver>`; `rcac --help`/`-h` prints a structured help screen (version, usage, per-command one-liners, meta flags, doc links). No-args behavior unchanged. New `tests/cli_meta.rs` (5 tests).
 - **Docs:** `docs/SYNTAX.md` refresh — lists all 14 stdlib modules, adds `sha512` and `hmac_sha256` to the crypto builtin line (with `crypto.md` link), and documents `rcac pkg init|add|install` under Execution (noted as tool command, not grammar).
 - **Docs:** `docs/crypto.md` — hashing (SHA-256/512, HMAC-SHA256) reference with known-answer examples, limits, and the audited-crate policy (§9). `docs/net.md` — TCP, UDP, HTTP/1.1 (GET/POST) reference, examples, limits (no timeouts, no TLS). README Documentation list adds both.
