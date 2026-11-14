@@ -116,6 +116,16 @@ impl Checker {
     // ---------- declarations (structs and functions) ----------
 
     fn resolve_type(&mut self, t: &TypeExpr, report: bool) -> Type {
+        if t.name == "Array" {
+            if t.elements.len() != 1 || t.length.is_none() {
+                if report {
+                    self.error("Array type needs a fixed size, e.g. Array[Int, 3]", &t.span);
+                }
+                return Type::Unknown;
+            }
+            let elem = self.resolve_type(&t.elements[0], report);
+            return Type::Array(Box::new(elem), t.length.unwrap());
+        }
         if !t.elements.is_empty() {
             let items: Vec<Type> = t
                 .elements
@@ -453,6 +463,34 @@ impl Checker {
                                 format!("type mismatch: expected {}, found {}", declared, value_ty),
                                 &value.span,
                             );
+                        }
+                        // Array size enforcement (§4.1 fixed-size Array).
+                        if let Type::Array(_elem, declared_n) = &declared {
+                            // 1) List literal: count items.
+                            if let crate::compiler::ast::ExprKind::List(items) = &value.kind
+                                && items.len() != *declared_n
+                            {
+                                self.error(
+                                    format!(
+                                        "Array size mismatch: declared {} but literal has {} elements",
+                                        declared_n,
+                                        items.len()
+                                    ),
+                                    &value.span,
+                                );
+                            }
+                            // 2) Another Array type: sizes must match.
+                            if let Type::Array(_v_elem, value_n) = &value_ty
+                                && value_n != declared_n
+                            {
+                                self.error(
+                                    format!(
+                                        "Array size mismatch: declared {} but value is Array of size {}",
+                                        declared_n, value_n
+                                    ),
+                                    &value.span,
+                                );
+                            }
                         }
                         declared
                     }

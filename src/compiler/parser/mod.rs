@@ -265,6 +265,20 @@ impl Parser {
         Ok(StmtKind::FromImport { module, names })
     }
 
+    fn expect_usize(&mut self, what: &str) -> Result<usize, Diagnostic> {
+        let span = self.span();
+        match self.peek().clone() {
+            TokenKind::IntLiteral(n) if n >= 0 => {
+                self.advance();
+                Ok(n as usize)
+            }
+            other => Err(Diagnostic::new(
+                format!("expected {}, found {:?}", what, other),
+                span,
+            )),
+        }
+    }
+
     fn parse_type(&mut self) -> Result<TypeExpr, Diagnostic> {
         let span = self.span();
         if self.eat(&TokenKind::LParen) {
@@ -285,13 +299,27 @@ impl Parser {
             return Ok(TypeExpr {
                 name: String::new(),
                 elements,
+                length: None,
                 span,
             });
         }
         let (name, span) = self.expect_ident("a type name")?;
+        if self.eat(&TokenKind::LBracket) {
+            let elem = self.parse_type()?;
+            self.expect(&TokenKind::Comma, "','")?;
+            let n: usize = self.expect_usize("an array length")?;
+            self.expect(&TokenKind::RBracket, "']'")?;
+            return Ok(TypeExpr {
+                name,
+                elements: vec![elem],
+                length: Some(n),
+                span,
+            });
+        }
         Ok(TypeExpr {
             name,
             elements: Vec::new(),
+            length: None,
             span,
         })
     }
