@@ -44,14 +44,30 @@ fn pkg_install_local_path() {
 }
 
 #[test]
-fn pkg_install_rejects_https() {
+fn pkg_install_https_dispatches_via_rustls() {
+    // https:// now routes through http_get (rustls). Use a host that fails
+    // DNS so we can assert the scheme was accepted (not rejected by the
+    // scheme check) without making a live network request.
     let dir = setup("https");
     let home = setup("httpshome");
     assert!(run(&dir, &["pkg", "init"], &home).0);
-    assert!(run(&dir, &["pkg", "add", "x", "https://e.com/x.rca"], &home).0);
+    assert!(
+        run(
+            &dir,
+            &["pkg", "add", "x", "https://nonexistent.invalid/x.rca"],
+            &home
+        )
+        .0
+    );
     let (ok, out) = run(&dir, &["pkg", "install"], &home);
-    assert!(!ok, "expected failure");
-    assert!(out.contains("https:// not yet"), "got: {out}");
+    assert!(!ok, "expected network failure");
+    assert!(!out.contains("not yet supported"), "scheme rejected: {out}");
+    // The failure should be a network/connect error from the https path.
+    let lower = out.to_lowercase();
+    assert!(
+        lower.contains("connect failed") || lower.contains("dns") || lower.contains("lookup"),
+        "got: {out}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&home);
 }

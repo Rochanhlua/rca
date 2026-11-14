@@ -118,7 +118,6 @@ Standard library (via `import <module>`; 14 modules):
 - Native code generation for the whole language (tensors, autodiff and
   most of the stdlib run on the VM only)
 - Autodiff for `max` and `min`; tensor method syntax; GPU support
-- HTTPS (needs a TLS dependency)
 
 ## Documentation
 

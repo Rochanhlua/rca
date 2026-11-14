@@ -2,7 +2,7 @@
 
 Status: TCP, UDP, and plain HTTP/1.1 (GET/POST) are implemented as
 builtins and as `import net` / `import http` members. Uses only
-`std::net` and `std::io`. No TLS (section 6).
+`std::net`, `std::io`, and `rustls` (for HTTPS).
 
 ## 1. TCP
 
@@ -34,7 +34,8 @@ Use `let (d, h, p) = udp_recv(s, 1024)` to destructure.
 | `http_get(url)` | `http.get(url)` | String (response body) |
 | `http_post(url, body)` | `http.post(url, body)` | String (response body) |
 
-- URLs must start with `http://` (no `https://`; see section 6).
+- URLs may start with `http://` or `https://`. HTTPS uses rustls with
+  certificate verification on (`webpki-roots`).
 - `http_post` sends `Content-Type: text/plain` with a correct
   `Content-Length` header.
 - Response parsing strips the header block up to the first `\r\n\r\n`
@@ -76,10 +77,12 @@ HTTP:
 - **No redirects, headers, cookies** — plain request/response body only.
 - **No native codegen** for network ops; use `rcac run`.
 
-## 6. No TLS (HTTPS)
-`https://` and `http.post` to an `https://` URL return an error. Adding
-TLS requires a dependency (e.g. `rustls`); that is a blueprint review
-item (§9: audited implementations) and is not decided.
+## 6. TLS (HTTPS)
+`https://` URLs work via `rustls 0.23` with the `aws-lc-rs` backend and
+`webpki-roots` trust anchors. Certificate verification is enabled. SNI
+is set from the URL host. Default port 443.
+
+`http://` is unchanged. `pkg install` accepts both schemes.
 
 ## 7. Tests
 - `tests/net.rs` — TCP loopback (server on `TcpListener`, client via `rcac`).

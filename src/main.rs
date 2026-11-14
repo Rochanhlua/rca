@@ -530,14 +530,11 @@ fn pkg_install() -> i32 {
 fn fetch_dependency(name: &str, source: &str) -> Result<String, String> {
     if source.starts_with("github:") {
         return Err(format!(
-            "github: sources not yet supported ({}); use http:// or a local path for now",
+            "github: sources not yet supported ({}); use http://, https://, or a local path for now",
             source
         ));
     }
-    if source.starts_with("https://") {
-        return Err("https:// not yet supported (no TLS); use http:// or a local path".to_string());
-    }
-    if source.starts_with("http://") {
+    if source.starts_with("http://") || source.starts_with("https://") {
         return rca::runtime::http::http_get(source).map_err(|e| format!("fetch failed: {}", e));
     }
     // local path

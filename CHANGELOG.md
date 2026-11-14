@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs/behavior:** HTTPS is now first-class. `pkg install` accepts `https://` sources (rustls, cert verification on). `docs/net.md` section 6 rewritten as "TLS (HTTPS)"; `docs/packages.md` source-type table updated; README drops the "HTTPS (needs a TLS dependency)" bullet; `tests/pkg_install.rs` replaces `pkg_install_rejects_https` with `pkg_install_https_dispatches_via_rustls` (scheme accepted, DNS error surfaces).
 - **Implemented:** §7 HTTPS — `http_get`/`http_post` auto-detect `https://` URLs and use rustls 0.23 + webpki-roots 0.26 (aws-lc-rs backend). Cert verification on. Plain `http://` unchanged. New `tests/http_https.rs` (live test `#[ignore]`d, bad-host, arity). `examples/https_get.rca`.
 - **Implemented:** §7 developer tooling — `rcac --version`/`-V` prints `rcac <semver>`; `rcac --help`/`-h` prints a structured help screen (version, usage, per-command one-liners, meta flags, doc links). No-args behavior unchanged. New `tests/cli_meta.rs` (5 tests).
 - **Docs:** `docs/SYNTAX.md` refresh — lists all 14 stdlib modules, adds `sha512` and `hmac_sha256` to the crypto builtin line (with `crypto.md` link), and documents `rcac pkg init|add|install` under Execution (noted as tool command, not grammar).
