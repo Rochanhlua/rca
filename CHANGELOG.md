@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §12 Phase 7 dev tool #11 — `rcac coverage <file.rca>` runs the file with `VmStats` enabled and reports source lines, code lines (excluding blanks and `#` comments), covered/missed counts, coverage percentage, and the list of missed lines (up to 40). Reuses the VM foundation from #159; no VM change required. Also fixes #159's missed `profile` entry in the `commands` array. No imports yet (documented). New `tests/coverage.rs` (4 tests).
 - **Implemented:** §12 Phase 7 dev tool #12 (first slice) + dev tool #10/#11 foundation — VM instrumentation (`VmStats`: instruction count, line hits, per-function call count and wall-clock ns) collected only via `Vm::with_stats`; off by default, zero overhead otherwise. New `rcac profile <file.rca>` runs the file with stats and prints instructions, top-10 functions by time, and top-10 hottest lines. No imports yet (documented). New `tests/profile.rs` (4 tests).
 - **Implemented:** §12 Phase 7 dev tool #9 — `rcac completion <bash|zsh|fish>` prints a shell completion script to stdout (commands, pkg actions, file completion). Scripts live in `assets/completion/` and are embedded with `include_str!`. New `tests/completion.rs` (5 tests).
 - **Implemented:** §12 Phase 7 dev tool #8 — `rcac watch <file.rca>` polls mtime every 500 ms and re-runs the file (`rcac run`) on change; initial run happens immediately. Ctrl+C to stop. New `tests/watch.rs` (2 tests, both use a short child timeout).

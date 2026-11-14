@@ -215,6 +215,10 @@ fn main() {
         let code = rcac_profile(&args[2]);
         process::exit(code);
     }
+    if args.len() >= 3 && args[1] == "coverage" {
+        let code = rcac_coverage(&args[2]);
+        process::exit(code);
+    }
     if args.len() >= 2 && args[1] == "completion" {
         let code = rcac_completion(&args[2..]);
         process::exit(code);
@@ -248,6 +252,8 @@ fn main() {
         "bench",
         "watch",
         "completion",
+        "profile",
+        "coverage",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -643,6 +649,7 @@ fn print_help() {
     println!("  watch      re-run a file whenever it changes (Ctrl+C to stop)");
     println!("  completion print shell completion (bash|zsh|fish)");
     println!("  profile    run a file with instrumentation and print a report");
+    println!("  coverage   run a file and report which lines were executed");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -1002,6 +1009,124 @@ fn rcac_profile(path: &str) -> i32 {
     println!("  hottest lines:");
     for ((ln, col), hits) in lines.iter().take(10) {
         println!("    {}:{}  {} hits", ln, col, hits);
+    }
+    0
+}
+
+fn rcac_coverage(path: &str) -> i32 {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("cannot read {}: {}", path, e);
+            return 1;
+        }
+    };
+    let total_lines = source.lines().count();
+    let tokens = match Lexer::new(&source).tokenize() {
+        Ok(t) => t,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    let program = match Parser::new(tokens).parse_program() {
+        Ok(p) => p,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    if program.statements.iter().any(|s| {
+        matches!(
+            s.kind,
+            StmtKind::Import { .. } | StmtKind::FromImport { .. }
+        )
+    }) {
+        eprintln!("error: rcac coverage does not support imports yet");
+        return 1;
+    }
+    if let Err(errors) = Checker::new().check_program(&program) {
+        for e in &errors {
+            eprintln!("error: {}", e);
+        }
+        return 1;
+    }
+    let mut ir = match lower::compile(&program) {
+        Ok(ir) => ir,
+        Err(d) => {
+            eprintln!("compile error: {}", d);
+            return 1;
+        }
+    };
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error: {}", e);
+        return 1;
+    }
+    optimize(&mut ir);
+
+    let mut vm = Vm::with_stats(&ir);
+    if let Err(d) = vm.run() {
+        eprintln!("runtime error: {}", d);
+        return 1;
+    }
+    let stats = match vm.stats() {
+        Some(s) => s,
+        None => {
+            eprintln!("coverage: stats were not collected");
+            return 1;
+        }
+    };
+
+    // Build a set of line numbers that had at least one executed instruction.
+    let mut hit_lines: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    for (ln, _col) in stats.line_hits.keys() {
+        hit_lines.insert(*ln);
+    }
+
+    // Classify every non-empty source line as covered or missed.
+    let source_lines: Vec<&str> = source.lines().collect();
+    let mut covered = 0usize;
+    let mut missed = 0usize;
+    let mut missed_list: Vec<usize> = Vec::new();
+    for (idx, line) in source_lines.iter().enumerate() {
+        let ln = idx + 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if hit_lines.contains(&ln) {
+            covered += 1;
+        } else {
+            missed += 1;
+            missed_list.push(ln);
+        }
+    }
+    let total_code = covered + missed;
+    let pct = if total_code == 0 {
+        100.0
+    } else {
+        (covered as f64 / total_code as f64) * 100.0
+    };
+
+    println!("coverage: {}", path);
+    println!("  source lines: {}", total_lines);
+    println!("  code lines:   {}", total_code);
+    println!("  covered:      {}", covered);
+    println!("  missed:       {}", missed);
+    println!("  coverage:     {:.1}%", pct);
+    if missed > 0 && missed <= 40 {
+        println!();
+        println!("  missed lines:");
+        for ln in &missed_list {
+            if let Some(text) = source_lines.get(ln - 1) {
+                println!("    {}: {}", ln, text);
+            } else {
+                println!("    {}", ln);
+            }
+        }
+    } else if missed > 40 {
+        println!();
+        println!("  missed lines: (too many to list; {} total)", missed);
     }
     0
 }
