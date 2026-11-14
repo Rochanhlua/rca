@@ -1,8 +1,9 @@
 # RCA Networking
 
-Status: TCP, UDP, and plain HTTP/1.1 (GET/POST) are implemented as
-builtins and as `import net` / `import http` members. Uses only
-`std::net`, `std::io`, and `rustls` (for HTTPS).
+Status: TCP, UDP, and HTTP/1.1 (GET/POST) are implemented as
+builtins and as `import net` / `import http` members. HTTPS is
+supported via `rustls`; plain `http://` is kept for local loopback
+testing. In production, use `https://`.
 
 ## 1. TCP
 
@@ -27,7 +28,7 @@ builtins and as `import net` / `import http` members. Uses only
 `udp_recv` returns a **3-tuple**: `(String data, String src_host, Int src_port)`.
 Use `let (d, h, p) = udp_recv(s, 1024)` to destructure.
 
-## 3. HTTP
+## 3. HTTP / HTTPS
 
 | Builtin | Module form | Returns |
 |---|---|---|
@@ -62,8 +63,8 @@ UDP loopback (see `examples/udp_loopback.rca`):
 
 HTTP:
     import http
-    print(http.get("http://example.com/"))
-    print(http.post("http://127.0.0.1:8080/echo", "hello"))
+    print(http.get("https://example.com/"))            # recommended
+    print(http.post("http://127.0.0.1:8080/echo", "hi"))  # loopback dev only
 
 ## 5. Constraints and limits
 - **No timeouts** on TCP/UDP/HTTP operations. A non-responsive peer
