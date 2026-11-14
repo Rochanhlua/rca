@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §12 Phase 7 dev tool #1 — `rcac lint <file.rca>` reports unused variables (per block: `let`, `LetTuple`, `for` loop var, `catch` var) and unreachable statements after `return`/`break`/`continue`/`throw`. Warnings only; exit 0. New `src/compiler/lint/mod.rs`, `tests/lint.rs`. Function parameters not checked yet; imported modules not linted (entry file only).
 - **Docs:** `docs/ROADMAP.md` — full project roadmap and phases. Includes all 18 engineering rules, enhanced Phase 7 with explicit 12-item developer-tooling list (lint, test, fmt, repl, lsp, doc, bench, watch, completion, debugger, coverage, profiler) and HTTPS via rustls under core HTTP. Assistant-role section omitted (not part of the published spec). README Documentation list updated.
 - **Docs/behavior:** HTTPS is now first-class. `pkg install` accepts `https://` sources (rustls, cert verification on). `docs/net.md` section 6 rewritten as "TLS (HTTPS)"; `docs/packages.md` source-type table updated; README drops the "HTTPS (needs a TLS dependency)" bullet; `tests/pkg_install.rs` replaces `pkg_install_rejects_https` with `pkg_install_https_dispatches_via_rustls` (scheme accepted, DNS error surfaces).
 - **Implemented:** §7 HTTPS — `http_get`/`http_post` auto-detect `https://` URLs and use rustls 0.23 + webpki-roots 0.26 (aws-lc-rs backend). Cert verification on. Plain `http://` unchanged. New `tests/http_https.rs` (live test `#[ignore]`d, bad-host, arity). `examples/https_get.rca`.
