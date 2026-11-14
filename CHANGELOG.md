@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs:** `docs/ROADMAP.md` — full project roadmap and phases. Includes all 18 engineering rules, enhanced Phase 7 with explicit 12-item developer-tooling list (lint, test, fmt, repl, lsp, doc, bench, watch, completion, debugger, coverage, profiler) and HTTPS via rustls under core HTTP. Assistant-role section omitted (not part of the published spec). README Documentation list updated.
 - **Docs/behavior:** HTTPS is now first-class. `pkg install` accepts `https://` sources (rustls, cert verification on). `docs/net.md` section 6 rewritten as "TLS (HTTPS)"; `docs/packages.md` source-type table updated; README drops the "HTTPS (needs a TLS dependency)" bullet; `tests/pkg_install.rs` replaces `pkg_install_rejects_https` with `pkg_install_https_dispatches_via_rustls` (scheme accepted, DNS error surfaces).
 - **Implemented:** §7 HTTPS — `http_get`/`http_post` auto-detect `https://` URLs and use rustls 0.23 + webpki-roots 0.26 (aws-lc-rs backend). Cert verification on. Plain `http://` unchanged. New `tests/http_https.rs` (live test `#[ignore]`d, bad-host, arity). `examples/https_get.rca`.
 - **Implemented:** §7 developer tooling — `rcac --version`/`-V` prints `rcac <semver>`; `rcac --help`/`-h` prints a structured help screen (version, usage, per-command one-liners, meta flags, doc links). No-args behavior unchanged. New `tests/cli_meta.rs` (5 tests).
