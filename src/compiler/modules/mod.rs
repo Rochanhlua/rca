@@ -65,14 +65,31 @@ impl Loader {
             let canonical = match fs::canonicalize(&target) {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(Diagnostic::new(
-                        format!(
-                            "cannot find module '{}' (looked for {})",
-                            module,
-                            target.display()
-                        ),
-                        stmt.span.clone(),
-                    ));
+                    if let Some(pkg_path) = package_path(module) {
+                        match fs::canonicalize(&pkg_path) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                return Err(Diagnostic::new(
+                                    format!(
+                                        "cannot find module '{}' (looked for {} and {})",
+                                        module,
+                                        target.display(),
+                                        pkg_path.display()
+                                    ),
+                                    stmt.span.clone(),
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(Diagnostic::new(
+                            format!(
+                                "cannot find module '{}' (looked for {})",
+                                module,
+                                target.display()
+                            ),
+                            stmt.span.clone(),
+                        ));
+                    }
                 }
             };
 
@@ -120,6 +137,17 @@ impl Loader {
         });
         Ok(())
     }
+}
+
+/// If `$HOME/.rca/packages/<module>/main.rca` exists, return its path.
+fn package_path(module: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let p = PathBuf::from(home)
+        .join(".rca")
+        .join("packages")
+        .join(module)
+        .join("main.rca");
+    if p.exists() { Some(p) } else { None }
 }
 
 #[cfg(test)]
