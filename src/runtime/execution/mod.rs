@@ -1076,6 +1076,20 @@ impl Interpreter {
             };
         }
 
+        if name == "hmac_sha256" {
+            if args.len() != 2 {
+                return Err(err("hmac_sha256() takes exactly 2 arguments", span));
+            }
+            let k = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("hmac_sha256() needs a String key", span)),
+            };
+            let m = match self.eval_expr(&args[1].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("hmac_sha256() needs a String message", span)),
+            };
+            return Ok(Value::Str(crate::runtime::crypto::hmac_sha256(&k, &m)));
+        }
         if name == "sha512" {
             if args.len() != 1 {
                 return Err(err("sha512() takes exactly 1 argument", span));

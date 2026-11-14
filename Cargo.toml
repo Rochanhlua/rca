@@ -21,6 +21,7 @@ path = "src/bin/rca.rs"
 
 [dependencies]
 sha2 = "0.10"
+hmac = "0.12"
 cranelift = "0.107"
 cranelift-native = "0.107"
 cranelift-object = "0.107"

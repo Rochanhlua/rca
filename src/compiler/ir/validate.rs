@@ -72,6 +72,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         I::HttpPost => (2, 1),
         I::Sha256 => (1, 1),
         I::Sha512 => (1, 1),
+        I::HmacSha256 => (2, 1),
         I::MapLen => (1, 1),
         I::StrTrim => (1, 1),
         I::MathAbs | I::MathFloor | I::MathCeil | I::MathRound => (1, 1),

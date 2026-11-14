@@ -421,6 +421,21 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("tcp_recv failed: {}", e), span)),
                     }
                 }
+                Instruction::HmacSha256 => {
+                    let m = self.pop();
+                    let k = self.pop();
+                    match (k, m) {
+                        (Value::Str(k), Value::Str(m)) => self
+                            .stack
+                            .push(Value::Str(crate::runtime::crypto::hmac_sha256(&k, &m))),
+                        _ => {
+                            return Err(err(
+                                "hmac_sha256() needs (String, String)".to_string(),
+                                span,
+                            ));
+                        }
+                    }
+                }
                 Instruction::Sha512 => {
                     let s = self.pop();
                     match s {

@@ -150,6 +150,7 @@ pub enum Instruction {
     // crypto
     Sha256,
     Sha512,
+    HmacSha256,
 }
 
 impl Instruction {
