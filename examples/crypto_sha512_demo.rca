@@ -1,0 +1,5 @@
+# Phase 7 — SHA-512 (crypto module).
+import crypto
+
+print(crypto.sha512(""))
+print(crypto.sha512("abc"))

@@ -421,6 +421,15 @@ impl<'a> Vm<'a> {
                         Err(e) => return Err(err(format!("tcp_recv failed: {}", e), span)),
                     }
                 }
+                Instruction::Sha512 => {
+                    let s = self.pop();
+                    match s {
+                        Value::Str(v) => self
+                            .stack
+                            .push(Value::Str(crate::runtime::crypto::sha512(&v))),
+                        _ => return Err(err("sha512() needs a String".to_string(), span)),
+                    }
+                }
                 Instruction::Sha256 => {
                     let s = match self.pop() {
                         Value::Str(s) => s,

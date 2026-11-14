@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 SHA-512 — `crypto.sha512(s)` returns 128-char hex. Uses the existing `sha2` crate's `Sha512` (no new dependency). Wired through checker, IR (`Sha512` opcode), lower, VM, tree interpreter. Module-qualified via `import crypto`. Known-answer tests (`tests/crypto_sha512.rs`, 3 tests) for empty string and "abc". `examples/crypto_sha512_demo.rca`.
 - **Implemented:** §7 HTTP POST — `http.post(url, body)` sends `text/plain` with Content-Length; returns response body. New `HttpPost` IR opcode, wired through checker/lower/VM/tree. Module-qualified via `import http`. New `tests/http_post.rs` loopback test (verifies request line, Content-Length, body, and response). `examples/http_post_demo.rca`. HTTPS not yet supported (needs TLS dependency).
 - **Implemented:** §7 UDP networking — udp_bind/udp_send/udp_recv/udp_close. New UdpSocket value variant, 4 IR opcodes, wired through checker/lower/VM/tree. udp_recv returns (data, src_host, src_port) tuple. Module-qualified via import net. New tests/udp.rs (4 tests), examples/udp_loopback.rca.
 - **Implemented:** §7 stdlib registry completion — all blueprint §8 modules route through `builtin_name()`: `tensor`, `matrix`, `ai`, `ml`, `nn`, `net`, `http`, `crypto`, `collections` (joining `math`, `fs`, `time`, `string`, `json`). 14 modules total. New `examples/stdlib_all_modules.rca`.
