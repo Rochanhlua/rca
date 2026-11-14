@@ -5,6 +5,7 @@ pub mod fmt;
 pub mod ir;
 pub mod lexer;
 pub mod lint;
+pub mod lsp;
 pub mod modules;
 pub mod optimizer;
 pub mod parser;

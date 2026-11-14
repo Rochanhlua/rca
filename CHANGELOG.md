@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §12 Phase 7 dev tool #5 (minimal) — `rcac lsp` JSON-RPC 2.0 server over stdio. Handles `initialize`, `initialized`, `shutdown`, `exit`; notifications `textDocument/didOpen` and `didChange` trigger parser/checker diagnostics published via `textDocument/publishDiagnostics`. Uses the crate's existing `json` module (no `serde_json`). New `src/compiler/lsp/mod.rs`, `tests/lsp.rs`. Hover, completion, go-to-def, formatting not yet implemented.
 - **Implemented:** §12 Phase 7 dev tool #4 — `rcac repl` interactive loop: each line is parsed, checked, lowered, and run on a fresh VM. `:quit`/`:q` exit; `:help` prints commands. State is not preserved between lines yet (documented). New `src/compiler/repl/mod.rs`, `tests/repl.rs` (5 tests).
 - **Implemented:** §12 Phase 7 dev tool #3 — `rcac fmt <file.rca>` prints canonical formatting (4-space indent, single spaces around binary operators, no space before `:` or closing brackets, comments preserved verbatim). Token-based, idempotent. New `src/compiler/fmt/mod.rs`, `tests/fmt.rs` (4 tests). Does not write in place yet; prints to stdout.
 - **Implemented:** lexer preserves comments as `Comment(String)` tokens (previously skipped). Parser skips them so programs are unchanged. This is the foundation for `rcac fmt` (dev tool #3), which needs comment fidelity to avoid dropping user comments. Scanner test updated (`comments_are_tokens`), `tests/snapshots/hello_lex.txt` regenerated.
