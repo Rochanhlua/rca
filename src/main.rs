@@ -203,6 +203,10 @@ fn main() {
         let code = rcac_test(&args[2]);
         process::exit(code);
     }
+    if args.len() == 2 && args[1] == "repl" {
+        let code = rca::compiler::repl::run_repl();
+        process::exit(code);
+    }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
         "test", "fmt",
@@ -594,6 +598,7 @@ fn print_help() {
     println!("  lint       report warnings (unused vars, unreachable code)");
     println!("  test       run all .rca files in tests/rca/ (or a given dir)");
     println!("  fmt        print canonical formatting of a source file");
+    println!("  repl       interactive read-eval-print loop (Ctrl+D or :quit)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");

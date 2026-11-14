@@ -8,6 +8,7 @@ pub mod lint;
 pub mod modules;
 pub mod optimizer;
 pub mod parser;
+pub mod repl;
 pub mod semantic;
 pub mod stdlib;
 pub mod types;
