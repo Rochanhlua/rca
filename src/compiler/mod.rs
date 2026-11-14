@@ -3,6 +3,7 @@ pub mod codegen;
 pub mod diagnostics;
 pub mod doc;
 pub mod fmt;
+pub mod hir;
 pub mod ir;
 pub mod lexer;
 pub mod lint;
