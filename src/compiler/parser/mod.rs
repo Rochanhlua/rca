@@ -82,13 +82,25 @@ impl Parser {
         }
     }
 
-    fn skip_newlines(&mut self) {
-        while self.check(&TokenKind::Newline) {
+    fn skip_comments(&mut self) {
+        while matches!(self.peek(), TokenKind::Comment(_)) {
             self.advance();
         }
     }
 
+    fn skip_newlines(&mut self) {
+        loop {
+            self.skip_comments();
+            if self.check(&TokenKind::Newline) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+    }
+
     fn end_simple(&mut self) -> Result<(), Diagnostic> {
+        self.skip_comments();
         if self.check(&TokenKind::Newline) {
             self.advance();
             Ok(())
