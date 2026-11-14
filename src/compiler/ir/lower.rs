@@ -72,6 +72,17 @@ fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
 }
 
 /// Compiles a type-checked program to IR.
+/// Phase 3 step 4a — round-trip through HIR, then compile.
+/// Currently produces identical IR to `compile` (differential test enforces this).
+pub fn compile_hir(
+    program: &Program,
+    types: &std::collections::HashMap<(usize, usize), crate::compiler::types::Type>,
+) -> Result<IrProgram, Diagnostic> {
+    let hstmts = crate::compiler::hir::lower_ast_to_hir(program, types);
+    let ast = crate::compiler::hir::lower_hir_to_ast(&hstmts);
+    compile(&ast)
+}
+
 pub fn compile(program: &Program) -> Result<IrProgram, Diagnostic> {
     let mut c = Compiler::new();
     c.declare_items(program);

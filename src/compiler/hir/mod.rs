@@ -203,15 +203,28 @@ pub struct HParam {
 #[derive(Debug, Clone)]
 pub struct HStruct {
     pub name: String,
-    pub fields: Vec<(String, TypeExpr)>,
+    pub fields: Vec<HField>,
     pub public: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HField {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct HEnum {
     pub name: String,
-    pub variants: Vec<String>,
+    pub variants: Vec<HVariant>,
     pub public: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HVariant {
+    pub name: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -271,7 +284,11 @@ fn lower_struct_decl(s: &StructDecl) -> HStruct {
         fields: s
             .fields
             .iter()
-            .map(|f| (f.name.clone(), f.ty.clone()))
+            .map(|f| HField {
+                name: f.name.clone(),
+                ty: f.ty.clone(),
+                span: f.span.clone(),
+            })
             .collect(),
         public: s.public,
     }
@@ -280,7 +297,14 @@ fn lower_struct_decl(s: &StructDecl) -> HStruct {
 fn lower_enum_decl(e: &EnumDecl) -> HEnum {
     HEnum {
         name: e.name.clone(),
-        variants: e.variants.iter().map(|v| v.name.clone()).collect(),
+        variants: e
+            .variants
+            .iter()
+            .map(|v| HVariant {
+                name: v.name.clone(),
+                span: v.span.clone(),
+            })
+            .collect(),
         public: e.public,
     }
 }
@@ -385,5 +409,202 @@ pub fn lower_stmt(stmt: &Stmt, types: &HashMap<(usize, usize), Type>) -> HStmt {
     HStmt {
         kind,
         span: stmt.span.clone(),
+    }
+}
+
+// ---------- HIR -> AST (round-trip, phase 3 step 4a) ----------
+
+use crate::compiler::ast::{Argument, EnumVariant, FieldDecl};
+
+pub fn lower_hir_to_ast(stmts: &[HStmt]) -> Program {
+    Program {
+        statements: stmts.iter().map(lower_hstmt_to_ast).collect(),
+    }
+}
+
+fn lower_block_to_ast(block: &[HStmt]) -> Vec<Stmt> {
+    block.iter().map(lower_hstmt_to_ast).collect()
+}
+
+pub fn lower_hexpr_to_aexpr(h: &HExpr) -> Expr {
+    let kind = match &h.kind {
+        HExprKind::Int(n) => ExprKind::Int(*n),
+        HExprKind::Float(f) => ExprKind::Float(*f),
+        HExprKind::Str(s) => ExprKind::Str(s.clone()),
+        HExprKind::Bool(b) => ExprKind::Bool(*b),
+        HExprKind::NoneLit => ExprKind::NoneLit,
+        HExprKind::Ident(n) => ExprKind::Ident(n.clone()),
+        HExprKind::Unary { op, operand } => ExprKind::Unary {
+            op: op.clone(),
+            operand: Box::new(lower_hexpr_to_aexpr(operand)),
+        },
+        HExprKind::Binary { op, left, right } => ExprKind::Binary {
+            op: op.clone(),
+            left: Box::new(lower_hexpr_to_aexpr(left)),
+            right: Box::new(lower_hexpr_to_aexpr(right)),
+        },
+        HExprKind::Call { callee, args } => ExprKind::Call {
+            callee: Box::new(lower_hexpr_to_aexpr(callee)),
+            args: args
+                .iter()
+                .map(|a| Argument {
+                    name: a.name.clone(),
+                    value: lower_hexpr_to_aexpr(&a.value),
+                })
+                .collect(),
+        },
+        HExprKind::Field { object, name } => ExprKind::Field {
+            object: Box::new(lower_hexpr_to_aexpr(object)),
+            name: name.clone(),
+        },
+        HExprKind::Index { object, index } => ExprKind::Index {
+            object: Box::new(lower_hexpr_to_aexpr(object)),
+            index: Box::new(lower_hexpr_to_aexpr(index)),
+        },
+        HExprKind::List(items) => ExprKind::List(items.iter().map(lower_hexpr_to_aexpr).collect()),
+        HExprKind::Tuple(items) => {
+            ExprKind::Tuple(items.iter().map(lower_hexpr_to_aexpr).collect())
+        }
+    };
+    Expr {
+        kind,
+        span: h.span.clone(),
+    }
+}
+
+pub fn lower_hstmt_to_ast(h: &HStmt) -> Stmt {
+    let kind = match &h.kind {
+        HStmtKind::Let {
+            name,
+            mutable,
+            constant,
+            ty,
+            value,
+        } => StmtKind::Let {
+            name: name.clone(),
+            mutable: *mutable,
+            constant: *constant,
+            ty: ty.clone(),
+            value: lower_hexpr_to_aexpr(value),
+        },
+        HStmtKind::Assign { target, value } => StmtKind::Assign {
+            target: lower_hexpr_to_aexpr(target),
+            value: lower_hexpr_to_aexpr(value),
+        },
+        HStmtKind::Expr(e) => StmtKind::Expr(lower_hexpr_to_aexpr(e)),
+        HStmtKind::Return(Some(e)) => StmtKind::Return(Some(lower_hexpr_to_aexpr(e))),
+        HStmtKind::Return(None) => StmtKind::Return(None),
+        HStmtKind::Break => StmtKind::Break,
+        HStmtKind::Continue => StmtKind::Continue,
+        HStmtKind::If {
+            condition,
+            then_block,
+            else_block,
+        } => StmtKind::If {
+            condition: lower_hexpr_to_aexpr(condition),
+            then_block: lower_block_to_ast(then_block),
+            else_block: else_block.as_ref().map(|b| lower_block_to_ast(b)),
+        },
+        HStmtKind::While { condition, body } => StmtKind::While {
+            condition: lower_hexpr_to_aexpr(condition),
+            body: lower_block_to_ast(body),
+        },
+        HStmtKind::For { var, iter, body } => StmtKind::For {
+            var: var.clone(),
+            iter: lower_hexpr_to_aexpr(iter),
+            body: lower_block_to_ast(body),
+        },
+        HStmtKind::Function(f) => StmtKind::Function(FunctionDecl {
+            name: f.name.clone(),
+            params: f
+                .params
+                .iter()
+                .map(|p| Param {
+                    name: p.name.clone(),
+                    ty: p.ty.clone(),
+                    default: p.default.as_ref().map(lower_hexpr_to_aexpr),
+                })
+                .collect(),
+            return_type: f.return_type.clone(),
+            body: lower_block_to_ast(&f.body),
+            public: f.public,
+        }),
+        HStmtKind::Struct(s) => StmtKind::Struct(StructDecl {
+            name: s.name.clone(),
+            fields: s
+                .fields
+                .iter()
+                .map(|f| FieldDecl {
+                    name: f.name.clone(),
+                    ty: f.ty.clone(),
+                    span: f.span.clone(),
+                })
+                .collect(),
+            public: s.public,
+        }),
+        HStmtKind::Enum(e) => StmtKind::Enum(EnumDecl {
+            name: e.name.clone(),
+            variants: e
+                .variants
+                .iter()
+                .map(|v| EnumVariant {
+                    name: v.name.clone(),
+                    span: v.span.clone(),
+                })
+                .collect(),
+            public: e.public,
+        }),
+        HStmtKind::LetTuple {
+            names,
+            mutable,
+            value,
+        } => StmtKind::LetTuple {
+            names: names.clone(),
+            mutable: *mutable,
+            value: lower_hexpr_to_aexpr(value),
+        },
+        HStmtKind::Match { subject, arms } => StmtKind::Match {
+            subject: lower_hexpr_to_aexpr(subject),
+            arms: arms
+                .iter()
+                .map(|a| MatchArm {
+                    pattern: match &a.pattern {
+                        HPattern::Wildcard => Pattern::Wildcard,
+                        HPattern::Value(e) => Pattern::Value(lower_hexpr_to_aexpr(e)),
+                    },
+                    body: lower_block_to_ast(&a.body),
+                    span: a.span.clone(),
+                })
+                .collect(),
+        },
+        HStmtKind::Try {
+            body,
+            catch_var,
+            catch_block,
+        } => StmtKind::Try {
+            body: lower_block_to_ast(body),
+            catch_var: catch_var.clone(),
+            catch_block: lower_block_to_ast(catch_block),
+        },
+        HStmtKind::Throw(e) => StmtKind::Throw(lower_hexpr_to_aexpr(e)),
+        HStmtKind::Import { module, alias } => StmtKind::Import {
+            module: module.clone(),
+            alias: alias.clone(),
+        },
+        HStmtKind::FromImport { module, names } => StmtKind::FromImport {
+            module: module.clone(),
+            names: names
+                .iter()
+                .map(|n| ImportName {
+                    name: n.name.clone(),
+                    alias: n.alias.clone(),
+                    span: n.span.clone(),
+                })
+                .collect(),
+        },
+    };
+    Stmt {
+        kind,
+        span: h.span.clone(),
     }
 }
