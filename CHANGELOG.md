@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs:** `docs/packages.md` — package manager reference (manifest format, `pkg init`/`add`/`install`, import resolution order, source types, current limits, worked example, test inventory). `README.md` gains a Package manager section and points to `docs/packages.md`.
 - **Implemented:** §7 package-aware module loader — `import foo` resolves `foo.rca` next to the importing file first, then falls back to `$HOME/.rca/packages/foo/main.rca`. Missing-module errors list both candidate paths. New `tests/pkg_loader.rs` (4 tests). Milestone 4/4 — package manager complete for local + http sources.
 - **Implemented:** §7 package manager — `rcac pkg install` fetches each dependency from `rca.json` and writes it to `$HOME/.rca/packages/<name>/main.rca`. Local paths are copied; `http://` uses `http_get`; `https://` and `github:` return clear "not yet supported" errors (no TLS / git in this milestone). Prints per-dep status plus `installed N / M (F failed)`. New `tests/pkg_install.rs` (5 tests). Milestone 3/4.
 - **Implemented:** §7 package manager — `rcac pkg add <name> <source>` inserts or updates a dependency in `rca.json` (parse → mutate `dependencies` map → stringify). Refuses without a manifest; duplicate name updates in place (no dup key). New `tests/pkg_add.rs` (4 tests). Milestone 2/4.

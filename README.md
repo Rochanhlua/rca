@@ -37,6 +37,14 @@ This produces two binaries:
     rcac compile <file.rca>   compile to a native object file (<file>.rca.o)
     rcac build <file.rca>     compile and link a native executable (needs clang)
 
+Package manager:
+
+    rcac pkg init             create rca.json in the current directory
+    rcac pkg add <name> <src> add or update a dependency
+    rcac pkg install          fetch dependencies to $HOME/.rca/packages/
+
+See `docs/packages.md`.
+
 ## Example
 
     fn add(a: Int, b: Int) -> Int:
