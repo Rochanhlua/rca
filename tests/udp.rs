@@ -31,12 +31,12 @@ fn udp_bind_close() {
 
 #[test]
 fn udp_loopback_send_recv() {
-    let src = "import net\nlet s = net.udp_bind(\"127.0.0.1\", 54321)\nlet n = net.udp_send(s, \"127.0.0.1\", 54321, \"ping\")\nprint(n)\nlet reply = net.udp_recv(s, 64)\nprint(reply)\nnet.udp_close(s)\n";
+    let src = "import net\nlet s = net.udp_bind(\"127.0.0.1\", 38081)\nlet n = net.udp_send(s, \"127.0.0.1\", 38081, \"ping\")\nprint(n)\nlet reply = net.udp_recv(s, 64)\nprint(reply)\nnet.udp_close(s)\n";
     let out = run(src, "loop");
     assert!(out.contains("4"), "got: {out}");
     assert!(out.contains("ping"), "got: {out}");
     assert!(out.contains("127.0.0.1"), "got: {out}");
-    assert!(out.contains("54321"), "got: {out}");
+    assert!(out.contains("38081"), "got: {out}");
 }
 
 #[test]
