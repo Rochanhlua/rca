@@ -339,6 +339,7 @@ impl<'a> Vm<'a> {
                     variant: v.clone(),
                 }),
                 Instruction::PushStr(s) => self.stack.push(Value::Str(s.clone())),
+                Instruction::PushChar(c) => self.stack.push(Value::Char(*c)),
                 Instruction::PushNone => self.stack.push(Value::None),
 
                 // variables

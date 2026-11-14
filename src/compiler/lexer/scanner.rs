@@ -167,6 +167,39 @@ impl Lexer {
                         at_line_start = true;
                     }
                 }
+                '\'' => {
+                    self.advance();
+                    let c = match self.advance() {
+                        None | Some('\n') => {
+                            return Err(Diagnostic::new("unterminated character", span));
+                        }
+                        Some('\\') => match self.advance() {
+                            Some('n') => '\n',
+                            Some('t') => '\t',
+                            Some('\'') => '\'',
+                            Some('\\') => '\\',
+                            Some('0') => '\0',
+                            _ => {
+                                return Err(Diagnostic::new(
+                                    "invalid escape sequence",
+                                    self.span(),
+                                ));
+                            }
+                        },
+                        Some(ch) => ch,
+                    };
+                    if self.peek() != Some('\'') {
+                        return Err(Diagnostic::new(
+                            "unterminated character (expected closing ')",
+                            self.span(),
+                        ));
+                    }
+                    self.advance();
+                    self.tokens.push(Token {
+                        kind: TokenKind::CharLiteral(c),
+                        span,
+                    });
+                }
                 '"' => {
                     self.advance();
                     let mut s = String::new();

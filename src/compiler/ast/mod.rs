@@ -49,6 +49,7 @@ pub enum ExprKind {
     Int(i64),
     Float(f64),
     Str(String),
+    Char(char),
     Bool(bool),
     NoneLit,
     Ident(String),

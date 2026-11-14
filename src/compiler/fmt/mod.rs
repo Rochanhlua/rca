@@ -164,6 +164,16 @@ fn render_token(kind: &TokenKind) -> String {
             out.push('"');
             out
         }
+        TokenKind::CharLiteral(c) => {
+            let escaped = match c {
+                '\'' => "\\'".to_string(),
+                '\\' => "\\\\".to_string(),
+                '\n' => "\\n".to_string(),
+                '\t' => "\\t".to_string(),
+                other => other.to_string(),
+            };
+            format!("'{}'", escaped)
+        }
         TokenKind::Plus => "+".into(),
         TokenKind::Minus => "-".into(),
         TokenKind::Star => "*".into(),

@@ -30,6 +30,7 @@ fn stack_effect(ins: &I, program: &IrProgram) -> Result<(usize, usize), String> 
         | I::PushFloat(_)
         | I::PushBool(_)
         | I::PushStr(_)
+        | I::PushChar(_)
         | I::PushEnum(_, _)
         | I::PushNone
         | I::LoadLocal(_)

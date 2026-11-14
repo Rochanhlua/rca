@@ -185,6 +185,7 @@ fn expr_uses(e: &Expr, used: &mut HashSet<String>) {
         ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Str(_)
+        | ExprKind::Char(_)
         | ExprKind::Bool(_)
         | ExprKind::NoneLit => {}
         ExprKind::Unary { operand, .. } => expr_uses(operand, used),
