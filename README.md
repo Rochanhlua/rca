@@ -108,7 +108,7 @@ Tensors and AI (CPU, Float only):
 Standard library (via `import <module>`; 14 modules):
 
 `math`, `fs`, `time`, `string`, `json`, `tensor`, `matrix`, `ai`, `ml`, `nn`,
-`net` (TCP and UDP), `http` (`get` and `post`), `crypto` (`sha256`),
+`net` (TCP and UDP), `http` (`get` and `post`), `crypto` (`sha256`, `sha512`, `hmac_sha256`),
 `collections`. The same functions also work as plain builtins.
 
 ## Not implemented yet
@@ -119,11 +119,12 @@ Standard library (via `import <module>`; 14 modules):
   most of the stdlib run on the VM only)
 - Autodiff for `max` and `min`; tensor method syntax; GPU support
 - HTTPS (needs a TLS dependency)
-- Package manager
 
 ## Documentation
 
 - `docs/SYNTAX.md` syntax
+- `docs/cli.md` command line
+- `docs/packages.md` package manager
 - `docs/memory-model.md` memory model
 - `docs/modules.md` modules
 - `docs/tensor.md` tensors
