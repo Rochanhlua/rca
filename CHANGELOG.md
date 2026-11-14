@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §12 Phase 7 dev tool #4 — `rcac repl` interactive loop: each line is parsed, checked, lowered, and run on a fresh VM. `:quit`/`:q` exit; `:help` prints commands. State is not preserved between lines yet (documented). New `src/compiler/repl/mod.rs`, `tests/repl.rs` (5 tests).
 - **Implemented:** §12 Phase 7 dev tool #3 — `rcac fmt <file.rca>` prints canonical formatting (4-space indent, single spaces around binary operators, no space before `:` or closing brackets, comments preserved verbatim). Token-based, idempotent. New `src/compiler/fmt/mod.rs`, `tests/fmt.rs` (4 tests). Does not write in place yet; prints to stdout.
 - **Implemented:** lexer preserves comments as `Comment(String)` tokens (previously skipped). Parser skips them so programs are unchanged. This is the foundation for `rcac fmt` (dev tool #3), which needs comment fidelity to avoid dropping user comments. Scanner test updated (`comments_are_tokens`), `tests/snapshots/hello_lex.txt` regenerated.
 - **Implemented:** §12 Phase 7 dev tool #2 — `rcac test <dir>` runs every `.rca` file in a directory (default: `tests/rca/`), reporting PASS/FAIL per file plus a `N passed, M failed` summary. Exit 0 if all pass, 1 if any fail. No `assert` builtin yet — test files use `if !cond: throw "msg"`. New `tests/rca/` fixtures, `tests/test_runner.rs` (4 tests).
