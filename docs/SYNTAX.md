@@ -61,7 +61,8 @@ listed under "Implemented" is not available yet; see "Not implemented".
 ### Modules (see `modules.md`)
 - `import`, `import as`, `from ... import [as]`, `pub fn`, `pub struct`,
   module-qualified calls: `utils.add(1, 2)`
-- Standard library modules: `import math`, `import fs`, and so on
+- Standard library modules (14): `math`, `fs`, `time`, `string`, `json`,
+  `tensor`, `matrix`, `ai`, `ml`, `nn`, `net`, `http`, `crypto`, `collections`
 
 ### Built-ins
 - Core: `print`, `len`, `str`, `int`, `float`
@@ -72,7 +73,7 @@ listed under "Implemented" is not available yet; see "Not implemented".
 - JSON: `json_parse`, `json_stringify`
 - Network: `tcp_connect`, `tcp_send`, `tcp_recv`, `tcp_close`,
   `udp_bind`, `udp_send`, `udp_recv`, `udp_close`, `http_get`, `http_post`
-- Crypto: `sha256`
+- Crypto: `sha256`, `sha512`, `hmac_sha256` (see `crypto.md`)
 - Tensors and autodiff: `Tensor`, `zeros`, `ones`, `shape`, `matmul`, `sum`,
   `mean`, `max`, `min`, `transpose`, `reshape`, `track`, `grad`
   (see `tensor.md` and `autodiff-design.md`)
@@ -88,6 +89,9 @@ listed under "Implemented" is not available yet; see "Not implemented".
   `rcac build file.rca` also links an executable (needs `clang`).
   Native code generation covers a subset of the language, see `README.md`
   and `memory-model.md`.
+- `rcac pkg init|add|install` manages dependencies via `rca.json` and
+  `$HOME/.rca/packages/` (see `packages.md`). `rcac pkg` is a tool
+  command, not part of the language grammar.
 - Values are copied on assignment (value semantics)
 - The VM and the tree-walking interpreter must give identical results
 
