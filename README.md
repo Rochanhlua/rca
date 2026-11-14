@@ -108,7 +108,7 @@ Tensors and AI (CPU, Float only):
 Standard library (via `import <module>`; 14 modules):
 
 `math`, `fs`, `time`, `string`, `json`, `tensor`, `matrix`, `ai`, `ml`, `nn`,
-`net` (TCP and UDP), `http` (`get` and `post`), `crypto` (`sha256`, `sha512`, `hmac_sha256`),
+`net` (TCP and UDP), `http` (`get`/`post`, HTTPS via rustls), `crypto` (`sha256`, `sha512`, `hmac_sha256`),
 `collections`. The same functions also work as plain builtins.
 
 ## Not implemented yet

@@ -349,7 +349,7 @@ Performance claims must be established through reproducible benchmarks.
 | `parallel` | Parallel execution |
 | `fs` | File system |
 | `net` | Networking |
-| `http` | HTTP services |
+| `http` | HTTP/HTTPS services (TLS via rustls) |
 | `json` | JSON processing |
 | `crypto` | Cryptographic operations |
 | `time` | Date and time |
@@ -495,7 +495,7 @@ Core:
 
 - File system.
 - Networking (TCP, UDP).
-- HTTP (GET, POST, HTTPS via rustls).
+- HTTP/HTTPS (GET, POST; HTTPS via rustls — recommended).
 - JSON.
 - Cryptography (SHA-256, SHA-512, HMAC-SHA256).
 - Package manager (init, add, install, package-aware module loader).
