@@ -83,6 +83,27 @@ pub fn compile_hir(
     compile(&ast)
 }
 
+/// Phase 3 step 4b-1 — drive the IR builder directly from HIR.
+/// Currently each node is converted back to AST via a temporary shim inside
+/// `compile_hstmt`/`compile_hexpr`; subsequent 4b steps will replace those
+/// shims with native `HStmtKind`/`HExprKind` handling.
+/// Behavior is verified identical to `compile` by `tests/hir_roundtrip.rs`.
+pub fn compile_hir_direct(
+    program: &Program,
+    types: &std::collections::HashMap<(usize, usize), crate::compiler::types::Type>,
+) -> Result<IrProgram, Diagnostic> {
+    let hstmts = crate::compiler::hir::lower_ast_to_hir(program, types);
+    let mut c = Compiler::new();
+    c.declare_items(program);
+    for h in &hstmts {
+        match &h.kind {
+            crate::compiler::hir::HStmtKind::Struct(_) => {}
+            _ => c.compile_hstmt(h)?,
+        }
+    }
+    Ok(c.finish())
+}
+
 pub fn compile(program: &Program) -> Result<IrProgram, Diagnostic> {
     let mut c = Compiler::new();
     c.declare_items(program);
@@ -298,6 +319,29 @@ impl Compiler {
     }
 
     // ---------- functions ----------
+
+    /// Step 4b-1: HIR statement -> AST (temporary shim) -> existing compile path.
+    /// Behavior is identical to `compile_stmt`; step 4b-2..N will replace the
+    /// body with native HStmtKind handling one variant at a time.
+    pub fn compile_hstmt(&mut self, h: &crate::compiler::hir::HStmt) -> Result<(), Diagnostic> {
+        // Functions are compiled via `compile_function` in `compile()`,
+        // not via `compile_stmt`. Mirror that here.
+        if matches!(&h.kind, crate::compiler::hir::HStmtKind::Function(_)) {
+            let ast = crate::compiler::hir::lower_hstmt_to_ast(h);
+            if let StmtKind::Function(f) = &ast.kind {
+                return self.compile_function(f, &h.span);
+            }
+        }
+        let stmt = crate::compiler::hir::lower_hstmt_to_ast(h);
+        self.compile_stmt(&stmt)
+    }
+
+    /// Step 4b-1: HIR expression -> AST (temporary shim) -> existing compile path.
+    #[allow(dead_code)] // used in step 4b-2+
+    pub fn compile_hexpr(&mut self, h: &crate::compiler::hir::HExpr) -> Result<(), Diagnostic> {
+        let expr = crate::compiler::hir::lower_hexpr_to_aexpr(h);
+        self.compile_expr(&expr)
+    }
 
     fn compile_function(&mut self, f: &FunctionDecl, span: &Span) -> Result<(), Diagnostic> {
         let fkey = self.key(&f.name);
