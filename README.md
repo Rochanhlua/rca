@@ -123,6 +123,7 @@ Standard library (via `import <module>`; 14 modules):
 
 - `docs/SYNTAX.md` syntax
 - `docs/cli.md` command line
+- `docs/ROADMAP.md` full project roadmap and phases
 - `docs/crypto.md` hashing and HMAC
 - `docs/net.md` TCP, UDP, HTTP
 - `docs/packages.md` package manager
