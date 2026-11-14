@@ -219,6 +219,10 @@ fn main() {
         let code = rcac_coverage(&args[2]);
         process::exit(code);
     }
+    if args.len() >= 3 && args[1] == "debugger" {
+        let code = rcac_debugger(&args[2]);
+        process::exit(code);
+    }
     if args.len() >= 2 && args[1] == "completion" {
         let code = rcac_completion(&args[2..]);
         process::exit(code);
@@ -254,6 +258,7 @@ fn main() {
         "completion",
         "profile",
         "coverage",
+        "debugger",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -650,6 +655,7 @@ fn print_help() {
     println!("  completion print shell completion (bash|zsh|fish)");
     println!("  profile    run a file with instrumentation and print a report");
     println!("  coverage   run a file and report which lines were executed");
+    println!("  debugger   step through a file with an interactive debugger");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -1127,6 +1133,69 @@ fn rcac_coverage(path: &str) -> i32 {
     } else if missed > 40 {
         println!();
         println!("  missed lines: (too many to list; {} total)", missed);
+    }
+    0
+}
+
+fn rcac_debugger(path: &str) -> i32 {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("cannot read {}: {}", path, e);
+            return 1;
+        }
+    };
+    let tokens = match Lexer::new(&source).tokenize() {
+        Ok(t) => t,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    let program = match Parser::new(tokens).parse_program() {
+        Ok(p) => p,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    if program.statements.iter().any(|s| {
+        matches!(
+            s.kind,
+            StmtKind::Import { .. } | StmtKind::FromImport { .. }
+        )
+    }) {
+        eprintln!("error: rcac debugger does not support imports yet");
+        return 1;
+    }
+    if let Err(errors) = Checker::new().check_program(&program) {
+        for e in &errors {
+            eprintln!("error: {}", e);
+        }
+        return 1;
+    }
+    let mut ir = match lower::compile(&program) {
+        Ok(ir) => ir,
+        Err(d) => {
+            eprintln!("compile error: {}", d);
+            return 1;
+        }
+    };
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error: {}", e);
+        return 1;
+    }
+    optimize(&mut ir);
+
+    let breakpoints: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    eprintln!(
+        "rcac debugger: {} (Ctrl+D or :quit to exit; :help for commands)",
+        path
+    );
+    let mut vm = Vm::with_debugger(&ir, breakpoints);
+    if let Err(d) = vm.run() {
+        eprintln!("runtime error: {}", d);
+        return 1;
     }
     0
 }
