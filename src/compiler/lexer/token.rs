@@ -71,7 +71,8 @@ pub enum TokenKind {
     LBrace,
     RBrace,
 
-    // Structure
+    // Comments and structure
+    Comment(String),
     Newline,
     Indent,
     Dedent,

@@ -63,13 +63,20 @@ impl Lexer {
         self.tokens.push(Token { kind, span });
     }
 
-    fn skip_comment(&mut self) {
+    fn emit_comment(&mut self) {
+        let span = self.span();
+        let mut text = String::new();
         while let Some(c) = self.peek() {
             if c == '\n' {
                 break;
             }
+            text.push(c);
             self.advance();
         }
+        self.tokens.push(Token {
+            kind: TokenKind::Comment(text),
+            span,
+        });
     }
 
     fn handle_indent(&mut self, indent: usize) -> Result<(), Diagnostic> {
@@ -120,7 +127,7 @@ impl Lexer {
                         continue;
                     }
                     Some('#') => {
-                        self.skip_comment();
+                        self.emit_comment();
                         continue;
                     }
                     _ => {}
@@ -139,7 +146,7 @@ impl Lexer {
                 ' ' | '\t' | '\r' => {
                     self.advance();
                 }
-                '#' => self.skip_comment(),
+                '#' => self.emit_comment(),
                 '\n' => {
                     self.advance();
                     if depth == 0 {
@@ -429,14 +436,16 @@ mod tests {
     }
 
     #[test]
-    fn comments_are_skipped() {
+    fn comments_are_tokens() {
         assert_eq!(
             kinds("# hello\nlet a = 1 # note\n"),
             vec![
+                Comment("# hello".into()),
                 Let,
                 Identifier("a".into()),
                 Assign,
                 IntLiteral(1),
+                Comment("# note".into()),
                 Newline,
                 Eof
             ]

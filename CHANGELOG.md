@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** lexer preserves comments as `Comment(String)` tokens (previously skipped). Parser skips them so programs are unchanged. This is the foundation for `rcac fmt` (dev tool #3), which needs comment fidelity to avoid dropping user comments. Scanner test updated (`comments_are_tokens`), `tests/snapshots/hello_lex.txt` regenerated.
 - **Implemented:** §12 Phase 7 dev tool #2 — `rcac test <dir>` runs every `.rca` file in a directory (default: `tests/rca/`), reporting PASS/FAIL per file plus a `N passed, M failed` summary. Exit 0 if all pass, 1 if any fail. No `assert` builtin yet — test files use `if !cond: throw "msg"`. New `tests/rca/` fixtures, `tests/test_runner.rs` (4 tests).
 - **Implemented:** §12 Phase 7 dev tool #1 — `rcac lint <file.rca>` reports unused variables (per block: `let`, `LetTuple`, `for` loop var, `catch` var) and unreachable statements after `return`/`break`/`continue`/`throw`. Warnings only; exit 0. New `src/compiler/lint/mod.rs`, `tests/lint.rs`. Function parameters not checked yet; imported modules not linted (entry file only).
 - **Docs:** `docs/ROADMAP.md` — full project roadmap and phases. Includes all 18 engineering rules, enhanced Phase 7 with explicit 12-item developer-tooling list (lint, test, fmt, repl, lsp, doc, bench, watch, completion, debugger, coverage, profiler) and HTTPS via rustls under core HTTP. Assistant-role section omitted (not part of the published spec). README Documentation list updated.
