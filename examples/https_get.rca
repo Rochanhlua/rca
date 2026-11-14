@@ -1,0 +1,8 @@
+# Phase 7 — HTTPS GET (rustls).
+import http
+
+# Plain HTTP still works.
+print(len(http.get("http://example.com/")))
+
+# HTTPS via rustls + webpki-roots (cert verify enabled).
+print(len(http.get("https://example.com/")))
