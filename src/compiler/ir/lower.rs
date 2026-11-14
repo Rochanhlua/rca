@@ -998,6 +998,14 @@ impl Compiler {
             self.emit(Instruction::Sha256, span);
             return Ok(());
         }
+        if name == "sha512" {
+            if args.len() != 1 {
+                return Err(err("sha512() takes exactly 1 argument", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.emit(Instruction::Sha512, span);
+            return Ok(());
+        }
 
         let fkey = self.item_key(&name);
 

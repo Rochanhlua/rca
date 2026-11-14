@@ -1593,6 +1593,21 @@ impl Checker {
             return Type::String;
         }
 
+        if name == "sha512" {
+            if args.len() != 1 {
+                self.error("sha512() takes exactly 1 argument".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::String;
+            }
+            let t = self.check_expr(&args[0].value);
+            if !matches!(t, Type::String | Type::Unknown) {
+                self.error(
+                    format!("sha512() needs a String, found {}", t),
+                    &args[0].value.span,
+                );
+            }
+            return Type::String;
+        }
         if name == "sha256" {
             if args.len() != 1 {
                 self.error("sha256() takes exactly 1 argument".to_string(), span);

@@ -1076,6 +1076,16 @@ impl Interpreter {
             };
         }
 
+        if name == "sha512" {
+            if args.len() != 1 {
+                return Err(err("sha512() takes exactly 1 argument", span));
+            }
+            let s = match self.eval_expr(&args[0].value)? {
+                Value::Str(s) => s,
+                _ => return Err(err("sha512() needs a String", span)),
+            };
+            return Ok(Value::Str(crate::runtime::crypto::sha512(&s)));
+        }
         if name == "sha256" {
             if args.len() != 1 {
                 return Err(err("sha256() takes exactly 1 argument", span));
