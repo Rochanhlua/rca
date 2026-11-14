@@ -5,6 +5,8 @@ pub struct TypeExpr {
     pub name: String,
     /// Non-empty only for tuple types such as `(Int, String)`.
     pub elements: Vec<TypeExpr>,
+    /// Fixed-size array length when `name` is `Array`.
+    pub length: Option<usize>,
     pub span: Span,
 }
 

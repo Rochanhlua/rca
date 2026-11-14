@@ -9,6 +9,7 @@ Program {
                     TypeExpr {
                         name: "String",
                         elements: [],
+                        length: None,
                         span: Span {
                             line: 2,
                             column: 11,
@@ -39,6 +40,7 @@ Program {
                     TypeExpr {
                         name: "Int",
                         elements: [],
+                        length: None,
                         span: Span {
                             line: 3,
                             column: 14,
@@ -114,6 +116,7 @@ Program {
                             ty: TypeExpr {
                                 name: "Int",
                                 elements: [],
+                                length: None,
                                 span: Span {
                                     line: 6,
                                     column: 11,
@@ -126,6 +129,7 @@ Program {
                             ty: TypeExpr {
                                 name: "Int",
                                 elements: [],
+                                length: None,
                                 span: Span {
                                     line: 6,
                                     column: 19,
@@ -138,6 +142,7 @@ Program {
                         TypeExpr {
                             name: "Int",
                             elements: [],
+                            length: None,
                             span: Span {
                                 line: 6,
                                 column: 27,

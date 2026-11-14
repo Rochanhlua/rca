@@ -9,6 +9,8 @@ pub enum Type {
     Char,
     None,
     List(Box<Type>),
+    /// Fixed-size array: element type and length.
+    Array(Box<Type>, usize),
     Range,
     Tensor,
     /// A user-defined struct, identified by name.
@@ -41,7 +43,13 @@ impl Type {
     }
 
     pub fn compatible(expected: &Type, actual: &Type) -> bool {
-        expected == actual || *expected == Type::Unknown || *actual == Type::Unknown
+        if expected == actual || *expected == Type::Unknown || *actual == Type::Unknown {
+            return true;
+        }
+        match (expected, actual) {
+            (Type::List(e1), Type::Array(e2, _)) | (Type::Array(e1, _), Type::List(e2)) => e1 == e2,
+            _ => false,
+        }
     }
 }
 
@@ -55,6 +63,7 @@ impl fmt::Display for Type {
             Type::Char => write!(f, "Char"),
             Type::None => write!(f, "None"),
             Type::List(inner) => write!(f, "List[{}]", inner),
+            Type::Array(inner, n) => write!(f, "Array[{}, {}]", inner, n),
             Type::Range => write!(f, "Range"),
             Type::Tensor => write!(f, "Tensor"),
             Type::Struct(name) => write!(f, "{}", name),
