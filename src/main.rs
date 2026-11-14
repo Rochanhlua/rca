@@ -304,6 +304,7 @@ fn run_pkg(args: &[String]) -> i32 {
     };
     match action {
         "init" => pkg_init(),
+        "add" => pkg_add(&args[1..]),
         _ => {
             eprintln!("unknown pkg action: {}", action);
             eprintln!("usage: rcac pkg <init|add|install>");
@@ -329,6 +330,86 @@ fn pkg_init() -> i32 {
     match std::fs::write(manifest, json) {
         Ok(()) => {
             println!("created rca.json (name: {})", name);
+            0
+        }
+        Err(e) => {
+            eprintln!("cannot write rca.json: {}", e);
+            1
+        }
+    }
+}
+
+fn pkg_add(args: &[String]) -> i32 {
+    if args.len() != 2 {
+        eprintln!("usage: rcac pkg add <name> <source>");
+        return 1;
+    }
+    let dep_name = &args[0];
+    let dep_src = &args[1];
+    let manifest_path = std::path::Path::new("rca.json");
+    if !manifest_path.exists() {
+        eprintln!("no rca.json in this directory (run `rcac pkg init` first)");
+        return 1;
+    }
+    let content = match std::fs::read_to_string(manifest_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cannot read rca.json: {}", e);
+            return 1;
+        }
+    };
+    let value = match rca::runtime::json::parse(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("invalid rca.json: {}", e);
+            return 1;
+        }
+    };
+    let mut map = match value {
+        rca::runtime::values::Value::Map(m) => m,
+        _ => {
+            eprintln!("rca.json must be a JSON object");
+            return 1;
+        }
+    };
+    let dep_key = rca::runtime::values::Value::Str("dependencies".to_string());
+    let mut found = false;
+    for (k, v) in map.iter_mut() {
+        if k == &dep_key {
+            if let rca::runtime::values::Value::Map(deps) = v {
+                let name_v = rca::runtime::values::Value::Str(dep_name.clone());
+                let src_v = rca::runtime::values::Value::Str(dep_src.clone());
+                let mut updated = false;
+                for (dk, dv) in deps.iter_mut() {
+                    if dk == &name_v {
+                        *dv = src_v.clone();
+                        updated = true;
+                        break;
+                    }
+                }
+                if !updated {
+                    deps.push((name_v, src_v));
+                }
+                found = true;
+            }
+            break;
+        }
+    }
+    if !found {
+        eprintln!("rca.json has no \"dependencies\" object");
+        return 1;
+    }
+    let new_value = rca::runtime::values::Value::Map(map);
+    let new_json = match rca::runtime::json::stringify(&new_value) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("cannot stringify rca.json: {}", e);
+            return 1;
+        }
+    };
+    match std::fs::write(manifest_path, format!("{}\n", new_json)) {
+        Ok(()) => {
+            println!("added dependency: {} -> {}", dep_name, dep_src);
             0
         }
         Err(e) => {
