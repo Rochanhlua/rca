@@ -124,6 +124,8 @@ Standard library (via `import <module>`; 14 modules):
 
 - `docs/SYNTAX.md` syntax
 - `docs/cli.md` command line
+- `docs/crypto.md` hashing and HMAC
+- `docs/net.md` TCP, UDP, HTTP
 - `docs/packages.md` package manager
 - `docs/memory-model.md` memory model
 - `docs/modules.md` modules
