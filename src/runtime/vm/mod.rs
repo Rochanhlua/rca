@@ -35,6 +35,15 @@ pub struct VmStats {
     pub function_time_ns: std::collections::HashMap<String, u64>,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct Debugger {
+    pub breakpoints: std::collections::HashSet<usize>,
+    pub single_step: bool,
+    pub next_line: bool,
+    pub last_line: Option<usize>,
+    pub quit: bool,
+}
+
 pub struct Vm<'a> {
     program: &'a IrProgram,
     stack: Vec<Value>,
@@ -45,6 +54,7 @@ pub struct Vm<'a> {
     output: String,
     pub stats: Option<VmStats>,
     timing_stack: Vec<(String, std::time::Instant)>,
+    pub debugger: Option<Debugger>,
 }
 
 impl<'a> Vm<'a> {
@@ -60,6 +70,22 @@ impl<'a> Vm<'a> {
     /// The collected stats, if `with_stats` was used.
     pub fn stats(&self) -> Option<&VmStats> {
         self.stats.as_ref()
+    }
+
+    /// Construct a VM with a debugger attached.
+    /// If `breakpoints` is empty, execution pauses at the first instruction.
+    pub fn with_debugger(
+        program: &'a IrProgram,
+        breakpoints: std::collections::HashSet<usize>,
+    ) -> Self {
+        let mut vm = Self::new(program);
+        let single_step = breakpoints.is_empty();
+        vm.debugger = Some(Debugger {
+            breakpoints,
+            single_step,
+            ..Debugger::default()
+        });
+        vm
     }
 
     pub fn new(program: &'a IrProgram) -> Self {
@@ -82,6 +108,7 @@ impl<'a> Vm<'a> {
             output: String::new(),
             stats: None,
             timing_stack: Vec::new(),
+            debugger: None,
         }
     }
 
@@ -145,6 +172,115 @@ impl<'a> Vm<'a> {
         }
     }
 
+    fn debugger_prompt(&mut self, line: usize, col: usize, ins_desc: &str) -> bool {
+        use std::io::Write;
+        loop {
+            eprintln!("-- paused at {}:{} (ins {}) --", line, col, ins_desc);
+            eprint!("(dbg) ");
+            let _ = std::io::stderr().flush();
+            let mut input = String::new();
+            match std::io::stdin().read_line(&mut input) {
+                Ok(0) => return false,
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+            let cmd = input.trim();
+            match cmd {
+                ":continue" | ":c" => return true,
+                ":step" | ":s" => {
+                    if let Some(ref mut d) = self.debugger {
+                        d.single_step = true;
+                    }
+                    return true;
+                }
+                ":next" | ":n" => {
+                    if let Some(ref mut d) = self.debugger {
+                        d.next_line = true;
+                    }
+                    return true;
+                }
+                ":locals" | ":l" => {
+                    if let Some(frame) = self.frames.last() {
+                        eprintln!("  locals ({}):", frame.locals.len());
+                        for (i, v) in frame.locals.iter().enumerate() {
+                            eprintln!("    [{}] = {}", i, v);
+                        }
+                    } else {
+                        eprintln!("  (no frame)");
+                    }
+                }
+                ":stack" | ":st" => {
+                    eprintln!("  stack ({}):", self.stack.len());
+                    for (i, v) in self.stack.iter().enumerate() {
+                        eprintln!("    [{}] = {}", i, v);
+                    }
+                }
+                ":help" | ":h" | ":?" => {
+                    eprintln!("  :c :continue   resume until next breakpoint");
+                    eprintln!("  :s :step       execute one instruction and pause");
+                    eprintln!("  :n :next       run until the next source line");
+                    eprintln!("  :b <line>      add breakpoint");
+                    eprintln!("  :d <line>      delete breakpoint");
+                    eprintln!("  :l :locals     show locals in the current frame");
+                    eprintln!("  :st :stack     show value stack");
+                    eprintln!("  :q :quit       abort execution");
+                }
+                ":quit" | ":q" => {
+                    if let Some(ref mut d) = self.debugger {
+                        d.quit = true;
+                    }
+                    return false;
+                }
+                _ if cmd.starts_with(":break ") => {
+                    let rest = cmd[7..].trim();
+                    if let Ok(n) = rest.parse::<usize>() {
+                        if let Some(ref mut d) = self.debugger {
+                            d.breakpoints.insert(n);
+                        }
+                        eprintln!("  breakpoint at line {}", n);
+                    } else {
+                        eprintln!("  invalid line: {}", rest);
+                    }
+                }
+                _ if cmd.starts_with(":b ") => {
+                    let rest = cmd[3..].trim();
+                    if let Ok(n) = rest.parse::<usize>() {
+                        if let Some(ref mut d) = self.debugger {
+                            d.breakpoints.insert(n);
+                        }
+                        eprintln!("  breakpoint at line {}", n);
+                    } else {
+                        eprintln!("  invalid line: {}", rest);
+                    }
+                }
+                _ if cmd.starts_with(":delete ") => {
+                    let rest = cmd[8..].trim();
+                    if let Ok(n) = rest.parse::<usize>() {
+                        if let Some(ref mut d) = self.debugger {
+                            d.breakpoints.remove(&n);
+                        }
+                        eprintln!("  removed breakpoint at line {}", n);
+                    } else {
+                        eprintln!("  invalid line: {}", rest);
+                    }
+                }
+                _ if cmd.starts_with(":d ") => {
+                    let rest = cmd[3..].trim();
+                    if let Ok(n) = rest.parse::<usize>() {
+                        if let Some(ref mut d) = self.debugger {
+                            d.breakpoints.remove(&n);
+                        }
+                        eprintln!("  removed breakpoint at line {}", n);
+                    } else {
+                        eprintln!("  invalid line: {}", rest);
+                    }
+                }
+                "" => {}
+                _ => eprintln!("  unknown command. try :help"),
+            }
+        }
+    }
+
     fn run_loop(&mut self) -> Result<(), Diagnostic> {
         let program: &'a IrProgram = self.program;
 
@@ -154,6 +290,38 @@ impl<'a> Vm<'a> {
             self.frames.last_mut().unwrap().ip = ip + 1;
             let ins = &chunk.code[ip];
             let span = &chunk.spans[ip];
+
+            // DEBUGGER: pause check
+            let line_no = span.line;
+            let col_no = span.column;
+            let mut do_pause = false;
+            let mut quit_now = false;
+            if let Some(ref mut dbg) = self.debugger {
+                if dbg.quit {
+                    quit_now = true;
+                } else {
+                    let line_changed = dbg.last_line != Some(line_no);
+                    dbg.last_line = Some(line_no);
+                    let hit = dbg.breakpoints.contains(&line_no) && line_changed;
+                    do_pause = dbg.single_step || hit || (dbg.next_line && line_changed);
+                    if do_pause {
+                        dbg.single_step = false;
+                        dbg.next_line = false;
+                    }
+                }
+            }
+            if quit_now {
+                return Ok(());
+            }
+            if do_pause {
+                let ins_desc = match ins {
+                    Instruction::Call(id) => format!("Call({})", program.functions[*id].name),
+                    _ => format!("{:?}", ins),
+                };
+                if !self.debugger_prompt(line_no, col_no, &ins_desc) {
+                    return Ok(());
+                }
+            }
 
             // STATS: per-instruction hook
             if let Some(ref mut s) = self.stats {
