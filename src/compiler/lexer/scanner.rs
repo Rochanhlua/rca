@@ -77,6 +77,16 @@ impl Lexer {
             kind: TokenKind::Comment(text),
             span,
         });
+        // Consume the trailing newline and emit a Newline token so the
+        // comment stands as its own line (matches previous skip behavior).
+        if let Some('\n') = self.peek() {
+            let nl_span = self.span();
+            self.advance();
+            self.tokens.push(Token {
+                kind: TokenKind::Newline,
+                span: nl_span,
+            });
+        }
     }
 
     fn handle_indent(&mut self, indent: usize) -> Result<(), Diagnostic> {
@@ -441,6 +451,7 @@ mod tests {
             kinds("# hello\nlet a = 1 # note\n"),
             vec![
                 Comment("# hello".into()),
+                Newline,
                 Let,
                 Identifier("a".into()),
                 Assign,

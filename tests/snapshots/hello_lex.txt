@@ -1,4 +1,5 @@
 1:1  Comment("# RCA hello")
+1:12  Newline
 2:1  Let
 2:5  Identifier("name")
 2:9  Colon
