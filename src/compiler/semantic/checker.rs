@@ -18,6 +18,9 @@ struct FuncSig {
     ret: Type,
 }
 
+/// (check result, span -> inferred type map).
+pub type CheckResult = (Result<(), Vec<Diagnostic>>, HashMap<(usize, usize), Type>);
+
 pub struct Checker {
     scopes: ScopeStack,
     errors: Vec<Diagnostic>,
@@ -30,6 +33,8 @@ pub struct Checker {
     current_return: Option<Type>,
     imports: HashMap<String, ModuleExports>,
     module_aliases: HashMap<String, String>,
+    /// Span -> inferred type for every checked expression (used by HIR lowering).
+    expr_types: HashMap<(usize, usize), Type>,
 }
 
 impl Checker {
@@ -46,7 +51,40 @@ impl Checker {
             current_return: None,
             imports: HashMap::new(),
             module_aliases: HashMap::new(),
+            expr_types: HashMap::new(),
         }
+    }
+
+    /// Same as `check_program` but also returns the Span->Type map
+    /// (used by HIR lowering).
+    pub fn check_program_with_types(mut self, program: &Program) -> CheckResult {
+        self.apply_imports(program);
+        self.collect_declarations(program);
+        for stmt in &program.statements {
+            match &stmt.kind {
+                StmtKind::Function(f) => {
+                    self.block_depth += 1;
+                    self.check_function(f, &stmt.span);
+                    self.block_depth -= 1;
+                }
+                StmtKind::Struct(_) => {}
+                StmtKind::Enum(_) => {}
+                _ => self.check_stmt(stmt),
+            }
+        }
+        let errors = std::mem::take(&mut self.errors);
+        let expr_types = std::mem::take(&mut self.expr_types);
+        let result = if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        };
+        (result, expr_types)
+    }
+
+    /// Read-only access to the Span->Type map (populated by `check_program_with_types`).
+    pub fn expr_types(&self) -> &HashMap<(usize, usize), Type> {
+        &self.expr_types
     }
 
     pub fn check_program(mut self, program: &Program) -> Result<(), Vec<Diagnostic>> {
@@ -732,7 +770,15 @@ impl Checker {
         }
     }
 
+    /// Wrapper: records the inferred type per span, then returns it.
     fn check_expr(&mut self, expr: &Expr) -> Type {
+        let ty = self.check_expr_inner(expr);
+        self.expr_types
+            .insert((expr.span.line, expr.span.column), ty.clone());
+        ty
+    }
+
+    fn check_expr_inner(&mut self, expr: &Expr) -> Type {
         match &expr.kind {
             ExprKind::Int(_) => Type::Int,
             ExprKind::Float(_) => Type::Float,
