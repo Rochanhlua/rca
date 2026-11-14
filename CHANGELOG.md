@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 developer tooling — `rcac --version`/`-V` prints `rcac <semver>`; `rcac --help`/`-h` prints a structured help screen (version, usage, per-command one-liners, meta flags, doc links). No-args behavior unchanged. New `tests/cli_meta.rs` (5 tests).
 - **Docs:** `docs/SYNTAX.md` refresh — lists all 14 stdlib modules, adds `sha512` and `hmac_sha256` to the crypto builtin line (with `crypto.md` link), and documents `rcac pkg init|add|install` under Execution (noted as tool command, not grammar).
 - **Docs:** `docs/crypto.md` — hashing (SHA-256/512, HMAC-SHA256) reference with known-answer examples, limits, and the audited-crate policy (§9). `docs/net.md` — TCP, UDP, HTTP/1.1 (GET/POST) reference, examples, limits (no timeouts, no TLS). README Documentation list adds both.
 - **Docs:** `docs/cli.md` — full `rcac` command reference (lex/parse/check/ir/ir-opt/run/run-tree/compile/build/pkg, exit codes, examples, notes on `run-tree` import limitation). README updated: crypto section lists `sha512` and `hmac_sha256`; Documentation list adds `docs/cli.md` and `docs/packages.md`; "Package manager" removed from "Not implemented yet".

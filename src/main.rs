@@ -153,6 +153,19 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() >= 2 {
+        match args[1].as_str() {
+            "--version" | "-V" | "version" => {
+                println!("rcac {}", env!("CARGO_PKG_VERSION"));
+                process::exit(0);
+            }
+            "--help" | "-h" | "help" => {
+                print_help();
+                process::exit(0);
+            }
+            _ => {}
+        }
+    }
     if args.len() >= 2 && args[1] == "pkg" {
         let code = run_pkg(&args[2..]);
         process::exit(code);
@@ -531,4 +544,33 @@ fn fetch_dependency(name: &str, source: &str) -> Result<String, String> {
     std::fs::read_to_string(source)
         .map_err(|e| format!("cannot read {}: {}", source, e))
         .map_err(|e| format!("{} : {}", name, e))
+}
+
+fn print_help() {
+    println!(
+        "RCA Programming Language {} - Built for the Intelligence Era",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!();
+    println!("Usage:");
+    println!("  rcac <command> <file.rca> [args...]");
+    println!("  rcac pkg <action> [args...]");
+    println!();
+    println!("Commands:");
+    println!("  lex        show tokens");
+    println!("  parse      show the syntax tree");
+    println!("  check      type check only");
+    println!("  ir         show bytecode");
+    println!("  ir-opt     show optimized bytecode");
+    println!("  run        run on the bytecode VM");
+    println!("  run-tree   run on the tree-walking interpreter");
+    println!("  compile    generate a native object file (<file>.rca.o)");
+    println!("  build      compile and link a native executable (needs clang)");
+    println!("  pkg        package manager: init | add | install");
+    println!();
+    println!("Meta:");
+    println!("  --version  print version and exit");
+    println!("  --help     print this help and exit");
+    println!();
+    println!("Docs: docs/cli.md, docs/SYNTAX.md, docs/packages.md");
 }
