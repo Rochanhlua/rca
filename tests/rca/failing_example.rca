@@ -1,0 +1,2 @@
+# Intentionally fails — used to test the runner's FAIL path.
+throw "this test is expected to fail"
