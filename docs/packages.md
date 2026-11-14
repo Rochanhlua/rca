@@ -64,15 +64,14 @@ only the project path.
 |-------------|-------------------------------------------------------|
 | (no prefix) | Local path. `std::fs::read_to_string` then copy.      |
 | `http://`   | Fetched with `http_get` (plain HTTP, no TLS).         |
-| `https://`  | Error: "https:// not yet supported (no TLS)".         |
+| `https://`  | Fetched via rustls (cert verification on).            |
 | `github:`   | Error: "github: sources not yet supported".           |
 
-`https://` and `github:` are reported as errors instead of silently
-failing, so the manifest can be written ahead of the feature.
+`github:` is reported as an error instead of silently failing, so
+the manifest can be written ahead of the feature.
 
 ## 6. Not in this milestone
 - `github:user/repo` sources (would use the `git` binary).
-- HTTPS (needs a TLS dependency; not decided).
 - Lockfile (`rca.lock`) with content hashes.
 - Version constraints (`>=1.2.0`, `^1.0`) — version is recorded but not
   resolved.
