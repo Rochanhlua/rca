@@ -61,6 +61,10 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         };
     }
 
+    if command == "doc" {
+        print!("{}", rca::compiler::doc::generate(source, &program));
+        return 0;
+    }
     if command == "lint" {
         let warnings = rca::compiler::lint::lint_program(&program);
         for w in &warnings {
@@ -213,7 +217,7 @@ fn main() {
     }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
-        "test", "fmt",
+        "test", "fmt", "doc",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -604,6 +608,7 @@ fn print_help() {
     println!("  fmt        print canonical formatting of a source file");
     println!("  repl       interactive read-eval-print loop (Ctrl+D or :quit)");
     println!("  lsp        language server (JSON-RPC over stdio for editors)");
+    println!("  doc        print Markdown API documentation to stdout");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");

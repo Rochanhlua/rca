@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod codegen;
 pub mod diagnostics;
+pub mod doc;
 pub mod fmt;
 pub mod ir;
 pub mod lexer;
