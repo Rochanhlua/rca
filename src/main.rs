@@ -207,6 +207,10 @@ fn main() {
         let code = rcac_bench(&args[2..]);
         process::exit(code);
     }
+    if args.len() >= 3 && args[1] == "watch" {
+        let code = rcac_watch(&args[2]);
+        process::exit(code);
+    }
     if args.len() >= 3 && args[1] == "test" {
         let code = rcac_test(&args[2]);
         process::exit(code);
@@ -221,7 +225,7 @@ fn main() {
     }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
-        "test", "fmt", "doc", "bench",
+        "test", "fmt", "doc", "bench", "watch",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -614,6 +618,7 @@ fn print_help() {
     println!("  lsp        language server (JSON-RPC over stdio for editors)");
     println!("  doc        print Markdown API documentation to stdout");
     println!("  bench      run a file N times and print min/avg/max (default N=5)");
+    println!("  watch      re-run a file whenever it changes (Ctrl+C to stop)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -790,4 +795,66 @@ fn rcac_bench(args: &[String]) -> i32 {
             + " ms"
     );
     0
+}
+
+fn rcac_watch(path: &str) -> i32 {
+    use std::time::{Duration, SystemTime};
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("cannot locate rcac binary: {}", e);
+            return 1;
+        }
+    };
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("cannot stat {}: {}", path, e);
+            return 1;
+        }
+    };
+    let mut last_mtime: SystemTime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    println!("watching {} (Ctrl+C to stop)", path);
+    // Initial run
+    run_watched(&exe, path);
+    loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let mtime = match std::fs::metadata(path)
+            .and_then(|m| m.modified().or(Ok(SystemTime::UNIX_EPOCH)))
+        {
+            Ok(t) => t,
+            Err(_) => {
+                // File disappeared; wait for it to come back.
+                continue;
+            }
+        };
+        if mtime != last_mtime {
+            last_mtime = mtime;
+            println!("\n--- change detected, re-running ---");
+            run_watched(&exe, path);
+        }
+    }
+}
+
+fn run_watched(exe: &std::path::Path, path: &str) {
+    let out = match std::process::Command::new(exe)
+        .arg("run")
+        .arg(path)
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("run failed: {}", e);
+            return;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    print!("{}", stdout);
+    if !stderr.is_empty() {
+        eprint!("{}", stderr);
+    }
+    if !out.status.success() {
+        eprintln!("[exit {:?}]", out.status.code());
+    }
 }

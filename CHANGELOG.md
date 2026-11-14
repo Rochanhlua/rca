@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §12 Phase 7 dev tool #8 — `rcac watch <file.rca>` polls mtime every 500 ms and re-runs the file (`rcac run`) on change; initial run happens immediately. Ctrl+C to stop. New `tests/watch.rs` (2 tests, both use a short child timeout).
 - **Implemented:** §12 Phase 7 dev tool #7 — `rcac bench <file.rca> [N]` runs a file N times (default 5) after a warmup, reporting min / avg / max wall-clock ms plus all per-iteration times. Runs each iteration as a fresh subprocess (`rcac run`), so startup cost is included. New `tests/bench.rs`.
 - **Implemented:** §12 Phase 7 dev tool #6 — `rcac doc <file.rca>` prints Markdown API docs to stdout for `pub fn` / `pub struct` / `pub enum`. Doc comments are the `#` lines immediately above an item. Signatures rendered from the AST. New `src/compiler/doc/mod.rs`, `tests/doc.rs` (5 tests). HTML output and cross-references not implemented.
 - **Implemented:** §12 Phase 7 dev tool #5 (minimal) — `rcac lsp` JSON-RPC 2.0 server over stdio. Handles `initialize`, `initialized`, `shutdown`, `exit`; notifications `textDocument/didOpen` and `didChange` trigger parser/checker diagnostics published via `textDocument/publishDiagnostics`. Uses the crate's existing `json` module (no `serde_json`). New `src/compiler/lsp/mod.rs`, `tests/lsp.rs`. Hover, completion, go-to-def, formatting not yet implemented.
