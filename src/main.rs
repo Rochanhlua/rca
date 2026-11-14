@@ -41,6 +41,26 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
+    if command == "fmt" {
+        let fmt_tokens = match Lexer::new(source).tokenize() {
+            Ok(t) => t,
+            Err(d) => {
+                eprintln!("error: {}", d);
+                return 1;
+            }
+        };
+        return match rca::compiler::fmt::format_tokens(&fmt_tokens) {
+            Ok(s) => {
+                print!("{}", s);
+                0
+            }
+            Err((msg, span)) => {
+                eprintln!("{}:{}: {}", span.line, span.column, msg);
+                1
+            }
+        };
+    }
+
     if command == "lint" {
         let warnings = rca::compiler::lint::lint_program(&program);
         for w in &warnings {
@@ -185,7 +205,7 @@ fn main() {
     }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
-        "test",
+        "test", "fmt",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -573,6 +593,7 @@ fn print_help() {
     println!("  check      type check only");
     println!("  lint       report warnings (unused vars, unreachable code)");
     println!("  test       run all .rca files in tests/rca/ (or a given dir)");
+    println!("  fmt        print canonical formatting of a source file");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
