@@ -305,6 +305,7 @@ fn run_pkg(args: &[String]) -> i32 {
     match action {
         "init" => pkg_init(),
         "add" => pkg_add(&args[1..]),
+        "install" => pkg_install(),
         _ => {
             eprintln!("unknown pkg action: {}", action);
             eprintln!("usage: rcac pkg <init|add|install>");
@@ -417,4 +418,117 @@ fn pkg_add(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+fn pkg_home() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home).join(".rca").join("packages")
+}
+
+fn pkg_install() -> i32 {
+    let manifest_path = std::path::Path::new("rca.json");
+    if !manifest_path.exists() {
+        eprintln!("no rca.json in this directory (run `rcac pkg init` first)");
+        return 1;
+    }
+    let content = match std::fs::read_to_string(manifest_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cannot read rca.json: {}", e);
+            return 1;
+        }
+    };
+    let value = match rca::runtime::json::parse(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("invalid rca.json: {}", e);
+            return 1;
+        }
+    };
+    let map = match value {
+        rca::runtime::values::Value::Map(m) => m,
+        _ => {
+            eprintln!("rca.json must be a JSON object");
+            return 1;
+        }
+    };
+    let dep_key = rca::runtime::values::Value::Str("dependencies".to_string());
+    let mut deps: Vec<(String, String)> = Vec::new();
+    for (k, v) in map.iter() {
+        if k == &dep_key
+            && let rca::runtime::values::Value::Map(d) = v
+        {
+            for (dk, dv) in d.iter() {
+                if let (rca::runtime::values::Value::Str(n), rca::runtime::values::Value::Str(s)) =
+                    (dk, dv)
+                {
+                    deps.push((n.clone(), s.clone()));
+                }
+            }
+        }
+    }
+    if deps.is_empty() {
+        println!("no dependencies to install");
+        return 0;
+    }
+    let home = pkg_home();
+    if let Err(e) = std::fs::create_dir_all(&home) {
+        eprintln!("cannot create {}: {}", home.display(), e);
+        return 1;
+    }
+    let mut ok_count = 0;
+    let mut fail_count = 0;
+    for (name, source) in &deps {
+        match fetch_dependency(name, source) {
+            Ok(body) => {
+                let dest_dir = home.join(name);
+                if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+                    eprintln!("  {} : cannot create {}: {}", name, dest_dir.display(), e);
+                    fail_count += 1;
+                    continue;
+                }
+                let dest = dest_dir.join("main.rca");
+                match std::fs::write(&dest, &body) {
+                    Ok(()) => {
+                        println!("  {} : installed -> {}", name, dest.display());
+                        ok_count += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  {} : cannot write {}: {}", name, dest.display(), e);
+                        fail_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  {} : {}", name, e);
+                fail_count += 1;
+            }
+        }
+    }
+    println!(
+        "installed {} / {} ({} failed)",
+        ok_count,
+        deps.len(),
+        fail_count
+    );
+    if fail_count == 0 { 0 } else { 1 }
+}
+
+fn fetch_dependency(name: &str, source: &str) -> Result<String, String> {
+    if source.starts_with("github:") {
+        return Err(format!(
+            "github: sources not yet supported ({}); use http:// or a local path for now",
+            source
+        ));
+    }
+    if source.starts_with("https://") {
+        return Err("https:// not yet supported (no TLS); use http:// or a local path".to_string());
+    }
+    if source.starts_with("http://") {
+        return rca::runtime::http::http_get(source).map_err(|e| format!("fetch failed: {}", e));
+    }
+    // local path
+    std::fs::read_to_string(source)
+        .map_err(|e| format!("cannot read {}: {}", source, e))
+        .map_err(|e| format!("{} : {}", name, e))
 }
