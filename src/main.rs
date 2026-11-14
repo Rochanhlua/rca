@@ -203,6 +203,10 @@ fn main() {
         let code = run_pkg(&args[2..]);
         process::exit(code);
     }
+    if args.len() >= 2 && args[1] == "bench" {
+        let code = rcac_bench(&args[2..]);
+        process::exit(code);
+    }
     if args.len() >= 3 && args[1] == "test" {
         let code = rcac_test(&args[2]);
         process::exit(code);
@@ -217,7 +221,7 @@ fn main() {
     }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
-        "test", "fmt", "doc",
+        "test", "fmt", "doc", "bench",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -609,6 +613,7 @@ fn print_help() {
     println!("  repl       interactive read-eval-print loop (Ctrl+D or :quit)");
     println!("  lsp        language server (JSON-RPC over stdio for editors)");
     println!("  doc        print Markdown API documentation to stdout");
+    println!("  bench      run a file N times and print min/avg/max (default N=5)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -689,4 +694,100 @@ fn rcac_test(dir_or_file: &str) -> i32 {
     println!();
     println!("{} passed, {} failed ({} total)", pass, fail, tests.len());
     if fail == 0 { 0 } else { 1 }
+}
+
+fn rcac_bench(args: &[String]) -> i32 {
+    // Usage: rcac bench <file.rca> [iterations]
+    if args.is_empty() {
+        eprintln!("usage: rcac bench <file.rca> [iterations]");
+        return 1;
+    }
+    let path = &args[0];
+    let iters: u32 = if args.len() >= 2 {
+        match args[1].parse() {
+            Ok(n) if n >= 1 => n,
+            _ => {
+                eprintln!("iterations must be a positive integer");
+                return 1;
+            }
+        }
+    } else {
+        5
+    };
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("cannot locate rcac binary: {}", e);
+            return 1;
+        }
+    };
+    // Warmup (compile + run once, not counted).
+    match std::process::Command::new(&exe)
+        .arg("run")
+        .arg(path)
+        .output()
+    {
+        Ok(o) if o.status.success() => {}
+        Ok(o) => {
+            eprintln!("warmup failed (exit {:?})", o.status.code());
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            for line in stderr.lines() {
+                eprintln!("  {}", line);
+            }
+            return 1;
+        }
+        Err(e) => {
+            eprintln!("warmup failed: {}", e);
+            return 1;
+        }
+    }
+    let mut times_ms: Vec<f64> = Vec::with_capacity(iters as usize);
+    for _ in 0..iters {
+        let start = std::time::Instant::now();
+        let out = match std::process::Command::new(&exe)
+            .arg("run")
+            .arg(path)
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("run failed: {}", e);
+                return 1;
+            }
+        };
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        if !out.status.success() {
+            eprintln!("run failed (exit {:?})", out.status.code());
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            for line in stderr.lines() {
+                eprintln!("  {}", line);
+            }
+            return 1;
+        }
+        times_ms.push(elapsed);
+    }
+    let n = times_ms.len();
+    if n == 0 {
+        eprintln!("no iterations ran");
+        return 1;
+    }
+    let sum: f64 = times_ms.iter().sum();
+    let avg = sum / n as f64;
+    let min = times_ms.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = times_ms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    println!("bench: {}", path);
+    println!("  iterations: {}", n);
+    println!("  min: {:.2} ms", min);
+    println!("  avg: {:.2} ms", avg);
+    println!("  max: {:.2} ms", max);
+    println!(
+        "  all: {}",
+        times_ms
+            .iter()
+            .map(|t| format!("{:.2}", t))
+            .collect::<Vec<_>>()
+            .join(" ms, ")
+            + " ms"
+    );
+    0
 }
