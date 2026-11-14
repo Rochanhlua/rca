@@ -354,6 +354,7 @@ impl Interpreter {
             ExprKind::Int(n) => Ok(Value::Int(*n)),
             ExprKind::Float(x) => Ok(Value::Float(*x)),
             ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+            ExprKind::Char(c) => Ok(Value::Char(*c)),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::NoneLit => Ok(Value::None),
             ExprKind::Ident(name) => match self.lookup(name) {

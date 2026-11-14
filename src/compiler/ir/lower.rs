@@ -635,6 +635,7 @@ impl Compiler {
         match &expr.kind {
             ExprKind::Int(n) => self.emit(Instruction::PushInt(*n), span),
             ExprKind::Float(x) => self.emit(Instruction::PushFloat(*x), span),
+            ExprKind::Char(c) => self.emit(Instruction::PushChar(*c), span),
             ExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             ExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             ExprKind::NoneLit => self.emit(Instruction::PushNone, span),

@@ -783,6 +783,7 @@ impl Checker {
             ExprKind::Int(_) => Type::Int,
             ExprKind::Float(_) => Type::Float,
             ExprKind::Str(_) => Type::String,
+            ExprKind::Char(_) => Type::Char,
             ExprKind::Bool(_) => Type::Bool,
             ExprKind::NoneLit => Type::None,
             ExprKind::Ident(name) => {

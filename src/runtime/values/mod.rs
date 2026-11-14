@@ -9,6 +9,7 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     Str(String),
+    Char(char),
     None,
     List(Vec<Value>),
     /// Key-value map. Uses Vec of pairs for simplicity and to preserve order.
@@ -56,6 +57,7 @@ impl fmt::Display for Value {
             Value::Float(x) => write!(f, "{:?}", x),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
+            Value::Char(c) => write!(f, "{}", c),
             Value::None => write!(f, "none"),
             Value::Tuple(items) => {
                 write!(f, "(")?;

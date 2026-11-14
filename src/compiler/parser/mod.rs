@@ -751,6 +751,13 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::CharLiteral(c) => {
+                self.advance();
+                Ok(Expr {
+                    kind: ExprKind::Char(c),
+                    span,
+                })
+            }
             TokenKind::StringLiteral(s) => {
                 self.advance();
                 Ok(Expr {

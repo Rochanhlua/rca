@@ -45,6 +45,7 @@ pub enum TokenKind {
     IntLiteralMin,
     FloatLiteral(f64),
     StringLiteral(String),
+    CharLiteral(char),
 
     // Operators and symbols
     Plus,

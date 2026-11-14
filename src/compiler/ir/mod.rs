@@ -19,6 +19,7 @@ pub enum Instruction {
     PushFloat(f64),
     PushBool(bool),
     PushStr(String),
+    PushChar(char),
     PushEnum(String, String),
     PushNone,
 
