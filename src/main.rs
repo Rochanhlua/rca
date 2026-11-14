@@ -153,6 +153,10 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() >= 2 && args[1] == "pkg" {
+        let code = run_pkg(&args[2..]);
+        process::exit(code);
+    }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build",
     ];
@@ -284,6 +288,51 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         Ok(()) => 0,
         Err(d) => {
             eprintln!("runtime error: {}", d);
+            1
+        }
+    }
+}
+
+/// Package manager entry point. Called as `rcac pkg <action> [args...]`.
+fn run_pkg(args: &[String]) -> i32 {
+    let action = match args.first() {
+        Some(a) => a.as_str(),
+        None => {
+            eprintln!("usage: rcac pkg <init|add|install>");
+            return 1;
+        }
+    };
+    match action {
+        "init" => pkg_init(),
+        _ => {
+            eprintln!("unknown pkg action: {}", action);
+            eprintln!("usage: rcac pkg <init|add|install>");
+            1
+        }
+    }
+}
+
+fn pkg_init() -> i32 {
+    let manifest = std::path::Path::new("rca.json");
+    if manifest.exists() {
+        eprintln!("rca.json already exists in this directory");
+        return 1;
+    }
+    let name = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "rca-project".to_string());
+    let json = format!(
+        "{{\n  \"name\": \"{}\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {{}}\n}}\n",
+        name
+    );
+    match std::fs::write(manifest, json) {
+        Ok(()) => {
+            println!("created rca.json (name: {})", name);
+            0
+        }
+        Err(e) => {
+            eprintln!("cannot write rca.json: {}", e);
             1
         }
     }
