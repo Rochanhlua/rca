@@ -41,6 +41,15 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
 
+    if command == "lint" {
+        let warnings = rca::compiler::lint::lint_program(&program);
+        for w in &warnings {
+            eprintln!("{}", w);
+        }
+        eprintln!("{} warning(s)", warnings.len());
+        return 0;
+    }
+
     if program.statements.iter().any(|s| {
         matches!(
             s.kind,
@@ -171,7 +180,7 @@ fn main() {
         process::exit(code);
     }
     let commands = [
-        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build",
+        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -557,6 +566,7 @@ fn print_help() {
     println!("  lex        show tokens");
     println!("  parse      show the syntax tree");
     println!("  check      type check only");
+    println!("  lint       report warnings (unused vars, unreachable code)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");

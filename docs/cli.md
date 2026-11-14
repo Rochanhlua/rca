@@ -12,6 +12,7 @@ Two binaries ship from this crate:
     rcac lex        <file.rca>   show tokens
     rcac parse      <file.rca>   show the syntax tree
     rcac check      <file.rca>   type check only
+    rcac lint       <file.rca>   report warnings (unused vars, unreachable code)
     rcac ir         <file.rca>   show bytecode
     rcac ir-opt     <file.rca>   show optimized bytecode
     rcac run        <file.rca>   run on the bytecode VM

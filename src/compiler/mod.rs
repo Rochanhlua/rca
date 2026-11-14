@@ -3,6 +3,7 @@ pub mod codegen;
 pub mod diagnostics;
 pub mod ir;
 pub mod lexer;
+pub mod lint;
 pub mod modules;
 pub mod optimizer;
 pub mod parser;
