@@ -1,0 +1,11 @@
+# Tensor construction, sum, matmul.
+let a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+let s = sum(a)
+if s != 10.0:
+    throw "sum should be 10.0"
+let b = Tensor([[1.0], [1.0]])
+let m = matmul(a, b)
+let ms = sum(m)
+if ms != 10.0:
+    throw "matmul sum should be 10.0"
+print("ok")

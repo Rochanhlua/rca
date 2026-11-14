@@ -1,0 +1,8 @@
+# Basic arithmetic and print.
+let x = 2 + 3
+if x != 5:
+    throw "2 + 3 should be 5"
+let y = x * 4
+if y != 20:
+    throw "5 * 4 should be 20"
+print("ok")

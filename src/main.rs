@@ -179,8 +179,13 @@ fn main() {
         let code = run_pkg(&args[2..]);
         process::exit(code);
     }
+    if args.len() >= 3 && args[1] == "test" {
+        let code = rcac_test(&args[2]);
+        process::exit(code);
+    }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
+        "test",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -567,6 +572,7 @@ fn print_help() {
     println!("  parse      show the syntax tree");
     println!("  check      type check only");
     println!("  lint       report warnings (unused vars, unreachable code)");
+    println!("  test       run all .rca files in tests/rca/ (or a given dir)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -580,4 +586,71 @@ fn print_help() {
     println!("  --help     print this help and exit");
     println!();
     println!("Docs: docs/cli.md, docs/SYNTAX.md, docs/packages.md");
+}
+
+fn rcac_test(dir_or_file: &str) -> i32 {
+    use std::path::Path;
+    // Treat the argument as a directory unless it ends in .rca
+    let test_dir = if dir_or_file.ends_with(".rca") {
+        Path::new(dir_or_file)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| Path::new(".").to_path_buf())
+    } else {
+        Path::new(dir_or_file).to_path_buf()
+    };
+    let entries = match std::fs::read_dir(&test_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "cannot read {}: {} (create tests/rca/ or pass a directory)",
+                test_dir.display(),
+                e
+            );
+            return 1;
+        }
+    };
+    let mut tests: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "rca").unwrap_or(false))
+        .collect();
+    tests.sort();
+    if tests.is_empty() {
+        println!("no .rca test files in {}", test_dir.display());
+        return 0;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("cannot locate rcac binary: {}", e);
+            return 1;
+        }
+    };
+    let mut pass = 0usize;
+    let mut fail = 0usize;
+    for t in &tests {
+        let out = match std::process::Command::new(&exe).arg("run").arg(t).output() {
+            Ok(o) => o,
+            Err(e) => {
+                println!("ERROR {}: {}", t.display(), e);
+                fail += 1;
+                continue;
+            }
+        };
+        if out.status.success() {
+            println!("PASS  {}", t.display());
+            pass += 1;
+        } else {
+            println!("FAIL  {}", t.display());
+            let err = String::from_utf8_lossy(&out.stderr);
+            for line in err.lines() {
+                eprintln!("      {}", line);
+            }
+            fail += 1;
+        }
+    }
+    println!();
+    println!("{} passed, {} failed ({} total)", pass, fail, tests.len());
+    if fail == 0 { 0 } else { 1 }
 }
