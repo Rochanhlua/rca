@@ -593,6 +593,7 @@ development.
     +-- examples/
     +-- docs/
     +-- benchmarks/
+    +-- assets/          (static resources embedded via include_str! / include_bytes!)
 
 This is the target architecture. Introduce modules as their implementation
 becomes necessary.

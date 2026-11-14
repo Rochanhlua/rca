@@ -211,6 +211,10 @@ fn main() {
         let code = rcac_watch(&args[2]);
         process::exit(code);
     }
+    if args.len() >= 2 && args[1] == "completion" {
+        let code = rcac_completion(&args[2..]);
+        process::exit(code);
+    }
     if args.len() >= 3 && args[1] == "test" {
         let code = rcac_test(&args[2]);
         process::exit(code);
@@ -224,8 +228,22 @@ fn main() {
         process::exit(code);
     }
     let commands = [
-        "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
-        "test", "fmt", "doc", "bench", "watch",
+        "lex",
+        "parse",
+        "check",
+        "ir",
+        "ir-opt",
+        "run",
+        "run-tree",
+        "compile",
+        "build",
+        "lint",
+        "test",
+        "fmt",
+        "doc",
+        "bench",
+        "watch",
+        "completion",
     ];
     if args.len() != 3 || !commands.contains(&args[1].as_str()) {
         println!("RCA Programming Language - Built for the Intelligence Era");
@@ -619,6 +637,7 @@ fn print_help() {
     println!("  doc        print Markdown API documentation to stdout");
     println!("  bench      run a file N times and print min/avg/max (default N=5)");
     println!("  watch      re-run a file whenever it changes (Ctrl+C to stop)");
+    println!("  completion print shell completion (bash|zsh|fish)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -856,5 +875,34 @@ fn run_watched(exe: &std::path::Path, path: &str) {
     }
     if !out.status.success() {
         eprintln!("[exit {:?}]", out.status.code());
+    }
+}
+
+const BASH_COMPLETION: &str = include_str!("../assets/completion/bash.sh");
+const ZSH_COMPLETION: &str = include_str!("../assets/completion/zsh.sh");
+const FISH_COMPLETION: &str = include_str!("../assets/completion/fish.sh");
+
+fn rcac_completion(args: &[String]) -> i32 {
+    if args.is_empty() {
+        eprintln!("usage: rcac completion <bash|zsh|fish>");
+        return 1;
+    }
+    match args[0].as_str() {
+        "bash" => {
+            print!("{}", BASH_COMPLETION);
+            0
+        }
+        "zsh" => {
+            print!("{}", ZSH_COMPLETION);
+            0
+        }
+        "fish" => {
+            print!("{}", FISH_COMPLETION);
+            0
+        }
+        other => {
+            eprintln!("unsupported shell '{}' (try bash|zsh|fish)", other);
+            1
+        }
     }
 }
