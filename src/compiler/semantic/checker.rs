@@ -1593,6 +1593,23 @@ impl Checker {
             return Type::String;
         }
 
+        if name == "hmac_sha256" {
+            if args.len() != 2 {
+                self.error("hmac_sha256() takes exactly 2 arguments".to_string(), span);
+                self.check_arg_exprs(args);
+                return Type::String;
+            }
+            for arg in args {
+                let t = self.check_expr(&arg.value);
+                if !matches!(t, Type::String | Type::Unknown) {
+                    self.error(
+                        format!("hmac_sha256() needs String arguments, found {}", t),
+                        &arg.value.span,
+                    );
+                }
+            }
+            return Type::String;
+        }
         if name == "sha512" {
             if args.len() != 1 {
                 self.error("sha512() takes exactly 1 argument".to_string(), span);

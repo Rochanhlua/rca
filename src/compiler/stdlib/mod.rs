@@ -74,7 +74,14 @@ pub const MODULES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     ("http", &[("get", "http_get"), ("post", "http_post")]),
-    ("crypto", &[("sha256", "sha256"), ("sha512", "sha512")]),
+    (
+        "crypto",
+        &[
+            ("sha256", "sha256"),
+            ("sha512", "sha512"),
+            ("hmac_sha256", "hmac_sha256"),
+        ],
+    ),
     (
         "collections",
         &[

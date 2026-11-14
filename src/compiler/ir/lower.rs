@@ -1006,6 +1006,15 @@ impl Compiler {
             self.emit(Instruction::Sha512, span);
             return Ok(());
         }
+        if name == "hmac_sha256" {
+            if args.len() != 2 {
+                return Err(err("hmac_sha256() takes exactly 2 arguments", span));
+            }
+            self.compile_expr(&args[0].value)?;
+            self.compile_expr(&args[1].value)?;
+            self.emit(Instruction::HmacSha256, span);
+            return Ok(());
+        }
 
         let fkey = self.item_key(&name);
 

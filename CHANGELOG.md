@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Implemented:** §7 HMAC-SHA256 — `crypto.hmac_sha256(key, msg)` returns 64-char hex. Uses the audited RustCrypto `hmac` crate (§9) over the existing `sha2`; only additive transitive deps (`hmac 0.12.1`, `subtle 2.6.1`). Wired through checker, IR (`HmacSha256` opcode), lower, VM, tree interpreter. Module-qualified via `import crypto`. RFC 4231 known-answer tests (`tests/crypto_hmac.rs`, 5 tests). `examples/crypto_hmac_demo.rca`.
 - **Implemented:** §7 SHA-512 — `crypto.sha512(s)` returns 128-char hex. Uses the existing `sha2` crate's `Sha512` (no new dependency). Wired through checker, IR (`Sha512` opcode), lower, VM, tree interpreter. Module-qualified via `import crypto`. Known-answer tests (`tests/crypto_sha512.rs`, 3 tests) for empty string and "abc". `examples/crypto_sha512_demo.rca`.
 - **Implemented:** §7 HTTP POST — `http.post(url, body)` sends `text/plain` with Content-Length; returns response body. New `HttpPost` IR opcode, wired through checker/lower/VM/tree. Module-qualified via `import http`. New `tests/http_post.rs` loopback test (verifies request line, Content-Length, body, and response). `examples/http_post_demo.rca`. HTTPS not yet supported (needs TLS dependency).
 - **Implemented:** §7 UDP networking — udp_bind/udp_send/udp_recv/udp_close. New UdpSocket value variant, 4 IR opcodes, wired through checker/lower/VM/tree. udp_recv returns (data, src_host, src_port) tuple. Module-qualified via import net. New tests/udp.rs (4 tests), examples/udp_loopback.rca.

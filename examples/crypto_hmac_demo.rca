@@ -1,0 +1,6 @@
+# Phase 7 — HMAC-SHA256 (crypto module).
+import crypto
+
+# RFC 4231 test vectors
+print(crypto.hmac_sha256("Jefe", "what do ya want for nothing?"))
+print(crypto.hmac_sha256("key", "The quick brown fox jumps over the lazy dog"))
