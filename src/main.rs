@@ -207,6 +207,10 @@ fn main() {
         let code = rca::compiler::repl::run_repl();
         process::exit(code);
     }
+    if args.len() == 2 && args[1] == "lsp" {
+        let code = rca::compiler::lsp::run_lsp();
+        process::exit(code);
+    }
     let commands = [
         "lex", "parse", "check", "ir", "ir-opt", "run", "run-tree", "compile", "build", "lint",
         "test", "fmt",
@@ -599,6 +603,7 @@ fn print_help() {
     println!("  test       run all .rca files in tests/rca/ (or a given dir)");
     println!("  fmt        print canonical formatting of a source file");
     println!("  repl       interactive read-eval-print loop (Ctrl+D or :quit)");
+    println!("  lsp        language server (JSON-RPC over stdio for editors)");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
