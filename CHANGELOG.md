@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs:** `docs/crypto.md` — hashing (SHA-256/512, HMAC-SHA256) reference with known-answer examples, limits, and the audited-crate policy (§9). `docs/net.md` — TCP, UDP, HTTP/1.1 (GET/POST) reference, examples, limits (no timeouts, no TLS). README Documentation list adds both.
 - **Docs:** `docs/cli.md` — full `rcac` command reference (lex/parse/check/ir/ir-opt/run/run-tree/compile/build/pkg, exit codes, examples, notes on `run-tree` import limitation). README updated: crypto section lists `sha512` and `hmac_sha256`; Documentation list adds `docs/cli.md` and `docs/packages.md`; "Package manager" removed from "Not implemented yet".
 - **Docs:** `docs/packages.md` — package manager reference (manifest format, `pkg init`/`add`/`install`, import resolution order, source types, current limits, worked example, test inventory). `README.md` gains a Package manager section and points to `docs/packages.md`.
 - **Implemented:** §7 package-aware module loader — `import foo` resolves `foo.rca` next to the importing file first, then falls back to `$HOME/.rca/packages/foo/main.rca`. Missing-module errors list both candidate paths. New `tests/pkg_loader.rs` (4 tests). Milestone 4/4 — package manager complete for local + http sources.
