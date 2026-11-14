@@ -211,6 +211,10 @@ fn main() {
         let code = rcac_watch(&args[2]);
         process::exit(code);
     }
+    if args.len() >= 3 && args[1] == "profile" {
+        let code = rcac_profile(&args[2]);
+        process::exit(code);
+    }
     if args.len() >= 2 && args[1] == "completion" {
         let code = rcac_completion(&args[2..]);
         process::exit(code);
@@ -638,6 +642,7 @@ fn print_help() {
     println!("  bench      run a file N times and print min/avg/max (default N=5)");
     println!("  watch      re-run a file whenever it changes (Ctrl+C to stop)");
     println!("  completion print shell completion (bash|zsh|fish)");
+    println!("  profile    run a file with instrumentation and print a report");
     println!("  ir         show bytecode");
     println!("  ir-opt     show optimized bytecode");
     println!("  run        run on the bytecode VM");
@@ -905,4 +910,98 @@ fn rcac_completion(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+fn rcac_profile(path: &str) -> i32 {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("cannot read {}: {}", path, e);
+            return 1;
+        }
+    };
+    let tokens = match Lexer::new(&source).tokenize() {
+        Ok(t) => t,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    let program = match Parser::new(tokens).parse_program() {
+        Ok(p) => p,
+        Err(d) => {
+            eprintln!("error: {}", d);
+            return 1;
+        }
+    };
+    if program.statements.iter().any(|s| {
+        matches!(
+            s.kind,
+            StmtKind::Import { .. } | StmtKind::FromImport { .. }
+        )
+    }) {
+        eprintln!("error: rcac profile does not support imports yet");
+        return 1;
+    }
+    if let Err(errors) = Checker::new().check_program(&program) {
+        for e in &errors {
+            eprintln!("error: {}", e);
+        }
+        return 1;
+    }
+    let mut ir = match lower::compile(&program) {
+        Ok(ir) => ir,
+        Err(d) => {
+            eprintln!("compile error: {}", d);
+            return 1;
+        }
+    };
+    if let Err(e) = validate(&ir) {
+        eprintln!("internal compiler error: {}", e);
+        return 1;
+    }
+    optimize(&mut ir);
+
+    let mut vm = Vm::with_stats(&ir);
+    if let Err(d) = vm.run() {
+        eprintln!("runtime error: {}", d);
+        return 1;
+    }
+    let stats = match vm.stats() {
+        Some(s) => s,
+        None => {
+            eprintln!("profile: stats were not collected");
+            return 1;
+        }
+    };
+
+    println!("profile: {}", path);
+    println!("  instructions: {}", stats.instruction_count);
+
+    let mut funcs: Vec<(&String, &u64)> = stats.function_time_ns.iter().collect();
+    funcs.sort_by(|a, b| b.1.cmp(a.1));
+    println!();
+    println!("  functions by time:");
+    if funcs.is_empty() {
+        println!("    (no function calls recorded)");
+    } else {
+        for (name, ns) in funcs.iter().take(10) {
+            let calls = stats.function_calls.get(*name).copied().unwrap_or(0);
+            println!(
+                "    {:30} {:>10.3} ms  ({} calls)",
+                name,
+                **ns as f64 / 1_000_000.0,
+                calls
+            );
+        }
+    }
+
+    let mut lines: Vec<(&(usize, usize), &u64)> = stats.line_hits.iter().collect();
+    lines.sort_by(|a, b| b.1.cmp(a.1));
+    println!();
+    println!("  hottest lines:");
+    for ((ln, col), hits) in lines.iter().take(10) {
+        println!("    {}:{}  {} hits", ln, col, hits);
+    }
+    0
 }

@@ -24,6 +24,17 @@ struct CallFrame<'a> {
     locals: Vec<Value>,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct VmStats {
+    pub instruction_count: u64,
+    /// (line, column) -> hit count.
+    pub line_hits: std::collections::HashMap<(usize, usize), u64>,
+    /// function name -> call count.
+    pub function_calls: std::collections::HashMap<String, u64>,
+    /// function name -> total wall-clock nanoseconds across calls.
+    pub function_time_ns: std::collections::HashMap<String, u64>,
+}
+
 pub struct Vm<'a> {
     program: &'a IrProgram,
     stack: Vec<Value>,
@@ -32,10 +43,25 @@ pub struct Vm<'a> {
     handlers: Vec<Handler>,
     capture: bool,
     output: String,
+    pub stats: Option<VmStats>,
+    timing_stack: Vec<(String, std::time::Instant)>,
 }
 
 impl<'a> Vm<'a> {
     /// VM that prints to the terminal.
+    /// Create a VM that records line hits, call counts, and per-function time.
+    /// Off by default; instrumentation is skipped entirely when `stats` is None.
+    pub fn with_stats(program: &'a IrProgram) -> Self {
+        let mut vm = Self::new(program);
+        vm.stats = Some(VmStats::default());
+        vm
+    }
+
+    /// The collected stats, if `with_stats` was used.
+    pub fn stats(&self) -> Option<&VmStats> {
+        self.stats.as_ref()
+    }
+
     pub fn new(program: &'a IrProgram) -> Self {
         Self::build(program, false)
     }
@@ -54,6 +80,8 @@ impl<'a> Vm<'a> {
             handlers: Vec::new(),
             capture,
             output: String::new(),
+            stats: None,
+            timing_stack: Vec::new(),
         }
     }
 
@@ -126,6 +154,12 @@ impl<'a> Vm<'a> {
             self.frames.last_mut().unwrap().ip = ip + 1;
             let ins = &chunk.code[ip];
             let span = &chunk.spans[ip];
+
+            // STATS: per-instruction hook
+            if let Some(ref mut s) = self.stats {
+                s.instruction_count += 1;
+                *s.line_hits.entry((span.line, span.column)).or_insert(0) += 1;
+            }
 
             match ins {
                 // constants
@@ -236,6 +270,14 @@ impl<'a> Vm<'a> {
                         return Err(err("stack overflow: call depth exceeded", span));
                     }
                     let callee = &program.functions[*id];
+                    // STATS: call hook
+                    if let Some(ref mut s) = self.stats {
+                        *s.function_calls.entry(callee.name.clone()).or_insert(0) += 1;
+                    }
+                    if self.stats.is_some() {
+                        self.timing_stack
+                            .push((callee.name.clone(), std::time::Instant::now()));
+                    }
                     let mut locals = vec![Value::None; callee.num_locals];
                     for i in (0..callee.arity).rev() {
                         locals[i] = self.pop();
@@ -248,6 +290,14 @@ impl<'a> Vm<'a> {
                 }
                 Instruction::Return => {
                     let ret = self.pop();
+                    // STATS: return hook
+                    let popped = self.timing_stack.pop();
+                    if let Some((fname, start)) = popped {
+                        let ns = start.elapsed().as_nanos() as u64;
+                        if let Some(ref mut s) = self.stats {
+                            *s.function_time_ns.entry(fname).or_insert(0) += ns;
+                        }
+                    }
                     self.frames.pop();
                     self.drop_stale_handlers();
                     if self.frames.is_empty() {
