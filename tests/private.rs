@@ -79,7 +79,10 @@ fn private_item_is_not_importable() {
     std::fs::write(&bad, "from pm import secret\nprint(secret())\n").unwrap();
     let (ok, out) = run_cmd("run", &bad);
     assert!(!ok, "got: {out}");
-    assert!(out.contains("'secret' is private in module 'pm'"), "got: {out}");
+    assert!(
+        out.contains("'secret' is private in module 'pm'"),
+        "got: {out}"
+    );
 
     let good = dir.join("good.rca");
     std::fs::write(&good, "from pm import visible\nprint(visible())\n").unwrap();
