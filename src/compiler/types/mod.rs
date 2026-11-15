@@ -48,6 +48,10 @@ impl Type {
         }
         match (expected, actual) {
             (Type::List(e1), Type::Array(e2, _)) | (Type::Array(e1, _), Type::List(e2)) => e1 == e2,
+            (Type::List(e1), Type::List(e2)) => Self::compatible(e1, e2),
+            (Type::Map(k1, v1), Type::Map(k2, v2)) => {
+                Self::compatible(k1, k2) && Self::compatible(v1, v2)
+            }
             _ => false,
         }
     }

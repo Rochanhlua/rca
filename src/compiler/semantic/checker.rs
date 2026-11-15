@@ -116,6 +116,15 @@ impl Checker {
     // ---------- declarations (structs and functions) ----------
 
     fn resolve_type(&mut self, t: &TypeExpr, report: bool) -> Type {
+        if t.name == "List" && t.elements.len() == 1 && t.length.is_none() {
+            let elem = self.resolve_type(&t.elements[0], report);
+            return Type::List(Box::new(elem));
+        }
+        if t.name == "Map" && t.elements.len() == 2 && t.length.is_none() {
+            let k = self.resolve_type(&t.elements[0], report);
+            let v = self.resolve_type(&t.elements[1], report);
+            return Type::Map(Box::new(k), Box::new(v));
+        }
         if t.name == "Array" {
             if t.elements.len() != 1 || t.length.is_none() {
                 if report {
@@ -436,6 +445,7 @@ impl Checker {
                 name,
                 mutable,
                 constant,
+                public: _,
                 ty,
                 value,
             } => {

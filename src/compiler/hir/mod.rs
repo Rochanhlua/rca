@@ -337,6 +337,7 @@ pub fn lower_stmt(stmt: &Stmt, types: &HashMap<(usize, usize), Type>) -> HStmt {
             name,
             mutable,
             constant,
+            public: _,
             ty,
             value,
         } => HStmtKind::Let {
@@ -487,6 +488,7 @@ pub fn lower_hstmt_to_ast(h: &HStmt) -> Stmt {
             name: name.clone(),
             mutable: *mutable,
             constant: *constant,
+            public: false,
             ty: ty.clone(),
             value: lower_hexpr_to_aexpr(value),
         },
