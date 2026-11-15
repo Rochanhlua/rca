@@ -3090,12 +3090,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let hdr = builder.create_block();
                     let body = builder.create_block();
                     let done = builder.create_block();
-                    let i_var = cranelift_frontend::Variable::from_u32(u32::MAX - 1);
-                    builder.declare_var(i_var, types::I64);
+                    let i_var = Variable::new(3);
                     builder.def_var(i_var, zero);
                     builder.ins().jump(hdr, &[]);
                     builder.switch_to_block(hdr);
-                    builder.seal_block(hdr);
                     let i_cur = builder.use_var(i_var);
                     let cond = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i_cur, rank_v);
                     builder.ins().brif(cond, done, &[], body, &[]);
@@ -3114,6 +3112,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let i_next = builder.ins().iadd_imm(i_cur, 1);
                     builder.def_var(i_var, i_next);
                     builder.ins().jump(hdr, &[]);
+                    builder.seal_block(hdr);
 
                     builder.switch_to_block(done);
                     builder.seal_block(done);
