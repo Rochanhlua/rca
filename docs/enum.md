@@ -56,8 +56,6 @@ VM and tree interpreter give identical results (tests in vm/mod.rs).
 - Variants with payload data.
 - `match` as an expression.
 - Guards and nested patterns.
-- Importing enums across modules (`from utils import Color`) is untested.
-- "Must return on all paths" does not treat `match` as returning.
 
 ## 6. Rules for future changes
 - Interpreter and VM must give identical results.

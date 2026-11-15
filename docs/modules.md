@@ -50,13 +50,8 @@ Implemented:
 - Module-qualified calls: utils.add(1, 2), u.add(1, 2) after import utils as u, utils.Point(x = 1)
 
 Not implemented yet:
-- pub on let / const
-- run-tree (tree-walking interpreter) with imports: `rcac run-tree` stops with
-  "run-tree does not support import yet; use 'rca run'"
-- Subdirectory packages
+- Subdirectory packages.
 
-Known limitation:
-- Default parameter values are compiled at the call site. A default that uses a global variable of an imported module may resolve wrongly. Literal defaults (numbers, strings) are fine.
 
 ## 8. Standard library modules
 
