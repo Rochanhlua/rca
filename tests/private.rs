@@ -59,10 +59,11 @@ fn pub_private_is_error() {
 }
 
 #[test]
-fn private_without_item_is_error() {
-    let (ok, out) = run_both("private let x = 1\n", "bare");
-    assert!(!ok, "got: {out}");
-    assert!(out.contains("after 'private'"), "got: {out}");
+fn private_let_works() {
+    // Phase 2 §3.2: `private let` is now accepted (same as plain `let`).
+    let (ok, out) = run_both("private let x = 1\nprint(x)\n", "bare");
+    assert!(ok, "got: {out}");
+    assert_eq!(out.trim(), "1");
 }
 
 #[test]
