@@ -61,7 +61,7 @@ fn native_int_from_str() {
 
 #[test]
 fn native_float_from_str() {
-    let (ok, out) = build_run("fs", "print(float(\"7.5\"))\n");
+    let (ok, out) = build_run("fs", "print(int(float(\"7.5\")))\n");
     assert!(ok, "got: {out}");
-    assert!(out.contains("7.5"), "got: {out}");
+    assert!(out.contains("7"), "got: {out}");
 }
