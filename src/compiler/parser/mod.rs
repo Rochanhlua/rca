@@ -156,6 +156,23 @@ impl Parser {
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
             TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
             TokenKind::Match => self.parse_match()?,
+            TokenKind::Private => {
+                self.advance(); // private
+                match self.peek().clone() {
+                    TokenKind::Fn => StmtKind::Function(self.parse_function()?),
+                    TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
+                    TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
+                    other => {
+                        return Err(Diagnostic::new(
+                            format!(
+                                "expected 'fn', 'struct' or 'enum' after 'private', found {:?}",
+                                other
+                            ),
+                            self.span(),
+                        ));
+                    }
+                }
+            }
             TokenKind::Pub => {
                 self.advance(); // pub
                 match self.peek().clone() {
