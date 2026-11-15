@@ -30,11 +30,10 @@ struct FnState {
     next_slot: usize,
     loops: Vec<LoopCtx>,
     try_depth: usize,
-    is_main: bool,
 }
 
 impl FnState {
-    fn new(is_main: bool) -> Self {
+    fn new() -> Self {
         FnState {
             chunk: Chunk::default(),
             locals: Vec::new(),
@@ -42,7 +41,6 @@ impl FnState {
             next_slot: 0,
             loops: Vec::new(),
             try_depth: 0,
-            is_main,
         }
     }
 }
@@ -120,7 +118,7 @@ pub fn compile(program: &Program) -> Result<IrProgram, Diagnostic> {
 impl Compiler {
     fn new() -> Self {
         Compiler {
-            state: FnState::new(true),
+            state: FnState::new(),
             globals: HashMap::new(),
             functions: Vec::new(),
             func_ids: HashMap::new(),
@@ -284,7 +282,7 @@ impl Compiler {
 
     /// Top-level variables (outside any block) are globals; everything else is a local.
     fn declare_var(&mut self, name: &str) -> VarRef {
-        if self.state.is_main && self.state.scope_depth == 0 {
+        if self.state.scope_depth == 0 {
             let slot = match self.globals.get(&self.key(name)) {
                 Some(&s) => s,
                 None => {
@@ -307,7 +305,7 @@ impl Compiler {
             }
         }
         self.globals
-            .get(&self.key(name))
+            .get(&self.item_key(name))
             .map(|&s| VarRef::Global(s))
     }
 
@@ -349,7 +347,7 @@ impl Compiler {
             Some(&id) => id,
             None => return Err(err(format!("unknown function '{}'", f.name), span)),
         };
-        let saved = std::mem::replace(&mut self.state, FnState::new(false));
+        let saved = std::mem::replace(&mut self.state, FnState::new());
         for p in &f.params {
             self.declare_local(&p.name);
         }
@@ -719,6 +717,16 @@ impl Compiler {
                 {
                     self.emit(Instruction::PushEnum(en.clone(), name.clone()), span);
                     return Ok(());
+                }
+                if let ExprKind::Ident(m) = &object.kind
+                    && self.resolve(m).is_none()
+                    && let Some(module) = self.module_aliases.get(m).cloned()
+                {
+                    let qualified = format!("{}::{}", module, name);
+                    if let Some(&slot) = self.globals.get(&qualified) {
+                        self.emit(Instruction::LoadGlobal(slot), span);
+                        return Ok(());
+                    }
                 }
                 self.compile_expr(object)?;
                 self.emit(Instruction::GetField(name.clone()), span);

@@ -836,6 +836,9 @@ impl Checker {
             ExprKind::Bool(_) => Type::Bool,
             ExprKind::NoneLit => Type::None,
             ExprKind::Ident(name) => {
+                if self.scopes.lookup(name).is_none() && self.consts.contains(name) {
+                    return Type::Unknown;
+                }
                 let found = self.scopes.lookup(name).map(|s| s.ty.clone());
                 match found {
                     Some(ty) => ty,
@@ -947,6 +950,14 @@ impl Checker {
                         &expr.span,
                     );
                     return Type::Unknown;
+                }
+                if let ExprKind::Ident(m) = &object.kind
+                    && self.scopes.lookup(m).is_none()
+                    && let Some(module) = self.module_aliases.get(m).cloned()
+                    && let Some(exports) = self.imports.get(&module).cloned()
+                    && let Some(t) = exports.consts.get(name).cloned()
+                {
+                    return t;
                 }
                 let obj = self.check_expr(object);
                 match obj {
@@ -2263,6 +2274,7 @@ pub struct ModuleExports {
     structs: HashMap<String, Vec<(String, Type)>>,
     enums: HashMap<String, Vec<String>>,
     private: HashSet<String>,
+    consts: HashMap<String, Type>,
 }
 
 impl Checker {
@@ -2309,6 +2321,23 @@ impl Checker {
                         out.private.insert(e.name.clone());
                     }
                 }
+                StmtKind::Let {
+                    name,
+                    constant: true,
+                    public,
+                    ty,
+                    ..
+                } => {
+                    if *public {
+                        let t = match ty {
+                            Some(t) => c.resolve_type(t, false),
+                            None => Type::Unknown,
+                        };
+                        out.consts.insert(name.clone(), t);
+                    } else {
+                        out.private.insert(name.clone());
+                    }
+                }
                 _ => {}
             }
         }
@@ -2348,6 +2377,8 @@ impl Checker {
                             self.structs.insert(local, fields.clone());
                         } else if let Some(variants) = exports.enums.get(&item.name) {
                             self.enums.insert(local, variants.clone());
+                        } else if exports.consts.contains_key(&item.name) {
+                            self.consts.insert(local);
                         } else if exports.private.contains(&item.name) {
                             self.error(
                                 format!("'{}' is private in module '{}'", item.name, module),

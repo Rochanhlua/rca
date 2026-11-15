@@ -1,13 +1,13 @@
-== main (locals: 3, globals: 3) ==
+== main (locals: 3, globals: 4) ==
 0000  PushStr("RCA Developer")     ; line 14
 0001  PushInt(20)                  ; line 15
 0002  MakeStruct(0)                ; line 13
-0003  StoreGlobal(0)               ; line 13
+0003  StoreGlobal(1)               ; line 13
 0004  PushInt(1)                   ; line 18
 0005  PushInt(2)                   ; line 18
 0006  PushInt(3)                   ; line 18
 0007  MakeList(3)                  ; line 18
-0008  StoreGlobal(1)               ; line 18
+0008  StoreGlobal(2)               ; line 18
 0009  PushInt(10)                  ; line 19
 0010  PushInt(5)                   ; line 19
 0011  Add                          ; line 19
@@ -15,8 +15,8 @@
 0013  Mul                          ; line 19
 0014  PushInt(3)                   ; line 19
 0015  Sub                          ; line 19
-0016  StoreGlobal(2)               ; line 19
-0017  LoadGlobal(0)                ; line 21
+0016  StoreGlobal(3)               ; line 19
+0017  LoadGlobal(1)                ; line 21
 0018  GetField("age")              ; line 21
 0019  PushInt(18)                  ; line 21
 0020  GtEq                         ; line 21
@@ -30,7 +30,7 @@
 0028  Print(1)                     ; line 22
 0029  Pop                          ; line 22
 0030  Jump(43)                     ; line 21
-0031  LoadGlobal(0)                ; line 23
+0031  LoadGlobal(1)                ; line 23
 0032  GetField("age")              ; line 23
 0033  PushInt(13)                  ; line 23
 0034  GtEq                         ; line 23
@@ -61,10 +61,10 @@
 0059  PushNone                     ; line 1
 0060  Return                       ; line 1
 
-== fn greet (arity: 2, locals: 3) ==
+== fn greet (arity: 2, locals: 2) ==
 0000  PushInt(0)                   ; line 7
-0001  StoreLocal(2)                ; line 7
-0002  LoadLocal(2)                 ; line 8
+0001  StoreGlobal(0)               ; line 7
+0002  LoadGlobal(0)                ; line 8
 0003  LoadLocal(1)                 ; line 8
 0004  Lt                           ; line 8
 0005  JumpIfFalse(15)              ; line 8
@@ -72,10 +72,10 @@
 0007  GetField("name")             ; line 9
 0008  Print(1)                     ; line 9
 0009  Pop                          ; line 9
-0010  LoadLocal(2)                 ; line 10
+0010  LoadGlobal(0)                ; line 10
 0011  PushInt(1)                   ; line 10
 0012  Add                          ; line 10
-0013  StoreLocal(2)                ; line 10
+0013  StoreGlobal(0)               ; line 10
 0014  Jump(2)                      ; line 8
 0015  PushStr("done")              ; line 11
 0016  Return                       ; line 11
