@@ -2261,6 +2261,7 @@ mod tests {
 pub struct ModuleExports {
     functions: HashMap<String, FuncSig>,
     structs: HashMap<String, Vec<(String, Type)>>,
+    enums: HashMap<String, Vec<String>>,
     private: HashSet<String>,
 }
 
@@ -2297,6 +2298,15 @@ impl Checker {
                         }
                     } else {
                         out.private.insert(s.name.clone());
+                    }
+                }
+                StmtKind::Enum(e) => {
+                    if e.public {
+                        if let Some(variants) = c.enums.get(&e.name) {
+                            out.enums.insert(e.name.clone(), variants.clone());
+                        }
+                    } else {
+                        out.private.insert(e.name.clone());
                     }
                 }
                 _ => {}
@@ -2336,6 +2346,8 @@ impl Checker {
                             self.functions.insert(local, sig.clone());
                         } else if let Some(fields) = exports.structs.get(&item.name) {
                             self.structs.insert(local, fields.clone());
+                        } else if let Some(variants) = exports.enums.get(&item.name) {
+                            self.enums.insert(local, variants.clone());
                         } else if exports.private.contains(&item.name) {
                             self.error(
                                 format!("'{}' is private in module '{}'", item.name, module),
