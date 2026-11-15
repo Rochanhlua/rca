@@ -8,6 +8,7 @@ description = "RCA: an AI-native programming language (early development)"
 [lib]
 name = "rca"
 path = "src/lib.rs"
+crate-type = ["rlib", "staticlib"]
 
 # §1: RCA compiler
 [[bin]]
