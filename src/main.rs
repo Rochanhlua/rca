@@ -323,8 +323,14 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
         return 0;
     }
     if command == "run-tree" {
-        eprintln!("error: run-tree does not support import yet; use 'rca run'");
-        return 1;
+        let mut interp = Interpreter::new();
+        return match interp.run_modules(&modules) {
+            Ok(()) => 0,
+            Err(d) => {
+                eprintln!("runtime error: {}", d);
+                1
+            }
+        };
     }
     let mut ir = match lower::compile_modules(&modules) {
         Ok(ir) => ir,
