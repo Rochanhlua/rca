@@ -274,6 +274,41 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_http_post", Linkage::Import, &http_post_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut int_to_str_sig = module.make_signature();
+    int_to_str_sig.params.push(AbiParam::new(types::I64));
+    int_to_str_sig.returns.push(AbiParam::new(types::I64));
+    let int_to_str_func = module
+        .declare_function("rca_int_to_str", Linkage::Import, &int_to_str_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut float_to_str_sig = module.make_signature();
+    float_to_str_sig.params.push(AbiParam::new(types::I64));
+    float_to_str_sig.returns.push(AbiParam::new(types::I64));
+    let float_to_str_func = module
+        .declare_function("rca_float_to_str", Linkage::Import, &float_to_str_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut bool_to_str_sig = module.make_signature();
+    bool_to_str_sig.params.push(AbiParam::new(types::I64));
+    bool_to_str_sig.returns.push(AbiParam::new(types::I64));
+    let bool_to_str_func = module
+        .declare_function("rca_bool_to_str", Linkage::Import, &bool_to_str_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_to_int_sig = module.make_signature();
+    str_to_int_sig.params.push(AbiParam::new(types::I64));
+    str_to_int_sig.returns.push(AbiParam::new(types::I64));
+    let str_to_int_func = module
+        .declare_function("rca_str_to_int", Linkage::Import, &str_to_int_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_to_float_sig = module.make_signature();
+    str_to_float_sig.params.push(AbiParam::new(types::I64));
+    str_to_float_sig.returns.push(AbiParam::new(types::I64));
+    let str_to_float_func = module
+        .declare_function("rca_str_to_float", Linkage::Import, &str_to_float_sig)
+        .map_err(|e| e.to_string())?;
+
     let mut pow_sig = module.make_signature();
     pow_sig.params.push(AbiParam::new(types::F64));
     pow_sig.params.push(AbiParam::new(types::F64));
@@ -690,6 +725,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          ceil_ref: FuncRef,
                          round_ref: FuncRef,
                          free_ref: FuncRef,
+                         int_to_str_ref: FuncRef,
+                         float_to_str_ref: FuncRef,
+                         bool_to_str_ref: FuncRef,
+                         str_to_int_ref: FuncRef,
+                         str_to_float_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
                          fmt_float_int_ptr: Value,
@@ -867,7 +907,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 (i, StackType::Int)
                             }
                             StackType::Str => {
-                                return Err("str -> int not yet supported in native".to_string());
+                                let call = builder.ins().call(str_to_int_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Int)
                             }
                         },
                         ConvKind::Float => match ty {
@@ -898,12 +940,44 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 return Err("map -> float not supported in native".to_string());
                             }
                             StackType::Str => {
-                                return Err("str -> float not yet supported in native".to_string());
+                                let call = builder.ins().call(str_to_float_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Float)
                             }
                         },
-                        ConvKind::Str => {
-                            return Err("str() not yet supported in native".to_string());
-                        }
+                        ConvKind::Str => match ty {
+                            StackType::Int => {
+                                let call = builder.ins().call(int_to_str_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Str)
+                            }
+                            StackType::Float => {
+                                let call = builder.ins().call(float_to_str_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Str)
+                            }
+                            StackType::Bool => {
+                                let call = builder.ins().call(bool_to_str_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Str)
+                            }
+                            StackType::Str => (val, StackType::Str),
+                            StackType::Tensor => {
+                                return Err("Tensor -> str not supported in native".to_string());
+                            }
+                            StackType::Struct(_) => {
+                                return Err("struct -> str not supported in native".to_string());
+                            }
+                            StackType::List(_) => {
+                                return Err("list -> str not supported in native".to_string());
+                            }
+                            StackType::Tuple(_) => {
+                                return Err("tuple -> str not supported in native".to_string());
+                            }
+                            StackType::Map => {
+                                return Err("map -> str not supported in native".to_string());
+                            }
+                        },
                     };
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
@@ -3254,7 +3328,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let round_ref = module.declare_func_in_func(round_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
-        let free_ref = module.declare_func_in_func(free_func, builder.func);
+        let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
+        let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
+        let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
+        let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
+        let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
         let fmt_div0_ptr = builder.ins().global_value(types::I64, fmt_div0_gv);
         let fmt_ovf_gv = module.declare_data_in_func(str_ovf_id, builder.func);
@@ -3323,6 +3401,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             ceil_ref,
             round_ref,
             free_ref,
+            int_to_str_ref,
+            float_to_str_ref,
+            bool_to_str_ref,
+            str_to_int_ref,
+            str_to_float_ref,
             fmt_int_ptr,
             fmt_str_ptr,
             fmt_float_int_ptr,
@@ -3491,6 +3574,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_map_err_msg_ptr = builder.ins().global_value(types::I64, fmt_map_err_msg_gv);
 
             let params = builder.block_params(entry_block).to_vec();
+            let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
+            let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
+            let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
+            let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
+            let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
             for (p_idx, p_val) in params.iter().enumerate() {
                 let slot_off = builder.ins().iconst(types::I64, (p_idx as i64) * 8);
                 let locals_addr = builder.ins().stack_addr(types::I64, locals_slot, 0);
@@ -3520,6 +3608,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 ceil_ref,
                 round_ref,
                 free_ref,
+                int_to_str_ref,
+                float_to_str_ref,
+                bool_to_str_ref,
+                str_to_int_ref,
+                str_to_float_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
                 fmt_float_int_ptr,

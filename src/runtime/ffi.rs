@@ -122,3 +122,110 @@ pub unsafe extern "C" fn rca_http_post(
         }
     }
 }
+
+// -------- String <-> primitive conversions (Phase 3 native codegen) --------
+
+/// Allocate a null-terminated C string from a Rust string.
+/// Caller owns the returned buffer; use `rca_free` to release it.
+fn cstring_from(s: String) -> *mut c_char {
+    let mut bytes = s.into_bytes();
+    bytes.push(0);
+    let len = bytes.len();
+    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    if ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len) };
+    ptr as *mut c_char
+}
+
+/// Format an `Int` as a null-terminated C string (caller owns; use `rca_free`).
+///
+/// # Safety
+///
+/// Pure function of `x`; the returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_int_to_str(x: i64) -> *mut c_char {
+    cstring_from(x.to_string())
+}
+
+/// Format a `Float` (passed as IEEE 754 bits) as a null-terminated C string.
+///
+/// # Safety
+///
+/// Pure function of `bits`; the returned pointer must be freed with `rca_free`.
+/// Matches RCA `str()` formatting (integer-valued floats get `.0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_float_to_str(bits: i64) -> *mut c_char {
+    let x = f64::from_bits(bits as u64);
+    cstring_from(crate::runtime::values::Value::Float(x).to_string())
+}
+
+/// Format a `Bool` (0 or 1) as a null-terminated C string.
+///
+/// # Safety
+///
+/// Pure function of `x`; the returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_bool_to_str(x: i64) -> *mut c_char {
+    cstring_from(if x != 0 {
+        "true".to_string()
+    } else {
+        "false".to_string()
+    })
+}
+
+/// Parse a null-terminated C string as `Int`. Exits the process on parse error.
+///
+/// # Safety
+///
+/// `p` must be null or a valid, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_str_to_int(p: *const c_char) -> i64 {
+    if p.is_null() {
+        eprintln!("runtime error: int() on null string");
+        std::process::exit(1);
+    }
+    let s = match unsafe { CStr::from_ptr(p) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("runtime error: int() on invalid UTF-8");
+            std::process::exit(1);
+        }
+    };
+    match s.trim().parse::<i64>() {
+        Ok(n) => n,
+        Err(_) => {
+            eprintln!("runtime error: int() cannot parse {:?}", s);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Parse a null-terminated C string as `Float` (returns IEEE 754 bits).
+///
+/// # Safety
+///
+/// `p` must be null or a valid, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_str_to_float(p: *const c_char) -> i64 {
+    if p.is_null() {
+        eprintln!("runtime error: float() on null string");
+        std::process::exit(1);
+    }
+    let s = match unsafe { CStr::from_ptr(p) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("runtime error: float() on invalid UTF-8");
+            std::process::exit(1);
+        }
+    };
+    match s.trim().parse::<f64>() {
+        Ok(x) => x.to_bits() as i64,
+        Err(_) => {
+            eprintln!("runtime error: float() cannot parse {:?}", s);
+            std::process::exit(1);
+        }
+    }
+}

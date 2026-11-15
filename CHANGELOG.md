@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Implemented:** §5/Phase 3 native codegen — `str()`, `int(str)`, `float(str)` now work in native. New FFI helpers `rca_int_to_str`, `rca_float_to_str`, `rca_bool_to_str`, `rca_str_to_int`, `rca_str_to_float` in `src/runtime/ffi.rs`; codegen declares and calls them via Cranelift. Native results match the VM. New `tests/native_conversions.rs` (5 tests).
 - **Implemented:** §5/Phase 3 step 5 — `rcac run` now compiles via `compile_hir_direct` (HIR path) instead of `compile` (AST path). `check_program_with_types` provides the Span→Type map required by HIR lowering. Byte-identical IR verified by `tests/hir_roundtrip.rs` differential suite (20 tests).
 - **Tests:** Phase 2 §4.2 — type inference behavior tests. New `tests/type_inference.rs` (13 tests): Int/Float/String/Bool/Char/List/Tuple literal inference, binary op inference, negative cases (Int+Float, annotation mismatch, unknown type, heterogeneous list).
 - **Docs:** Phase 2 stale notes removed. `docs/modules.md` §7: `pub on let/const` and `run-tree` imports are implemented; the default-param-with-module-global limitation is fixed. `docs/enum.md` §5: cross-module enum import is tested, and `match` now counts as returning on all paths.
