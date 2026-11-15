@@ -2765,8 +2765,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             type_stack.push(StackType::Int);
                         }
                         StackType::Str => {
+                            // Count UTF-8 characters (not bytes) to match the VM's
+                            // `chars().count()`: skip continuation bytes (10xxxxxx).
                             let len_call = builder.ins().call(strlen_ref, &[val]);
-                            let len = builder.inst_results(len_call)[0];
+                            let byte_len = builder.inst_results(len_call)[0];
+                            let zero_c = builder.ins().iconst(types::I64, 0);
+                            builder.def_var(Variable::new(2), zero_c);
+                            builder.def_var(Variable::new(3), zero_c);
+                            let hdr = builder.create_block();
+                            let body = builder.create_block();
+                            let done = builder.create_block();
+                            builder.ins().jump(hdr, &[]);
+                            builder.switch_to_block(hdr);
+                            let idx = builder.use_var(Variable::new(3));
+                            let more = builder.ins().icmp(IntCC::SignedLessThan, idx, byte_len);
+                            builder.ins().brif(more, body, &[], done, &[]);
+                            builder.seal_block(body);
+                            builder.seal_block(done);
+                            builder.switch_to_block(body);
+                            let idx2 = builder.use_var(Variable::new(3));
+                            let byte_ptr = builder.ins().iadd(val, idx2);
+                            let byte8 = builder.ins().load(types::I8, MemFlags::new(), byte_ptr, 0);
+                            let byte = builder.ins().uextend(types::I64, byte8);
+                            let masked = builder.ins().band_imm(byte, 0xC0);
+                            let is_lead = builder.ins().icmp_imm(IntCC::NotEqual, masked, 0x80);
+                            let inc = builder.ins().uextend(types::I64, is_lead);
+                            let count = builder.use_var(Variable::new(2));
+                            let next_count = builder.ins().iadd(count, inc);
+                            builder.def_var(Variable::new(2), next_count);
+                            let next_idx = builder.ins().iadd_imm(idx2, 1);
+                            builder.def_var(Variable::new(3), next_idx);
+                            builder.ins().jump(hdr, &[]);
+                            builder.seal_block(hdr);
+                            builder.switch_to_block(done);
+                            let len = builder.use_var(Variable::new(2));
                             builder.ins().store(MemFlags::new(), len, src, 0);
                             type_stack.push(StackType::Int);
                         }
