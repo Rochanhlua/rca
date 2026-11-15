@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Tests:** Phase 2 §4.2 — type inference behavior tests. New `tests/type_inference.rs` (13 tests): Int/Float/String/Bool/Char/List/Tuple literal inference, binary op inference, negative cases (Int+Float, annotation mismatch, unknown type, heterogeneous list).
 - **Docs:** Phase 2 stale notes removed. `docs/modules.md` §7: `pub on let/const` and `run-tree` imports are implemented; the default-param-with-module-global limitation is fixed. `docs/enum.md` §5: cross-module enum import is tested, and `match` now counts as returning on all paths.
 - **Implemented:** Phase 2 — `rcac run-tree` now supports module imports (previously "run-tree does not support import yet"). `Interpreter::run_modules` flattens modules in dependency order with per-module prefixes (`lib::name`), `declare` prefixes globals, `lookup`/`eval_call`/`eval_expr::Field` resolve module-qualified names, `from X import N` uses `item_aliases`. VM and tree interpreter give identical results. New `tests/run_tree_imports.rs` (5 tests, includes differential run-tree vs VM test).
 - **Implemented:** §3.2/Phase 2 — module-qualified const access and from-import const. `lib.X` in expressions and default-param positions now resolve; `from X import C` (with alias) registers the const. `ModuleExports` gains `consts`; `collect_exports` collects `pub const`; `apply_imports` handles const; `check_expr::Field` and `compile_expr::Field` resolve module consts; `resolve` uses `item_key` so from-import aliases work in IR. New `tests/module_const.rs` (5 tests).
