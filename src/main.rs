@@ -154,16 +154,25 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                     if let Ok(exe_self) = std::env::current_exe()
                         && let Some(dir) = exe_self.parent()
                     {
-                        let mut lib = dir.join("librca.lib");
+                        let mut lib = dir.join("rca.lib");
+                        if !lib.exists() {
+                            lib = dir.join("librca.lib");
+                        }
+                        if !lib.exists() {
+                            lib = dir.join("librca.a");
+                        }
                         if !lib.exists() {
                             lib = dir.join("librca.a");
                         }
                         if !lib.exists()
                             && let Some(parent) = dir.parent()
-                            && (parent.join("librca.lib").exists()
+                            && (parent.join("rca.lib").exists()
+                                || parent.join("librca.lib").exists()
                                 || parent.join("librca.a").exists())
                         {
-                            lib = if parent.join("librca.lib").exists() {
+                            lib = if parent.join("rca.lib").exists() {
+                                parent.join("rca.lib")
+                            } else if parent.join("librca.lib").exists() {
                                 parent.join("librca.lib")
                             } else {
                                 parent.join("librca.a")
@@ -393,16 +402,25 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                     if let Ok(exe_self) = std::env::current_exe()
                         && let Some(dir) = exe_self.parent()
                     {
-                        let mut lib = dir.join("librca.lib");
+                        let mut lib = dir.join("rca.lib");
+                        if !lib.exists() {
+                            lib = dir.join("librca.lib");
+                        }
+                        if !lib.exists() {
+                            lib = dir.join("librca.a");
+                        }
                         if !lib.exists() {
                             lib = dir.join("librca.a");
                         }
                         if !lib.exists()
                             && let Some(parent) = dir.parent()
-                            && (parent.join("librca.lib").exists()
+                            && (parent.join("rca.lib").exists()
+                                || parent.join("librca.lib").exists()
                                 || parent.join("librca.a").exists())
                         {
-                            lib = if parent.join("librca.lib").exists() {
+                            lib = if parent.join("rca.lib").exists() {
+                                parent.join("rca.lib")
+                            } else if parent.join("librca.lib").exists() {
                                 parent.join("librca.lib")
                             } else {
                                 parent.join("librca.a")
