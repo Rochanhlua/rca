@@ -32,6 +32,7 @@ enum StackType {
     Tuple(u32),
     Map,
     Struct(usize),
+    Tensor,
 }
 
 fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
@@ -74,6 +75,105 @@ fn emit_decref(builder: &mut FunctionBuilder, ptr: Value, free_ref: FuncRef) {
     builder.ins().jump(cont_blk, &[]);
     builder.switch_to_block(cont_blk);
     builder.seal_block(cont_blk);
+}
+
+/// Phase 3 native codegen — pre-scan IR to detect literal `Tensor([[...]])` patterns.
+/// Returns `ip -> (shape, data)` for every `MakeTensor` whose argument is a
+/// compile-time-known nested Float/Int list literal. Variable arguments are
+/// not recorded and will produce a clear error in codegen.
+#[derive(Debug, Clone)]
+enum SymVal {
+    Float(f64),
+    List(Vec<SymVal>),
+}
+
+fn flatten_sym(v: &SymVal) -> Option<(Vec<usize>, Vec<f64>)> {
+    match v {
+        SymVal::Float(_) => None, // a bare float is not a tensor
+        SymVal::List(items) => {
+            if items.is_empty() {
+                return None;
+            }
+            // Flat list of floats?
+            let mut flat = Vec::with_capacity(items.len());
+            let mut all_float = true;
+            for it in items {
+                if let SymVal::Float(f) = it {
+                    flat.push(*f);
+                } else {
+                    all_float = false;
+                    break;
+                }
+            }
+            if all_float {
+                return Some((vec![items.len()], flat));
+            }
+            // Nested lists (all sub-shapes must match)
+            let mut subs: Vec<(Vec<usize>, Vec<f64>)> = Vec::with_capacity(items.len());
+            for it in items {
+                match flatten_sym(it) {
+                    Some((s, d)) => subs.push((s, d)),
+                    None => return None,
+                }
+            }
+            let first_shape = subs[0].0.clone();
+            for s in &subs[1..] {
+                if s.0 != first_shape {
+                    return None;
+                }
+            }
+            let mut shape = vec![items.len()];
+            shape.extend(&first_shape);
+            let mut data = Vec::new();
+            for (_, d) in subs {
+                data.extend(d);
+            }
+            Some((shape, data))
+        }
+    }
+}
+
+fn prescan_tensor_literals(
+    code: &[Instruction],
+) -> std::collections::HashMap<usize, (Vec<usize>, Vec<f64>)> {
+    let mut out: std::collections::HashMap<usize, (Vec<usize>, Vec<f64>)> =
+        std::collections::HashMap::new();
+    let mut sym: Vec<SymVal> = Vec::new();
+    for (ip, ins) in code.iter().enumerate() {
+        match ins {
+            Instruction::PushFloat(f) => sym.push(SymVal::Float(*f)),
+            Instruction::PushInt(i) => sym.push(SymVal::Float(*i as f64)),
+            Instruction::MakeList(n) => {
+                let mut items = Vec::with_capacity(*n);
+                let mut ok = true;
+                for _ in 0..*n {
+                    match sym.pop() {
+                        Some(v) => items.push(v),
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                items.reverse();
+                if ok {
+                    sym.push(SymVal::List(items));
+                } else {
+                    sym.clear();
+                }
+            }
+            Instruction::MakeTensor => {
+                if let Some(v) = sym.pop()
+                    && let Some((shape, data)) = flatten_sym(&v)
+                {
+                    out.insert(ip, (shape, data));
+                }
+                sym.clear();
+            }
+            _ => sym.clear(),
+        }
+    }
+    out
 }
 
 fn is_heap(ty: &StackType) -> bool {
@@ -644,6 +744,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             local_types.insert(i, st);
         }
         let code = &chunk.code;
+        let tensor_literals = prescan_tensor_literals(code);
         let mut blocks = Vec::new();
         for _ in 0..code.len() + 1 {
             blocks.push(builder.create_block());
@@ -743,6 +844,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let (result, new_ty) = match kind {
                         ConvKind::Int => match ty {
+                            StackType::Tensor => {
+                                return Err("Tensor -> Int not supported in native".to_string());
+                            }
                             StackType::Struct(_) => {
                                 return Err("struct -> int not supported".to_string());
                             }
@@ -767,6 +871,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                         },
                         ConvKind::Float => match ty {
+                            StackType::Tensor => {
+                                return Err("Tensor -> Float not supported in native".to_string());
+                            }
                             StackType::Struct(_) => {
                                 return Err("struct -> float not supported".to_string());
                             }
@@ -1498,6 +1605,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         match ty {
                             StackType::Struct(_) => {
                                 return Err("struct display not supported".to_string());
+                            }
+                            StackType::Tensor => {
+                                return Err(
+                                    "Tensor display not supported in native (use `rcac run`)"
+                                        .to_string(),
+                                );
                             }
                             StackType::Int => {
                                 let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
@@ -2655,8 +2768,40 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             type_stack.push(StackType::Int);
                         }
                         StackType::Str => {
+                            // Count UTF-8 characters (not bytes) to match the VM's
+                            // `chars().count()`: skip continuation bytes (10xxxxxx).
                             let len_call = builder.ins().call(strlen_ref, &[val]);
-                            let len = builder.inst_results(len_call)[0];
+                            let byte_len = builder.inst_results(len_call)[0];
+                            let zero_c = builder.ins().iconst(types::I64, 0);
+                            builder.def_var(Variable::new(2), zero_c);
+                            builder.def_var(Variable::new(3), zero_c);
+                            let hdr = builder.create_block();
+                            let body = builder.create_block();
+                            let done = builder.create_block();
+                            builder.ins().jump(hdr, &[]);
+                            builder.switch_to_block(hdr);
+                            let idx = builder.use_var(Variable::new(3));
+                            let more = builder.ins().icmp(IntCC::SignedLessThan, idx, byte_len);
+                            builder.ins().brif(more, body, &[], done, &[]);
+                            builder.seal_block(body);
+                            builder.seal_block(done);
+                            builder.switch_to_block(body);
+                            let idx2 = builder.use_var(Variable::new(3));
+                            let byte_ptr = builder.ins().iadd(val, idx2);
+                            let byte8 = builder.ins().load(types::I8, MemFlags::new(), byte_ptr, 0);
+                            let byte = builder.ins().uextend(types::I64, byte8);
+                            let masked = builder.ins().band_imm(byte, 0xC0);
+                            let is_lead = builder.ins().icmp_imm(IntCC::NotEqual, masked, 0x80);
+                            let inc = builder.ins().uextend(types::I64, is_lead);
+                            let count = builder.use_var(Variable::new(2));
+                            let next_count = builder.ins().iadd(count, inc);
+                            builder.def_var(Variable::new(2), next_count);
+                            let next_idx = builder.ins().iadd_imm(idx2, 1);
+                            builder.def_var(Variable::new(3), next_idx);
+                            builder.ins().jump(hdr, &[]);
+                            builder.seal_block(hdr);
+                            builder.switch_to_block(done);
+                            let len = builder.use_var(Variable::new(2));
                             builder.ins().store(MemFlags::new(), len, src, 0);
                             type_stack.push(StackType::Int);
                         }
@@ -2887,6 +3032,137 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::MakeTensor => {
+                    // Requires a compile-time-known literal. Variable tensors are VM-only.
+                    let (shape, data) = match tensor_literals.get(&ip) {
+                        Some((sh, d)) => (sh.clone(), d.clone()),
+                        None => {
+                            return Err(
+                                "native codegen: Tensor(...) with a non-literal argument is VM-only (use `rcac run`)".to_string()
+                            );
+                        }
+                    };
+                    // Stack: the nested list literal's pointer is on top; pop it (we
+                    // reconstruct the tensor directly from shape+data).
+                    let sp = builder.use_var(sp_var);
+                    let sp_new = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, sp_new);
+                    // Drop the type (the literal's StackType is List(_)).
+                    let _ = type_stack.pop();
+
+                    // Tensor heap layout:
+                    //   [refcount: i64][rank: i64][shape[0..rank]: usize * 8][len: i64][data: f64 * 8 * len]
+                    let rank = shape.len() as i64;
+                    let total: usize = shape.iter().product();
+                    let total_i = total as i64;
+                    let header = 8 + 8 + rank * 8 + 8; // refcount + rank + shape + len
+                    let total_bytes = header + total_i * 8;
+
+                    let size_val = builder.ins().iconst(types::I64, total_bytes);
+                    let malloc_call = builder.ins().call(malloc_ref, &[size_val]);
+                    let ptr = builder.inst_results(malloc_call)[0];
+
+                    // refcount = 1
+                    let one = builder.ins().iconst(types::I64, 1);
+                    builder.ins().store(MemFlags::new(), one, ptr, 0);
+                    // rank
+                    let rank_v = builder.ins().iconst(types::I64, rank);
+                    builder.ins().store(MemFlags::new(), rank_v, ptr, 8i32);
+                    // shape[i]
+                    let mut off: i32 = 16;
+                    for d in &shape {
+                        let dv = builder.ins().iconst(types::I64, *d as i64);
+                        builder.ins().store(MemFlags::new(), dv, ptr, off);
+                        off += 8;
+                    }
+                    // len (total)
+                    let len_val = builder.ins().iconst(types::I64, total_i);
+                    builder.ins().store(MemFlags::new(), len_val, ptr, off);
+                    off += 8;
+                    // data[i] = f64
+                    for f in &data {
+                        let fv = builder.ins().f64const(*f);
+                        builder.ins().store(MemFlags::new(), fv, ptr, off);
+                        off += 8;
+                    }
+                    // push ptr onto stack at sp_new
+                    let off_sp = builder.ins().imul_imm(sp_new, 8);
+                    let base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dest = builder.ins().iadd(base, off_sp);
+                    builder.ins().store(MemFlags::new(), ptr, dest, 0);
+                    let sp_final = builder.ins().iadd_imm(sp_new, 1);
+                    builder.def_var(sp_var, sp_final);
+                    type_stack.push(StackType::Tensor);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::TensorShape => {
+                    // Tensor -> List<Int> of shape dims.
+                    let _ = type_stack.pop(); // Tensor
+                    let sp = builder.use_var(sp_var);
+                    let tensor_pos = builder.ins().iadd_imm(sp, -1);
+                    let tensor_off = builder.ins().imul_imm(tensor_pos, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let tensor_addr = builder.ins().iadd(stack_base, tensor_off);
+                    let tensor = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), tensor_addr, 0);
+
+                    // Read rank (offset 8)
+                    let rank_v = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), tensor, 8i32);
+                    // Allocate list: [refcount][len][elem...], (rank+2)*8 bytes
+                    let list_bytes = builder.ins().iadd_imm(rank_v, 2);
+                    let list_bytes_8 = builder.ins().imul_imm(list_bytes, 8);
+                    let mc = builder.ins().call(malloc_ref, &[list_bytes_8]);
+                    let list = builder.inst_results(mc)[0];
+                    let one = builder.ins().iconst(types::I64, 1);
+                    builder.ins().store(MemFlags::new(), one, list, 0i32);
+                    builder.ins().store(MemFlags::new(), rank_v, list, 8i32);
+
+                    // Copy each shape dim (i64 from tensor offset 16 + i*8)
+                    // into list offset (2 + i) * 8.
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let one_i = builder.ins().iconst(types::I64, 1);
+                    let hdr = builder.create_block();
+                    let body = builder.create_block();
+                    let done = builder.create_block();
+                    let i_var = Variable::new(3);
+                    builder.def_var(i_var, zero);
+                    builder.ins().jump(hdr, &[]);
+                    builder.switch_to_block(hdr);
+                    let i_cur = builder.use_var(i_var);
+                    let cond = builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, i_cur, rank_v);
+                    builder.ins().brif(cond, done, &[], body, &[]);
+                    let _ = one_i;
+
+                    builder.switch_to_block(body);
+                    builder.seal_block(body);
+                    let src_off = builder.ins().imul_imm(i_cur, 8);
+                    let src_off = builder.ins().iadd_imm(src_off, 16);
+                    let src_addr = builder.ins().iadd(tensor, src_off);
+                    let v = builder.ins().load(types::I64, MemFlags::new(), src_addr, 0);
+                    let dst_off = builder.ins().imul_imm(i_cur, 8);
+                    let dst_off = builder.ins().iadd_imm(dst_off, 16);
+                    let dst_addr = builder.ins().iadd(list, dst_off);
+                    builder.ins().store(MemFlags::new(), v, dst_addr, 0);
+                    let i_next = builder.ins().iadd_imm(i_cur, 1);
+                    builder.def_var(i_var, i_next);
+                    builder.ins().jump(hdr, &[]);
+                    builder.seal_block(hdr);
+
+                    builder.switch_to_block(done);
+                    builder.seal_block(done);
+                    // Replace tensor with list (same stack slot, sp unchanged).
+                    let base2 = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let save_off = builder.ins().imul_imm(tensor_pos, 8);
+                    let save_addr = builder.ins().iadd(base2, save_off);
+                    builder.ins().store(MemFlags::new(), list, save_addr, 0);
+                    type_stack.push(StackType::List(ElemType::Int));
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 other => {

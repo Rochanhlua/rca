@@ -86,7 +86,7 @@ Execution:
 - Tree-walking interpreter
 - Native code generation (Cranelift) for a growing subset: arithmetic,
   control flow, loops, functions, floats, strings, structs, lists, tuples,
-  enums and match, maps, math builtins, try/catch/throw. Heap objects carry
+  enums and match, maps, math builtins, try/catch/throw, Tensor literals and shape(). Heap objects carry
   a refcount header. Some allocation gaps remain; see `docs/memory-model.md`.
 
 Tensors and AI (CPU, Float only):
