@@ -159,6 +159,10 @@ impl Parser {
             TokenKind::Private => {
                 self.advance(); // private
                 match self.peek().clone() {
+                    // private let (same as plain `let`, private by default)
+                    TokenKind::Let => self.parse_let(false, false, false)?,
+                    // private const (same as plain `const`, private by default)
+                    TokenKind::Const => self.parse_let(false, true, false)?,
                     TokenKind::Fn => StmtKind::Function(self.parse_function()?),
                     TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
                     TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
@@ -176,6 +180,8 @@ impl Parser {
             TokenKind::Pub => {
                 self.advance(); // pub
                 match self.peek().clone() {
+                    // pub let (immutable binding, public)
+                    TokenKind::Let => self.parse_let(false, false, true)?,
                     TokenKind::Const => {
                         let mut c = self.parse_let(false, true, true)?;
                         if let StmtKind::Let { ref mut public, .. } = c {
@@ -1039,8 +1045,9 @@ mod tests {
     }
 
     #[test]
-    fn pub_let_is_error() {
-        assert!(parse_result("pub let x = 1\n").is_err());
+    fn pub_let_works() {
+        // Phase 2 §3.2: `pub let` is now accepted.
+        assert!(parse_result("pub let x = 1\n").is_ok());
     }
     #[test]
     fn let_statement() {
