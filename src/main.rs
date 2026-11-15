@@ -150,8 +150,18 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                     let exe_path = path.trim_end_matches(".rca");
                     let mut cmd = Command::new("clang");
                     cmd.arg(&out_path).arg("-o").arg(exe_path);
+                    if let Ok(exe_self) = std::env::current_exe()
+                        && let Some(dir) = exe_self.parent()
+                    {
+                        let lib = dir.join("librca.a");
+                        if lib.exists() {
+                            cmd.arg(&lib);
+                        }
+                    }
                     #[cfg(not(windows))]
-                    cmd.arg("-lm");
+                    cmd.arg("-lm").arg("-lpthread").arg("-ldl");
+                    #[cfg(windows)]
+                    cmd.arg("-Wl,-force:unresolved");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
@@ -359,8 +369,18 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                     let exe_path = path.trim_end_matches(".rca");
                     let mut cmd = Command::new("clang");
                     cmd.arg(&out_path).arg("-o").arg(exe_path);
+                    if let Ok(exe_self) = std::env::current_exe()
+                        && let Some(dir) = exe_self.parent()
+                    {
+                        let lib = dir.join("librca.a");
+                        if lib.exists() {
+                            cmd.arg(&lib);
+                        }
+                    }
                     #[cfg(not(windows))]
-                    cmd.arg("-lm");
+                    cmd.arg("-lm").arg("-lpthread").arg("-ldl");
+                    #[cfg(windows)]
+                    cmd.arg("-Wl,-force:unresolved");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {

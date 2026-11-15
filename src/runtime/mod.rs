@@ -1,6 +1,7 @@
 pub mod autodiff;
 pub mod crypto;
 pub mod execution;
+pub mod ffi;
 pub mod http;
 pub mod json;
 pub mod net;
