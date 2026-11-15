@@ -23,13 +23,13 @@ fn native_len_counts_utf8_characters() {
     );
 
     let run = Command::new(&exe).output().unwrap();
-    let stdout = String::from_utf8_lossy(&run.stdout).to_string();
+    let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
 
     let vm = Command::new(env!("CARGO_BIN_EXE_rcac"))
         .args(["run", src.to_str().unwrap()])
         .output()
         .unwrap();
-    let vm_out = String::from_utf8_lossy(&vm.stdout).to_string();
+    let vm_out = String::from_utf8_lossy(&vm.stdout).replace("\r\n", "\n");
 
     assert_eq!(stdout.trim(), "4\n3\n0", "native output: {stdout:?}");
     assert_eq!(stdout.trim(), vm_out.trim(), "native differs from VM");
