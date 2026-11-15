@@ -249,6 +249,7 @@ impl Checker {
                 else_block: Some(else_b),
                 ..
             } => Self::always_returns(then_block) && Self::always_returns(else_b),
+            StmtKind::Match { arms, .. } => arms.iter().all(|a| Self::always_returns(&a.body)),
             _ => false,
         })
     }
