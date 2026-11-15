@@ -5,7 +5,11 @@ use std::process::Command;
 fn native_len_counts_utf8_characters() {
     let dir = std::env::temp_dir();
     let src = dir.join("native_len_utf8_test.rca");
-    std::fs::write(&src, "print(len(\"a\u{e9}\u{4e16}z\"))\nprint(len(\"abc\"))\nprint(len(\"\"))\n").unwrap();
+    std::fs::write(
+        &src,
+        "print(len(\"a\u{e9}\u{4e16}z\"))\nprint(len(\"abc\"))\nprint(len(\"\"))\n",
+    )
+    .unwrap();
 
     let exe = src.with_extension("");
     let build = Command::new(env!("CARGO_BIN_EXE_rcac"))

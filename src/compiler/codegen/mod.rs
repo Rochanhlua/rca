@@ -1607,7 +1607,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 return Err("struct display not supported".to_string());
                             }
                             StackType::Tensor => {
-                                return Err("Tensor display not supported in native (use `rcac run`)".to_string());
+                                return Err(
+                                    "Tensor display not supported in native (use `rcac run`)"
+                                        .to_string(),
+                                );
                             }
                             StackType::Int => {
                                 let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
@@ -3102,10 +3105,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let tensor_off = builder.ins().imul_imm(tensor_pos, 8);
                     let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
                     let tensor_addr = builder.ins().iadd(stack_base, tensor_off);
-                    let tensor = builder.ins().load(types::I64, MemFlags::new(), tensor_addr, 0);
+                    let tensor = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), tensor_addr, 0);
 
                     // Read rank (offset 8)
-                    let rank_v = builder.ins().load(types::I64, MemFlags::new(), tensor, 8i32);
+                    let rank_v = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), tensor, 8i32);
                     // Allocate list: [refcount][len][elem...], (rank+2)*8 bytes
                     let list_bytes = builder.ins().iadd_imm(rank_v, 2);
                     let list_bytes_8 = builder.ins().imul_imm(list_bytes, 8);
@@ -3127,7 +3134,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(hdr, &[]);
                     builder.switch_to_block(hdr);
                     let i_cur = builder.use_var(i_var);
-                    let cond = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i_cur, rank_v);
+                    let cond = builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, i_cur, rank_v);
                     builder.ins().brif(cond, done, &[], body, &[]);
                     let _ = one_i;
 
