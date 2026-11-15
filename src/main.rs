@@ -154,7 +154,13 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                     if let Ok(exe_self) = std::env::current_exe()
                         && let Some(dir) = exe_self.parent()
                     {
-                        let lib = dir.join("librca.a");
+                        let mut lib = dir.join("librca.a");
+                        if !lib.exists()
+                            && let Some(parent) = dir.parent()
+                            && parent.join("librca.a").exists()
+                        {
+                            lib = parent.join("librca.a");
+                        }
                         if lib.exists() {
                             cmd.arg(&lib);
                         }
@@ -379,7 +385,13 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                     if let Ok(exe_self) = std::env::current_exe()
                         && let Some(dir) = exe_self.parent()
                     {
-                        let lib = dir.join("librca.a");
+                        let mut lib = dir.join("librca.a");
+                        if !lib.exists()
+                            && let Some(parent) = dir.parent()
+                            && parent.join("librca.a").exists()
+                        {
+                            lib = parent.join("librca.a");
+                        }
                         if lib.exists() {
                             cmd.arg(&lib);
                         }
