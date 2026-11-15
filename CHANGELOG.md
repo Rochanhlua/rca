@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Implemented:** §3.7/Phase 2 — module-qualified struct field access. `pt.Point(x=1).x` now works (checker caches imported struct fields under the bare name). New `tests/struct_import.rs` (2 tests). Known gap: module-qualified type annotations in function signatures (`fn f(p: pt.Point)`) still unresolved.
 - **Implemented:** §3.5/Phase 2 — `always_returns` now treats `match` as a returning construct when every arm returns. New `tests/match_return.rs` (5 tests).
 
 - **Implemented:** §3.2/Phase 2 — `private let`, `private const`, `pub let` now parse (previously only `fn`/`struct`/`enum` were allowed after `private`/`pub`). `pub const` remains supported from #174. `StmtKind::Let.public` is set for `pub let`/`pub const`. New `tests/visibility_gaps.rs` (4 tests). `tests/private.rs`: `private_without_item_is_error` -> `private_let_works`; parser test `pub_let_is_error` -> `pub_let_works`.

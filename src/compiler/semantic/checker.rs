@@ -2504,6 +2504,7 @@ impl Checker {
             return self.check_function_call(item, &sig, args, span);
         }
         if let Some(fields) = exports.structs.get(item).cloned() {
+            self.structs.insert(item.to_string(), fields.clone());
             let sig = FuncSig {
                 params: fields
                     .into_iter()
