@@ -59,7 +59,7 @@ listed under "Implemented" is not available yet; see "Not implemented".
   zero, call depth
 
 ### Modules (see `modules.md`)
-- `import`, `import as`, `from ... import [as]`, `pub fn`, `pub struct`,
+- `import`, `import as`, `from ... import [as]`, `pub fn`, `pub struct`, `private fn/struct/enum`,
   module-qualified calls: `utils.add(1, 2)`
 - Standard library modules (14): `math`, `fs`, `time`, `string`, `json`,
   `tensor`, `matrix`, `ai`, `ml`, `nn`, `net`, `http`, `crypto`, `collections`
@@ -97,8 +97,7 @@ listed under "Implemented" is not available yet; see "Not implemented".
 
 ## Not implemented
 - Character literals and Char values
-- Generics, type aliases, `private` as a modifier (the word is reserved, the
-  parser does not use it; declarations are private by default)
+- Generics, type aliases, `private let` / `private const`
 - List and Map type annotations such as `List[Int]` (lists are inferred from
   literals; maps are used through the `map_*` functions)
 - Enum payloads, match expressions, guards, nested patterns
