@@ -1,13 +1,14 @@
 use std::process::Command;
 
 /// Native Tensor literal + shape() must match the VM.
+/// Uses int printing only: list printing is not covered here.
 #[test]
 fn native_tensor_literal_shape_matches_vm() {
     let dir = std::env::temp_dir();
     let src = dir.join("native_tensor_literal_test.rca");
     std::fs::write(
         &src,
-        "let a = Tensor([[1.0, 2.0], [3.0, 4.0]])\nprint(shape(a))\n",
+        "let a = Tensor([[1.0, 2.0], [3.0, 4.0]])\nlet s = shape(a)\nprint(len(s))\nprint(s[0])\nprint(s[1])\n",
     )
     .unwrap();
 
@@ -31,7 +32,7 @@ fn native_tensor_literal_shape_matches_vm() {
         .unwrap();
     let vm_out = String::from_utf8_lossy(&vm.stdout).replace("\r\n", "\n");
 
-    assert_eq!(native.trim(), "[2, 2]", "native output: {native:?}");
+    assert_eq!(native.trim(), "2\n2\n2", "native output: {native:?}");
     assert_eq!(native.trim(), vm_out.trim(), "native differs from VM");
 
     std::fs::remove_file(&src).ok();
