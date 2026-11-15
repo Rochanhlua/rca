@@ -166,6 +166,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_http_get", Linkage::Import, &http_get_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut http_post_sig = module.make_signature();
+    http_post_sig.params.push(AbiParam::new(types::I64));
+    http_post_sig.params.push(AbiParam::new(types::I64));
+    http_post_sig.returns.push(AbiParam::new(types::I64));
+    let http_post_func = module
+        .declare_function("rca_http_post", Linkage::Import, &http_post_sig)
+        .map_err(|e| e.to_string())?;
+
     let mut pow_sig = module.make_signature();
     pow_sig.params.push(AbiParam::new(types::F64));
     pow_sig.params.push(AbiParam::new(types::F64));
@@ -576,6 +584,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          strcmp_ref: FuncRef,
                          exit_ref: FuncRef,
                          http_get_ref: FuncRef,
+                         http_post_ref: FuncRef,
                          pow_ref: FuncRef,
                          floor_ref: FuncRef,
                          ceil_ref: FuncRef,
@@ -2839,6 +2848,47 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::HttpPost => {
+                    let _ = (type_stack.pop(), type_stack.pop()); // body, url
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    // stack layout (push url, then body): top = body, top-1 = url
+                    let body_pos = builder.ins().iadd_imm(sp, -1);
+                    let body_off = builder.ins().imul_imm(body_pos, 8);
+                    let body_addr = builder.ins().iadd(stack_base, body_off);
+                    let body = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), body_addr, 0);
+                    let url_pos = builder.ins().iadd_imm(sp, -2);
+                    let url_off = builder.ins().imul_imm(url_pos, 8);
+                    let url_addr = builder.ins().iadd(stack_base, url_off);
+                    let url = builder.ins().load(types::I64, MemFlags::new(), url_addr, 0);
+                    let call = builder.ins().call(http_post_ref, &[url, body]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    // store result at url_pos, then set sp = sp - 1 (2 pops, 1 push)
+                    let res_off = builder.ins().imul_imm(url_pos, 8);
+                    let res_addr = builder.ins().iadd(stack_base, res_off);
+                    builder.ins().store(MemFlags::new(), result, res_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -2921,6 +2971,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
         let exit_ref = module.declare_func_in_func(exit_func, builder.func);
         let http_get_ref = module.declare_func_in_func(http_get_func, builder.func);
+        let http_post_ref = module.declare_func_in_func(http_post_func, builder.func);
         let pow_ref = module.declare_func_in_func(pow_func, builder.func);
         let floor_ref = module.declare_func_in_func(floor_func, builder.func);
         let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
@@ -2990,6 +3041,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             strcmp_ref,
             exit_ref,
             http_get_ref,
+            http_post_ref,
             pow_ref,
             floor_ref,
             ceil_ref,
@@ -3108,6 +3160,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let strcmp_ref = module.declare_func_in_func(strcmp_func, builder.func);
             let exit_ref = module.declare_func_in_func(exit_func, builder.func);
             let http_get_ref = module.declare_func_in_func(http_get_func, builder.func);
+            let http_post_ref = module.declare_func_in_func(http_post_func, builder.func);
             let pow_ref = module.declare_func_in_func(pow_func, builder.func);
             let floor_ref = module.declare_func_in_func(floor_func, builder.func);
             let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
@@ -3185,6 +3238,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 strcmp_ref,
                 exit_ref,
                 http_get_ref,
+                http_post_ref,
                 pow_ref,
                 floor_ref,
                 ceil_ref,
