@@ -105,6 +105,7 @@ Program {
                                 name: "i",
                                 mutable: true,
                                 constant: false,
+                                public: false,
                                 ty: Some(
                                     TypeExpr {
                                         name: "Int",
@@ -293,6 +294,7 @@ Program {
                 name: "user",
                 mutable: false,
                 constant: false,
+                public: false,
                 ty: None,
                 value: Expr {
                     kind: Call {
@@ -352,6 +354,7 @@ Program {
                 name: "numbers",
                 mutable: false,
                 constant: false,
+                public: false,
                 ty: None,
                 value: Expr {
                     kind: List(
@@ -401,6 +404,7 @@ Program {
                 name: "score",
                 mutable: false,
                 constant: false,
+                public: false,
                 ty: None,
                 value: Expr {
                     kind: Binary {

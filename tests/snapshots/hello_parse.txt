@@ -5,6 +5,7 @@ Program {
                 name: "name",
                 mutable: false,
                 constant: false,
+                public: false,
                 ty: Some(
                     TypeExpr {
                         name: "String",
@@ -36,6 +37,7 @@ Program {
                 name: "counter",
                 mutable: true,
                 constant: false,
+                public: false,
                 ty: Some(
                     TypeExpr {
                         name: "Int",

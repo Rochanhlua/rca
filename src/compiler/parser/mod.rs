@@ -149,9 +149,9 @@ impl Parser {
             TokenKind::Mut if self.peek_at(1) == &TokenKind::LParen => {
                 self.parse_let_tuple(true)?
             }
-            TokenKind::Let => self.parse_let(false, false)?,
-            TokenKind::Mut => self.parse_let(true, false)?,
-            TokenKind::Const => self.parse_let(false, true)?,
+            TokenKind::Let => self.parse_let(false, false, false)?,
+            TokenKind::Mut => self.parse_let(true, false, false)?,
+            TokenKind::Const => self.parse_let(false, true, false)?,
             TokenKind::Fn => StmtKind::Function(self.parse_function()?),
             TokenKind::Struct => StmtKind::Struct(self.parse_struct()?),
             TokenKind::Enum => StmtKind::Enum(self.parse_enum()?),
@@ -176,6 +176,13 @@ impl Parser {
             TokenKind::Pub => {
                 self.advance(); // pub
                 match self.peek().clone() {
+                    TokenKind::Const => {
+                        let mut c = self.parse_let(false, true, true)?;
+                        if let StmtKind::Let { ref mut public, .. } = c {
+                            *public = true;
+                        }
+                        c
+                    }
                     TokenKind::Fn => {
                         let mut f = self.parse_function()?;
                         f.public = true;
@@ -322,16 +329,58 @@ impl Parser {
         }
         let (name, span) = self.expect_ident("a type name")?;
         if self.eat(&TokenKind::LBracket) {
-            let elem = self.parse_type()?;
-            self.expect(&TokenKind::Comma, "','")?;
-            let n: usize = self.expect_usize("an array length")?;
-            self.expect(&TokenKind::RBracket, "']'")?;
-            return Ok(TypeExpr {
-                name,
-                elements: vec![elem],
-                length: Some(n),
-                span,
-            });
+            match name.as_str() {
+                // Array[T, N] — fixed-size, integer length
+                "Array" => {
+                    let elem = self.parse_type()?;
+                    self.expect(&TokenKind::Comma, "','")?;
+                    let n: usize = self.expect_usize("an array length")?;
+                    self.expect(&TokenKind::RBracket, "']'")?;
+                    return Ok(TypeExpr {
+                        name,
+                        elements: vec![elem],
+                        length: Some(n),
+                        span,
+                    });
+                }
+                // List[T]
+                "List" => {
+                    let elem = self.parse_type()?;
+                    self.expect(&TokenKind::RBracket, "']'")?;
+                    return Ok(TypeExpr {
+                        name,
+                        elements: vec![elem],
+                        length: None,
+                        span,
+                    });
+                }
+                // Map[K, V]
+                "Map" => {
+                    let k = self.parse_type()?;
+                    self.expect(&TokenKind::Comma, "','")?;
+                    let v = self.parse_type()?;
+                    self.expect(&TokenKind::RBracket, "']'")?;
+                    return Ok(TypeExpr {
+                        name,
+                        elements: vec![k, v],
+                        length: None,
+                        span,
+                    });
+                }
+                _ => {
+                    // Unknown type with bracket — keep old behavior (Array-shaped)
+                    let elem = self.parse_type()?;
+                    self.expect(&TokenKind::Comma, "','")?;
+                    let n: usize = self.expect_usize("an array length")?;
+                    self.expect(&TokenKind::RBracket, "']'")?;
+                    return Ok(TypeExpr {
+                        name,
+                        elements: vec![elem],
+                        length: Some(n),
+                        span,
+                    });
+                }
+            }
         }
         Ok(TypeExpr {
             name,
@@ -370,7 +419,12 @@ impl Parser {
         })
     }
 
-    fn parse_let(&mut self, mutable: bool, constant: bool) -> Result<StmtKind, Diagnostic> {
+    fn parse_let(
+        &mut self,
+        mutable: bool,
+        constant: bool,
+        public: bool,
+    ) -> Result<StmtKind, Diagnostic> {
         self.advance(); // let or mut
         let (name, _) = self.expect_ident("a variable name")?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -385,6 +439,7 @@ impl Parser {
             name,
             mutable,
             constant,
+            public,
             ty,
             value,
         })
