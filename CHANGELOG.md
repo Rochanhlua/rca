@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Implemented:** §3.5/Phase 2 — `always_returns` now treats `match` as a returning construct when every arm returns. New `tests/match_return.rs` (5 tests).
 
 - **Implemented:** §3.2/Phase 2 — `private let`, `private const`, `pub let` now parse (previously only `fn`/`struct`/`enum` were allowed after `private`/`pub`). `pub const` remains supported from #174. `StmtKind::Let.public` is set for `pub let`/`pub const`. New `tests/visibility_gaps.rs` (4 tests). `tests/private.rs`: `private_without_item_is_error` -> `private_let_works`; parser test `pub_let_is_error` -> `pub_let_works`.
 - **Implemented:** §4.1/Phase 2 gap closure. `List[T]` and `Map[K, V]` type annotations now parse and resolve (previously SYNTAX.md listed them as not implemented). `Type::compatible` extended to List/Map element-wise (Unknown as wildcard). `pub const X: T = literal` now parses; `StmtKind::Let` gains `public: bool`. New `tests/phase2_gaps.rs` (6 tests). Snapshots regenerated. Phase 2 milestone met with these gaps closed.

@@ -1,3 +1,4 @@
 /target
 *.o
 tests/bug_hunt/
+/tmp/
