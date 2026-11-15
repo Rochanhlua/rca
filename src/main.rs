@@ -83,7 +83,8 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         return run_with_imports(command, path, source);
     }
 
-    if let Err(errors) = Checker::new().check_program(&program) {
+    let (check_result, types) = Checker::new().check_program_with_types(&program);
+    if let Err(errors) = check_result {
         for e in &errors {
             eprintln!("error: {}", e);
         }
@@ -106,7 +107,7 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
         };
     }
 
-    let mut ir = match lower::compile(&program) {
+    let mut ir = match lower::compile_hir_direct(&program, &types) {
         Ok(ir) => ir,
         Err(d) => {
             eprintln!("compile error: {}", d);
