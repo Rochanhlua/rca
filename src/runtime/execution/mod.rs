@@ -26,6 +26,9 @@ pub struct Interpreter {
     frames: Vec<Vec<HashMap<String, Value>>>,
     functions: HashMap<String, Rc<FunctionDecl>>,
     structs: HashMap<String, Vec<String>>,
+    module_aliases: HashMap<String, String>,
+    item_aliases: HashMap<String, String>,
+    current_prefix: String,
     capture: bool,
     output: String,
 }
@@ -52,6 +55,9 @@ impl Interpreter {
             frames: vec![vec![HashMap::new()]],
             functions: HashMap::new(),
             structs: HashMap::new(),
+            module_aliases: HashMap::new(),
+            item_aliases: HashMap::new(),
+            current_prefix: String::new(),
             capture,
             output: String::new(),
         }
@@ -100,12 +106,17 @@ impl Interpreter {
     }
 
     fn declare(&mut self, name: &str, value: Value) {
+        let key = if self.frames.len() == 1 && !self.current_prefix.is_empty() {
+            format!("{}::{}", self.current_prefix, name)
+        } else {
+            name.to_string()
+        };
         self.frames
             .last_mut()
             .unwrap()
             .last_mut()
             .unwrap()
-            .insert(name.to_string(), value);
+            .insert(key, value);
     }
 
     fn lookup(&self, name: &str) -> Option<&Value> {
@@ -115,8 +126,13 @@ impl Interpreter {
                 return Some(v);
             }
         }
-        if cur != 0 {
-            return self.frames[0][0].get(name);
+        if cur != 0
+            && let Some(v) = self.frames[0][0].get(name)
+        {
+            return Some(v);
+        }
+        if let Some(q) = self.item_aliases.get(name) {
+            return self.frames[0][0].get(q);
         }
         None
     }
@@ -434,7 +450,19 @@ impl Interpreter {
                     _ => Err(err("invalid index operation", &expr.span)),
                 }
             }
-            ExprKind::Field { object, name } if matches!(&object.kind, ExprKind::Ident(n) if self.lookup(n).is_none()) =>
+            ExprKind::Field { object, name } if matches!(&object.kind, ExprKind::Ident(n) if self.lookup(n).is_none() && self.module_aliases.contains_key(n)) =>
+            {
+                let m = match &object.kind {
+                    ExprKind::Ident(n) => n.clone(),
+                    _ => unreachable!(),
+                };
+                let module = self.module_aliases.get(&m).cloned().unwrap();
+                let qualified = format!("{}::{}", module, name);
+                self.lookup(&qualified)
+                    .cloned()
+                    .ok_or_else(|| err(format!("undefined '{}::{}'", module, name), &expr.span))
+            }
+            ExprKind::Field { object, name } if matches!(&object.kind, ExprKind::Ident(n) if self.lookup(n).is_none() && !self.module_aliases.contains_key(n)) =>
             {
                 let en = match &object.kind {
                     ExprKind::Ident(n) => n.clone(),
@@ -572,7 +600,26 @@ impl Interpreter {
         span: &Span,
     ) -> Result<Value, Diagnostic> {
         let name = match &callee.kind {
-            ExprKind::Ident(n) => n.clone(),
+            ExprKind::Ident(n) => self
+                .item_aliases
+                .get(n)
+                .cloned()
+                .unwrap_or_else(|| n.clone()),
+            ExprKind::Field { object, name } => {
+                if let ExprKind::Ident(m) = &object.kind {
+                    if self.lookup(m).is_none() {
+                        if let Some(module) = self.module_aliases.get(m).cloned() {
+                            format!("{}::{}", module, name)
+                        } else {
+                            return Err(err("this value cannot be called", &callee.span));
+                        }
+                    } else {
+                        return Err(err("this value cannot be called", &callee.span));
+                    }
+                } else {
+                    return Err(err("this value cannot be called", &callee.span));
+                }
+            }
             _ => return Err(err("this value cannot be called", &callee.span)),
         };
 
@@ -1214,6 +1261,82 @@ pub fn udp_recv_rt(sock: &crate::runtime::net::UdpSocket, max: usize) -> Result<
         Err(e) => Err(format!("udp_recv failed: {}", e)),
     }
 }
+impl Interpreter {
+    pub fn run_modules(
+        &mut self,
+        modules: &[crate::compiler::modules::Module],
+    ) -> Result<(), Diagnostic> {
+        let last = modules.len().saturating_sub(1);
+        for (i, m) in modules.iter().enumerate() {
+            let prefix = if i == last {
+                String::new()
+            } else {
+                m.name.clone()
+            };
+            for stmt in &m.program.statements {
+                match &stmt.kind {
+                    StmtKind::Function(f) => {
+                        let key = if prefix.is_empty() {
+                            f.name.clone()
+                        } else {
+                            format!("{}::{}", prefix, f.name)
+                        };
+                        self.functions.insert(key, Rc::new(f.clone()));
+                    }
+                    StmtKind::Struct(s) => {
+                        let key = if prefix.is_empty() {
+                            s.name.clone()
+                        } else {
+                            format!("{}::{}", prefix, s.name)
+                        };
+                        let names = s.fields.iter().map(|f| f.name.clone()).collect();
+                        self.structs.insert(key, names);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for m in modules {
+            for stmt in &m.program.statements {
+                match &stmt.kind {
+                    StmtKind::Import { module, alias } => {
+                        let local = alias.clone().unwrap_or_else(|| module.clone());
+                        self.module_aliases.insert(local, module.clone());
+                    }
+                    StmtKind::FromImport { module, names } => {
+                        for item in names {
+                            let local = item.alias.clone().unwrap_or_else(|| item.name.clone());
+                            self.item_aliases
+                                .insert(local, format!("{}::{}", module, item.name));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (i, m) in modules.iter().enumerate() {
+            self.current_prefix = if i == last {
+                String::new()
+            } else {
+                m.name.clone()
+            };
+            for stmt in &m.program.statements {
+                match &stmt.kind {
+                    StmtKind::Function(_)
+                    | StmtKind::Struct(_)
+                    | StmtKind::Import { .. }
+                    | StmtKind::FromImport { .. } => {}
+                    _ => {
+                        self.exec_stmt(stmt)?;
+                    }
+                }
+            }
+        }
+        self.current_prefix = String::new();
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
