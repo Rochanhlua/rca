@@ -441,3 +441,43 @@ pub unsafe extern "C" fn rca_str_replace(
     };
     alloc_c_string(&s.replace(target, rep))
 }
+
+/// Split `s` by `sep` and return a native list of strings.
+///
+/// Layout: `[refcount: i64, length: i64, elem0: *const c_char, ...]`.
+///
+/// # Safety
+///
+/// `s_ptr` and `sep_ptr` must be valid, non-null, null-terminated C strings.
+/// The returned pointer must be freed by the caller using the same layout.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_str_split(s_ptr: *const c_char, sep_ptr: *const c_char) -> *mut i64 {
+    if s_ptr.is_null() || sep_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let s = match unsafe { CStr::from_ptr(s_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let sep = match unsafe { CStr::from_ptr(sep_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let parts: Vec<&str> = s.split(sep).collect();
+    let n = parts.len();
+    let size = (n + 2) * std::mem::size_of::<i64>();
+    let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
+    let base = unsafe { std::alloc::alloc(layout) as *mut i64 };
+    if base.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        *base = 1;
+        *base.add(1) = n as i64;
+        for (i, part) in parts.iter().enumerate() {
+            let sp = alloc_c_string(part);
+            *base.add(i + 2) = sp as i64;
+        }
+    }
+    base
+}

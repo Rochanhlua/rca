@@ -33,6 +33,7 @@ enum StackType {
     Map,
     Struct(usize),
     Tensor,
+    Char,
 }
 
 fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
@@ -389,6 +390,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_str_replace", Linkage::Import, &str_replace_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut str_split_sig = module.make_signature();
+    str_split_sig.params.push(AbiParam::new(types::I64));
+    str_split_sig.params.push(AbiParam::new(types::I64));
+    str_split_sig.returns.push(AbiParam::new(types::I64));
+    let str_split_func = module
+        .declare_function("rca_str_split", Linkage::Import, &str_split_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -397,6 +406,15 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())?;
     module
         .define_data(fmt_int_id, &fmt_int_data)
+        .map_err(|e| e.to_string())?;
+
+    let mut fmt_char_data = DataDescription::new();
+    fmt_char_data.define(b"%c\0".to_vec().into_boxed_slice());
+    let fmt_char_id = module
+        .declare_data("fmt_char", Linkage::Local, false, false)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_data(fmt_char_id, &fmt_char_data)
         .map_err(|e| e.to_string())?;
 
     let mut fmt_str_data = DataDescription::new();
@@ -782,6 +800,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          file_exists_ref: FuncRef,
                          str_trim_ref: FuncRef,
                          str_replace_ref: FuncRef,
+                         str_split_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -868,6 +887,18 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 }
             }
             match ins {
+                Instruction::PushChar(c) => {
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dst = builder.ins().iadd(stack_base, sp_off);
+                    let val = builder.ins().iconst(types::I64, *c as i64);
+                    builder.ins().store(MemFlags::new(), val, dst, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Char);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::PushInt(n) => {
                     let val = builder.ins().iconst(types::I64, *n);
                     let sp = builder.use_var(sp_var);
@@ -948,7 +979,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::Struct(_) => {
                                 return Err("struct -> int not supported".to_string());
                             }
-                            StackType::Int => (val, StackType::Int),
+                            StackType::Int | StackType::Char => (val, StackType::Int),
                             StackType::Bool => (val, StackType::Int),
                             StackType::List(_) => {
                                 return Err("list -> int not supported in native".to_string());
@@ -977,7 +1008,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::Struct(_) => {
                                 return Err("struct -> float not supported".to_string());
                             }
-                            StackType::Int => {
+                            StackType::Int | StackType::Char => {
                                 let f = builder.ins().fcvt_from_sint(types::F64, val);
                                 let bits = builder.ins().bitcast(types::I64, MemFlags::new(), f);
                                 (bits, StackType::Float)
@@ -1004,7 +1035,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                         },
                         ConvKind::Str => match ty {
-                            StackType::Int => {
+                            StackType::Int | StackType::Char => {
                                 let call = builder.ins().call(int_to_str_ref, &[val]);
                                 let r = builder.inst_results(call)[0];
                                 (r, StackType::Str)
@@ -1487,7 +1518,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let elem_types: Vec<ElemType> = popped
                         .iter()
                         .map(|st| match st {
-                            StackType::Int => ElemType::Int,
+                            StackType::Int | StackType::Char => ElemType::Int,
                             StackType::Float => ElemType::Float,
                             StackType::Str => ElemType::Str,
                             StackType::Bool => ElemType::Bool,
@@ -1565,7 +1596,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         let popped = type_stack.pop().unwrap_or(StackType::Int);
                         if i + 1 == *n {
                             elem_ty = match popped {
-                                StackType::Int => ElemType::Int,
+                                StackType::Int | StackType::Char => ElemType::Int,
                                 StackType::Float => ElemType::Float,
                                 StackType::Str => ElemType::Str,
                                 StackType::Bool => ElemType::Bool,
@@ -1744,7 +1775,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                         .to_string(),
                                 );
                             }
-                            StackType::Int => {
+                            StackType::Int | StackType::Char => {
                                 let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, val]);
                             }
@@ -2801,7 +2832,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let src = builder.ins().iadd_imm(top, -8);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     match ty {
-                        StackType::Int => {
+                        StackType::Int | StackType::Char => {
                             let int_min_v = builder.ins().iconst(types::I64, i64::MIN);
                             let is_int_min = builder.ins().icmp(IntCC::Equal, val, int_min_v);
                             let err_block = builder.create_block();
@@ -2958,7 +2989,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 .iconst(types::I64, 0x7FFF_FFFF_FFFF_FFFF_u64 as i64);
                             builder.ins().band(val, mask)
                         }
-                        StackType::Int => {
+                        StackType::Int | StackType::Char => {
                             let zero = builder.ins().iconst(types::I64, 0);
                             let neg = builder.ins().icmp(IntCC::SignedLessThan, val, zero);
                             let neg_val = builder.ins().ineg(val);
@@ -3017,7 +3048,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let src = builder.ins().iadd_imm(top, -8);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let f_val = match ty {
-                        StackType::Int => builder.ins().fcvt_from_sint(types::F64, val),
+                        StackType::Int | StackType::Char => {
+                            builder.ins().fcvt_from_sint(types::F64, val)
+                        }
                         StackType::Float => builder.ins().bitcast(types::F64, MemFlags::new(), val),
                         _ => {
                             return Err("math function needs a number".to_string());
@@ -3380,6 +3413,37 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Bool);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::StrSplit => {
+                    let _ = (type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let sep_pos = builder.ins().iadd_imm(sp, -1);
+                    let sep_off = builder.ins().imul_imm(sep_pos, 8);
+                    let sep_addr = builder.ins().iadd(stack_base, sep_off);
+                    let sep = builder.ins().load(types::I64, MemFlags::new(), sep_addr, 0);
+                    let s_addr = builder.ins().iadd_imm(sep_addr, -8);
+                    let s = builder.ins().load(types::I64, MemFlags::new(), s_addr, 0);
+                    let call = builder.ins().call(str_split_ref, &[s, sep]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, s_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::List(ElemType::Str));
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::StrTrim => {
                     let _ty = type_stack.pop().unwrap_or(StackType::Str);
                     let sp = builder.use_var(sp_var);
@@ -3552,6 +3616,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
         let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
         let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
+        let str_split_ref = module.declare_func_in_func(str_split_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3633,6 +3698,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             file_exists_ref,
             str_trim_ref,
             str_replace_ref,
+            str_split_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -3764,6 +3830,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
             let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
             let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
+            let str_split_ref = module.declare_func_in_func(str_split_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -3854,6 +3921,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 file_exists_ref,
                 str_trim_ref,
                 str_replace_ref,
+                str_split_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,
