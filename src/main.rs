@@ -190,7 +190,12 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                         .arg("-ladvapi32")
                         .arg("-lntdll")
                         .arg("-lbcrypt")
-                        .arg("-lole32");
+                        .arg("-lole32")
+                        .arg("-lsynchronization")
+                        .arg("-lmsvcrt")
+                        .arg("-lucrt")
+                        .arg("-lvcruntime")
+                        .arg("-llegacy_stdio_definitions");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
@@ -443,7 +448,12 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                         .arg("-ladvapi32")
                         .arg("-lntdll")
                         .arg("-lbcrypt")
-                        .arg("-lole32");
+                        .arg("-lole32")
+                        .arg("-lsynchronization")
+                        .arg("-lmsvcrt")
+                        .arg("-lucrt")
+                        .arg("-lvcruntime")
+                        .arg("-llegacy_stdio_definitions");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
