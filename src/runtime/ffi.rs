@@ -240,10 +240,32 @@ pub extern "C" fn rca_time_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// Sleep for `ms` milliseconds. Zero/negative returns immediately.
+#[repr(C)]
+pub struct CTimespec {
+    pub tv_sec: i64,
+    pub tv_nsec: i64,
+}
+
+unsafe extern "C" {
+    fn nanosleep(req: *const CTimespec, rem: *mut CTimespec) -> i32;
+}
+
+/// Sleep for `ms` milliseconds via libc `nanosleep` (avoids std::thread on macOS ARM64).
+///
+/// # Safety
+///
+/// This function has no caller-side requirements beyond passing a normal `i64`;
+/// it does not dereference any pointers provided by the caller.
 #[unsafe(no_mangle)]
-pub extern "C" fn rca_time_sleep(ms: i64) {
-    if ms > 0 {
-        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+pub unsafe extern "C" fn rca_time_sleep(ms: i64) {
+    if ms <= 0 {
+        return;
+    }
+    let req = CTimespec {
+        tv_sec: ms / 1000,
+        tv_nsec: (ms % 1000) * 1_000_000,
+    };
+    unsafe {
+        nanosleep(&req, std::ptr::null_mut());
     }
 }
