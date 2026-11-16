@@ -26,7 +26,7 @@ fn build_run(name: &str, src: &str) -> (bool, String) {
     let out = Command::new(&exe).output().expect("run native");
     let _ = std::fs::remove_dir_all(&d);
     let code = out.status.code();
-    let sig = {
+    let sig: Option<i32> = {
         #[cfg(unix)]
         {
             use std::os::unix::process::ExitStatusExt;
