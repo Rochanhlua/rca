@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Docs:** Phase 3 complete — HIR, RCA IR, IR validation, execution engine (VM + tree interpreter), native compilation backend (growing subset; tensor/autodiff/stdlib run on VM), runtime integration, and optimization passes are all in place. Phase 3 milestone "RCA programs execute independently of Python" is met by the VM. Remaining native codegen work is tracked in this changelog's `Planned:` entries.
 - **Fixed:** Phase 3 native codegen — `librca.lib` (Windows MSVC staticlib) is now looked up first, falling back to `librca.a` (Linux/macOS). `rcac build` links correctly on all three CI platforms.
 - **Fixed:** Phase 3 native codegen — `librca.a` lookup now falls back to the parent directory of the `rcac` binary, so `rcac build` works from `target/debug/deps/` (test binaries). CI workflow gains a `cargo build` step before `cargo test` so the staticlib is present for native linking tests.
 - **Implemented:** §5/Phase 3 native codegen — `str()`, `int(str)`, `float(str)` now work in native. New FFI helpers `rca_int_to_str`, `rca_float_to_str`, `rca_bool_to_str`, `rca_str_to_int`, `rca_str_to_float` in `src/runtime/ffi.rs`; codegen declares and calls them via Cranelift. Native results match the VM. New `tests/native_conversions.rs` (5 tests).

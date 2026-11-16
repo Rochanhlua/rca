@@ -442,15 +442,15 @@ syntax errors.
 **Milestone:** RCA supports a meaningful subset of its own language. ✅ **Complete.**
 ### Phase 3 — IR and Execution
 
-- HIR.
-- RCA IR.
-- IR validation.
-- Initial execution engine.
-- Native compilation backend.
-- Runtime integration.
-- Optimization passes.
+- [x] HIR.
+- [x] RCA IR.
+- [x] IR validation.
+- [x] Initial execution engine.
+- [x] Native compilation backend (growing subset — tensor/autodiff/stdlib on VM).
+- [x] Runtime integration.
+- [x] Optimization passes.
 
-**Milestone:** RCA programs execute independently of Python.
+**Milestone:** RCA programs execute independently of Python. ✅ **Complete.**
 
 ### Phase 4 — Memory and Runtime
 
