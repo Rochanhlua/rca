@@ -185,7 +185,12 @@ fn run_command(command: &str, path: &str, source: &str) -> i32 {
                     #[cfg(not(windows))]
                     cmd.arg("-lm").arg("-lpthread").arg("-ldl");
                     #[cfg(windows)]
-                    cmd.arg("-Wl,-force:unresolved");
+                    cmd.arg("ws2_32")
+                        .arg("userenv")
+                        .arg("advapi32")
+                        .arg("ntdll")
+                        .arg("bcrypt")
+                        .arg("ole32");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
@@ -433,7 +438,12 @@ fn run_with_imports(command: &str, path: &str, source: &str) -> i32 {
                     #[cfg(not(windows))]
                     cmd.arg("-lm").arg("-lpthread").arg("-ldl");
                     #[cfg(windows)]
-                    cmd.arg("-Wl,-force:unresolved");
+                    cmd.arg("ws2_32")
+                        .arg("userenv")
+                        .arg("advapi32")
+                        .arg("ntdll")
+                        .arg("bcrypt")
+                        .arg("ole32");
                     let status = cmd.status();
                     match status {
                         Ok(s) if s.success() => {
