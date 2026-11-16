@@ -257,9 +257,9 @@ unsafe extern "C" {
 /// This function has no caller-side requirements beyond passing a normal `i64`;
 /// it does not dereference any pointers provided by the caller.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rca_time_sleep(ms: i64) {
+pub unsafe extern "C" fn rca_time_sleep(ms: i64) -> i64 {
     if ms <= 0 {
-        return;
+        return 0;
     }
     let req = CTimespec {
         tv_sec: ms / 1000,
@@ -268,4 +268,5 @@ pub unsafe extern "C" fn rca_time_sleep(ms: i64) {
     unsafe {
         nanosleep(&req, std::ptr::null_mut());
     }
+    0
 }

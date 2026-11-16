@@ -346,6 +346,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
 
     let mut time_sleep_sig = module.make_signature();
     time_sleep_sig.params.push(AbiParam::new(types::I64));
+    time_sleep_sig.returns.push(AbiParam::new(types::I64));
     let time_sleep_func = module
         .declare_function("rca_time_sleep", Linkage::Import, &time_sleep_sig)
         .map_err(|e| e.to_string())?;
@@ -3274,7 +3275,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let top = builder.ins().iadd(stack_base, sp_off);
                     let src = builder.ins().iadd_imm(top, -8);
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
-                    builder.ins().call(time_sleep_ref, &[val]);
+                    let call = builder.ins().call(time_sleep_ref, &[val]);
+                    let _ = builder.inst_results(call)[0];
                     let new_sp = builder.ins().iadd_imm(sp, -1);
                     builder.def_var(sp_var, new_sp);
                     builder.ins().jump(blocks[ip + 1], &[]);
