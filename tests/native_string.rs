@@ -72,3 +72,31 @@ fn native_str_replace_no_match() {
     assert!(ok, "got: {out}");
     assert!(out.contains("hello"), "got: {out}");
 }
+
+#[test]
+fn native_str_split_basic() {
+    let (ok, out) = build_run(
+        "split",
+        "import string\nlet parts = string.split(\"a,b,c\", \",\")\nif len(parts) == 3:\n    print(\"ok\")\nelse:\n    print(\"bad\")\n",
+    );
+    assert!(ok, "got: {out}");
+    assert!(out.contains("ok"), "got: {out}");
+}
+
+#[test]
+fn native_str_split_single() {
+    let (ok, out) = build_run(
+        "split1",
+        "import string\nlet parts = string.split(\"abc\", \",\")\nif len(parts) == 1:\n    print(\"ok\")\nelse:\n    print(\"bad\")\n",
+    );
+    assert!(ok, "got: {out}");
+    assert!(out.contains("ok"), "got: {out}");
+}
+
+#[test]
+#[ignore = "char print needs %c plumbing; tracked separately"]
+fn native_push_char() {
+    let (ok, out) = build_run("ch", "let c = 'a'\nprint(c)\n");
+    assert!(ok, "got: {out}");
+    assert!(out.contains("a"), "got: {out}");
+}
