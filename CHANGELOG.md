@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **Fixed:** Phase 3 native codegen — `librca.lib` (Windows MSVC staticlib) is now looked up first, falling back to `librca.a` (Linux/macOS). `rcac build` links correctly on all three CI platforms.
+- **Fixed:** Phase 3 native codegen — `librca.a` lookup now falls back to the parent directory of the `rcac` binary, so `rcac build` works from `target/debug/deps/` (test binaries). CI workflow gains a `cargo build` step before `cargo test` so the staticlib is present for native linking tests.
+- **Implemented:** §5/Phase 3 native codegen — `str()`, `int(str)`, `float(str)` now work in native. New FFI helpers `rca_int_to_str`, `rca_float_to_str`, `rca_bool_to_str`, `rca_str_to_int`, `rca_str_to_float` in `src/runtime/ffi.rs`; codegen declares and calls them via Cranelift. Native results match the VM. New `tests/native_conversions.rs` (5 tests).
 - **Implemented:** §3.7/Phase 2 — module-qualified type annotations in function signatures (`fn f(p: pt.Point)`). Parser consumes dotted type names; `resolve_type` resolves the module alias against imported `ModuleExports` and falls back to the cached bare name. New `tests/struct_import.rs` (3 tests). Known gap from #178 closed.
 - **Implemented:** §5/Phase 3 step 5 — `rcac run` now compiles via `compile_hir_direct` (HIR path) instead of `compile` (AST path). `check_program_with_types` provides the Span→Type map required by HIR lowering. Byte-identical IR verified by `tests/hir_roundtrip.rs` differential suite (20 tests).
 - **Tests:** Phase 2 §4.2 — type inference behavior tests. New `tests/type_inference.rs` (13 tests): Int/Float/String/Bool/Char/List/Tuple literal inference, binary op inference, negative cases (Int+Float, annotation mismatch, unknown type, heterogeneous list).
