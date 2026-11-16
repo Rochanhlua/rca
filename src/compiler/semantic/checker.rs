@@ -152,6 +152,27 @@ impl Checker {
         if self.structs.contains_key(&t.name) {
             return Type::Struct(t.name.clone());
         }
+        // Module-qualified type: `pt.Point` - resolve via module alias + imports
+        if let Some((module_part, bare)) = t.name.split_once('.')
+            && let Some(module) = self.module_aliases.get(module_part).cloned()
+        {
+            if self
+                .imports
+                .get(&module)
+                .is_some_and(|e| e.enums.contains_key(bare))
+            {
+                return Type::Enum(bare.to_string());
+            }
+            let fields = self
+                .imports
+                .get(&module)
+                .and_then(|e| e.structs.get(bare))
+                .cloned();
+            if let Some(fields) = fields {
+                self.structs.insert(bare.to_string(), fields);
+                return Type::Struct(bare.to_string());
+            }
+        }
         if report {
             self.error(format!("unknown type '{}'", t.name), &t.span);
         }

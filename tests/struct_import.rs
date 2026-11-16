@@ -59,3 +59,20 @@ fn imported_struct_from_import_field_access() {
     assert!(ok, "got: {out}");
     assert!(out.contains("5"), "got: {out}");
 }
+
+#[test]
+fn qualified_type_in_fn_signature() {
+    let (ok, out) = run(
+        "qualified_type_sig",
+        &[
+            ("pt.rca", "pub struct Point:\n    x: Int\n"),
+            (
+                "main.rca",
+                "import pt\nfn get_x(p: pt.Point) -> Int:\n    return p.x\nprint(get_x(pt.Point(x = 7)))\n",
+            ),
+        ],
+        "main.rca",
+    );
+    assert!(ok, "got: {out}");
+    assert!(out.contains("7"), "got: {out}");
+}
