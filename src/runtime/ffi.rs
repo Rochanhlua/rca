@@ -229,3 +229,21 @@ pub unsafe extern "C" fn rca_str_to_float(p: *const c_char) -> i64 {
         }
     }
 }
+
+/// Return current Unix timestamp in milliseconds.
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_time_now() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Sleep for `ms` milliseconds. Zero/negative returns immediately.
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_time_sleep(ms: i64) {
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    }
+}
