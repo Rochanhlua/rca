@@ -809,6 +809,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          str_to_float_ref: FuncRef,
                          fmt_int_ptr: Value,
                          fmt_str_ptr: Value,
+                         fmt_char_ptr: Value,
                          fmt_float_int_ptr: Value,
                          fmt_float_dec_ptr: Value,
                          fmt_nan_ptr: Value,
@@ -1775,9 +1776,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                         .to_string(),
                                 );
                             }
-                            StackType::Int | StackType::Char => {
+                            StackType::Int => {
                                 let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, val]);
+                            }
+                            StackType::Char => {
+                                builder.ins().call(printf_ref, &[fmt_char_ptr, val]);
                             }
                             StackType::Str => {
                                 let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
@@ -3575,6 +3579,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
         let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
         let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+        let fmt_char_gv = module.declare_data_in_func(fmt_char_id, builder.func);
+        let fmt_char_ptr = builder.ins().global_value(types::I64, fmt_char_gv);
         let fmt_float_int_gv = module.declare_data_in_func(fmt_float_int_id, builder.func);
         let fmt_float_int_ptr = builder.ins().global_value(types::I64, fmt_float_int_gv);
         let fmt_float_dec_gv = module.declare_data_in_func(fmt_float_dec_id, builder.func);
@@ -3707,6 +3713,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             str_to_float_ref,
             fmt_int_ptr,
             fmt_str_ptr,
+            fmt_char_ptr,
             fmt_float_int_ptr,
             fmt_float_dec_ptr,
             fmt_nan_ptr,
@@ -3788,6 +3795,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_int_ptr = builder.ins().global_value(types::I64, fmt_int_gv);
             let fmt_str_gv = module.declare_data_in_func(fmt_str_id, builder.func);
             let fmt_str_ptr = builder.ins().global_value(types::I64, fmt_str_gv);
+            let fmt_char_gv = module.declare_data_in_func(fmt_char_id, builder.func);
+            let fmt_char_ptr = builder.ins().global_value(types::I64, fmt_char_gv);
             let fmt_float_int_gv = module.declare_data_in_func(fmt_float_int_id, builder.func);
             let fmt_float_int_ptr = builder.ins().global_value(types::I64, fmt_float_int_gv);
             let fmt_float_dec_gv = module.declare_data_in_func(fmt_float_dec_id, builder.func);
@@ -3930,6 +3939,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 str_to_float_ref,
                 fmt_int_ptr,
                 fmt_str_ptr,
+                fmt_char_ptr,
                 fmt_float_int_ptr,
                 fmt_float_dec_ptr,
                 fmt_nan_ptr,

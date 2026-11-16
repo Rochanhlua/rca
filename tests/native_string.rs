@@ -94,7 +94,7 @@ fn native_str_split_single() {
 }
 
 #[test]
-#[ignore = "char print needs %c plumbing; tracked separately"]
+
 fn native_push_char() {
     let (ok, out) = build_run("ch", "let c = 'a'\nprint(c)\n");
     assert!(ok, "got: {out}");
