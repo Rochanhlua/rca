@@ -378,3 +378,66 @@ pub unsafe extern "C" fn rca_file_exists(path_ptr: *const c_char) -> i64 {
         0
     }
 }
+
+fn alloc_c_string(s: &str) -> *mut c_char {
+    let mut bytes = s.as_bytes().to_vec();
+    bytes.push(0);
+    let len = bytes.len();
+    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    unsafe {
+        let ptr = std::alloc::alloc(layout);
+        if ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
+        ptr as *mut c_char
+    }
+}
+
+/// Trim leading/trailing whitespace from a string.
+///
+/// # Safety
+///
+/// `s_ptr` must be a valid, non-null, null-terminated C string.
+/// The returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_str_trim(s_ptr: *const c_char) -> *mut c_char {
+    if s_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let s = match unsafe { CStr::from_ptr(s_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    alloc_c_string(s.trim())
+}
+
+/// Replace all occurrences of `target` with `rep` in `s`.
+///
+/// # Safety
+///
+/// `s_ptr`, `target_ptr`, and `rep_ptr` must be valid, non-null,
+/// null-terminated C strings. The returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_str_replace(
+    s_ptr: *const c_char,
+    target_ptr: *const c_char,
+    rep_ptr: *const c_char,
+) -> *mut c_char {
+    if s_ptr.is_null() || target_ptr.is_null() || rep_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let s = match unsafe { CStr::from_ptr(s_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let target = match unsafe { CStr::from_ptr(target_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let rep = match unsafe { CStr::from_ptr(rep_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    alloc_c_string(&s.replace(target, rep))
+}

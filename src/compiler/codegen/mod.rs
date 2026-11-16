@@ -373,6 +373,22 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_file_exists", Linkage::Import, &file_exists_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut str_trim_sig = module.make_signature();
+    str_trim_sig.params.push(AbiParam::new(types::I64));
+    str_trim_sig.returns.push(AbiParam::new(types::I64));
+    let str_trim_func = module
+        .declare_function("rca_str_trim", Linkage::Import, &str_trim_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut str_replace_sig = module.make_signature();
+    str_replace_sig.params.push(AbiParam::new(types::I64));
+    str_replace_sig.params.push(AbiParam::new(types::I64));
+    str_replace_sig.params.push(AbiParam::new(types::I64));
+    str_replace_sig.returns.push(AbiParam::new(types::I64));
+    let str_replace_func = module
+        .declare_function("rca_str_replace", Linkage::Import, &str_replace_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -764,6 +780,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          read_file_ref: FuncRef,
                          write_file_ref: FuncRef,
                          file_exists_ref: FuncRef,
+                         str_trim_ref: FuncRef,
+                         str_replace_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3362,8 +3380,35 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Bool);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::StrTrim => {
+                    let _ty = type_stack.pop().unwrap_or(StackType::Str);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(stack_base, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let s = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let call = builder.ins().call(str_trim_ref, &[s]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, src, 0);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::TimeSleep => {
-                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let _ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
@@ -3375,7 +3420,42 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     // sleep returns unit (None); keep the slot, store 0 — IR emits Pop after.
                     let zero = builder.ins().iconst(types::I64, 0);
                     builder.ins().store(MemFlags::new(), zero, src, 0);
-                    type_stack.push(ty);
+                    type_stack.push(_ty);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::StrReplace => {
+                    let _ = (type_stack.pop(), type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let rep_pos = builder.ins().iadd_imm(sp, -1);
+                    let rep_off = builder.ins().imul_imm(rep_pos, 8);
+                    let rep_addr = builder.ins().iadd(stack_base, rep_off);
+                    let rep = builder.ins().load(types::I64, MemFlags::new(), rep_addr, 0);
+                    let target_addr = builder.ins().iadd_imm(rep_addr, -8);
+                    let target = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), target_addr, 0);
+                    let s_addr = builder.ins().iadd_imm(target_addr, -8);
+                    let s = builder.ins().load(types::I64, MemFlags::new(), s_addr, 0);
+                    let call = builder.ins().call(str_replace_ref, &[s, target, rep]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, s_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -2);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 other => {
@@ -3470,6 +3550,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let read_file_ref = module.declare_func_in_func(read_file_func, builder.func);
         let write_file_ref = module.declare_func_in_func(write_file_func, builder.func);
         let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
+        let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
+        let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3549,6 +3631,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             read_file_ref,
             write_file_ref,
             file_exists_ref,
+            str_trim_ref,
+            str_replace_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -3678,6 +3762,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let read_file_ref = module.declare_func_in_func(read_file_func, builder.func);
             let write_file_ref = module.declare_func_in_func(write_file_func, builder.func);
             let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
+            let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
+            let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -3766,6 +3852,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 read_file_ref,
                 write_file_ref,
                 file_exists_ref,
+                str_trim_ref,
+                str_replace_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,
