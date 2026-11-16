@@ -279,3 +279,102 @@ pub unsafe extern "C" fn rca_time_sleep(ms: i64) -> i64 {
     }
     0
 }
+
+/// Read a file and return its contents as a null-terminated C string.
+/// Caller owns the result; free with `rca_free`. Returns NULL on error.
+///
+/// # Safety
+///
+/// `path_ptr` must be a valid, non-null, null-terminated C string.
+/// The returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_read_file(path_ptr: *const c_char) -> *mut c_char {
+    if path_ptr.is_null() {
+        eprintln!("rca_read_file: null path");
+        return std::ptr::null_mut();
+    }
+    let path = match unsafe { CStr::from_ptr(path_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("rca_read_file: path is not valid UTF-8");
+            return std::ptr::null_mut();
+        }
+    };
+    match std::fs::read_to_string(path) {
+        Ok(body) => {
+            let mut bytes = body.into_bytes();
+            bytes.push(0);
+            let len = bytes.len();
+            let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+            let ptr = unsafe { std::alloc::alloc(layout) };
+            if ptr.is_null() {
+                eprintln!("rca_read_file: alloc failed");
+                return std::ptr::null_mut();
+            }
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len) };
+            ptr as *mut c_char
+        }
+        Err(e) => {
+            eprintln!("rca_read_file: {}", e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Write content to a file. Returns 0 on success, 1 on error.
+///
+/// # Safety
+///
+/// `path_ptr` and `content_ptr` must be valid, non-null, null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_write_file(
+    path_ptr: *const c_char,
+    content_ptr: *const c_char,
+) -> i64 {
+    if path_ptr.is_null() || content_ptr.is_null() {
+        eprintln!("rca_write_file: null argument");
+        return 1;
+    }
+    let path = match unsafe { CStr::from_ptr(path_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("rca_write_file: path is not valid UTF-8");
+            return 1;
+        }
+    };
+    let content = match unsafe { CStr::from_ptr(content_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("rca_write_file: content is not valid UTF-8");
+            return 1;
+        }
+    };
+    match std::fs::write(path, content) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("rca_write_file: {}", e);
+            1
+        }
+    }
+}
+
+/// Return 1 if the path exists (file or directory), 0 otherwise.
+///
+/// # Safety
+///
+/// `path_ptr` must be a valid, non-null, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_file_exists(path_ptr: *const c_char) -> i64 {
+    if path_ptr.is_null() {
+        return 0;
+    }
+    let path = match unsafe { CStr::from_ptr(path_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    if std::path::Path::new(path).exists() {
+        1
+    } else {
+        0
+    }
+}

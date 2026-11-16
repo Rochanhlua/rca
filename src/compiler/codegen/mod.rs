@@ -351,6 +351,28 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_time_sleep", Linkage::Import, &time_sleep_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut read_file_sig = module.make_signature();
+    read_file_sig.params.push(AbiParam::new(types::I64));
+    read_file_sig.returns.push(AbiParam::new(types::I64));
+    let read_file_func = module
+        .declare_function("rca_read_file", Linkage::Import, &read_file_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut write_file_sig = module.make_signature();
+    write_file_sig.params.push(AbiParam::new(types::I64));
+    write_file_sig.params.push(AbiParam::new(types::I64));
+    write_file_sig.returns.push(AbiParam::new(types::I64));
+    let write_file_func = module
+        .declare_function("rca_write_file", Linkage::Import, &write_file_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut file_exists_sig = module.make_signature();
+    file_exists_sig.params.push(AbiParam::new(types::I64));
+    file_exists_sig.returns.push(AbiParam::new(types::I64));
+    let file_exists_func = module
+        .declare_function("rca_file_exists", Linkage::Import, &file_exists_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -739,6 +761,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          round_ref: FuncRef,
                          time_now_ref: FuncRef,
                          time_sleep_ref: FuncRef,
+                         read_file_ref: FuncRef,
+                         write_file_ref: FuncRef,
+                         file_exists_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3267,6 +3292,76 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::ReadFile => {
+                    let _ty = type_stack.pop().unwrap_or(StackType::Str);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(stack_base, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let path = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let call = builder.ins().call(read_file_ref, &[path]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, src, 0);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::WriteFile => {
+                    let _ = (type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let content_off = builder.ins().imul_imm(new_sp, 8);
+                    let content_addr = builder.ins().iadd(stack_base, content_off);
+                    let content = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), content_addr, 0);
+                    let path_addr = builder.ins().iadd_imm(content_addr, -8);
+                    let path = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), path_addr, 0);
+                    let call = builder.ins().call(write_file_ref, &[path, content]);
+                    let ok_val = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_err = builder.ins().icmp(IntCC::NotEqual, ok_val, zero);
+                    let ok_b = builder.ins().icmp(IntCC::Equal, ok_val, zero);
+                    let _ = is_err;
+                    let ok_b_i64 = builder.ins().uextend(types::I64, ok_b);
+                    builder.ins().store(MemFlags::new(), ok_b_i64, path_addr, 0);
+                    type_stack.push(StackType::Bool);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::FileExists => {
+                    let _ty = type_stack.pop().unwrap_or(StackType::Str);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(stack_base, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let path = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let call = builder.ins().call(file_exists_ref, &[path]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_ok = builder.ins().icmp(IntCC::NotEqual, result, zero);
+                    let is_ok_i64 = builder.ins().uextend(types::I64, is_ok);
+                    builder.ins().store(MemFlags::new(), is_ok_i64, src, 0);
+                    type_stack.push(StackType::Bool);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 Instruction::TimeSleep => {
                     let ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);
@@ -3372,6 +3467,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let round_ref = module.declare_func_in_func(round_func, builder.func);
         let time_now_ref = module.declare_func_in_func(time_now_func, builder.func);
         let time_sleep_ref = module.declare_func_in_func(time_sleep_func, builder.func);
+        let read_file_ref = module.declare_func_in_func(read_file_func, builder.func);
+        let write_file_ref = module.declare_func_in_func(write_file_func, builder.func);
+        let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3448,6 +3546,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             round_ref,
             time_now_ref,
             time_sleep_ref,
+            read_file_ref,
+            write_file_ref,
+            file_exists_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -3574,6 +3675,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let round_ref = module.declare_func_in_func(round_func, builder.func);
             let time_now_ref = module.declare_func_in_func(time_now_func, builder.func);
             let time_sleep_ref = module.declare_func_in_func(time_sleep_func, builder.func);
+            let read_file_ref = module.declare_func_in_func(read_file_func, builder.func);
+            let write_file_ref = module.declare_func_in_func(write_file_func, builder.func);
+            let file_exists_ref = module.declare_func_in_func(file_exists_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -3659,6 +3763,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 round_ref,
                 time_now_ref,
                 time_sleep_ref,
+                read_file_ref,
+                write_file_ref,
+                file_exists_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,
