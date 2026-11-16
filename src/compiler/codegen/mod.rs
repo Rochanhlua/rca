@@ -338,6 +338,19 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("round", Linkage::Import, &round_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut time_now_sig = module.make_signature();
+    time_now_sig.returns.push(AbiParam::new(types::I64));
+    let time_now_func = module
+        .declare_function("rca_time_now", Linkage::Import, &time_now_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut time_sleep_sig = module.make_signature();
+    time_sleep_sig.params.push(AbiParam::new(types::I64));
+    time_sleep_sig.returns.push(AbiParam::new(types::I64));
+    let time_sleep_func = module
+        .declare_function("rca_time_sleep", Linkage::Import, &time_sleep_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -724,6 +737,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          floor_ref: FuncRef,
                          ceil_ref: FuncRef,
                          round_ref: FuncRef,
+                         time_now_ref: FuncRef,
+                         time_sleep_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3239,6 +3254,35 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::List(ElemType::Int));
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::TimeNow => {
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let dst = builder.ins().iadd(stack_base, sp_off);
+                    let call = builder.ins().call(time_now_ref, &[]);
+                    let result = builder.inst_results(call)[0];
+                    builder.ins().store(MemFlags::new(), result, dst, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, 1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::TimeSleep => {
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
+                    let sp = builder.use_var(sp_var);
+                    let sp_off = builder.ins().imul_imm(sp, 8);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let top = builder.ins().iadd(stack_base, sp_off);
+                    let src = builder.ins().iadd_imm(top, -8);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
+                    let call = builder.ins().call(time_sleep_ref, &[val]);
+                    let _ = builder.inst_results(call)[0];
+                    // sleep returns unit (None); keep the slot, store 0 — IR emits Pop after.
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, src, 0);
+                    type_stack.push(ty);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -3326,6 +3370,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let floor_ref = module.declare_func_in_func(floor_func, builder.func);
         let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
         let round_ref = module.declare_func_in_func(round_func, builder.func);
+        let time_now_ref = module.declare_func_in_func(time_now_func, builder.func);
+        let time_sleep_ref = module.declare_func_in_func(time_sleep_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3400,6 +3446,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             floor_ref,
             ceil_ref,
             round_ref,
+            time_now_ref,
+            time_sleep_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -3524,6 +3572,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let floor_ref = module.declare_func_in_func(floor_func, builder.func);
             let ceil_ref = module.declare_func_in_func(ceil_func, builder.func);
             let round_ref = module.declare_func_in_func(round_func, builder.func);
+            let time_now_ref = module.declare_func_in_func(time_now_func, builder.func);
+            let time_sleep_ref = module.declare_func_in_func(time_sleep_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -3607,6 +3657,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 floor_ref,
                 ceil_ref,
                 round_ref,
+                time_now_ref,
+                time_sleep_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,
