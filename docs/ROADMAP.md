@@ -434,13 +434,12 @@ syntax errors.
 
 ### Phase 2 — Core Language
 
-- Variables, data types, type inference.
-- Static type checking.
-- Functions, conditionals, loops, structures.
-- Scope management, modules.
+- [x] Variables, data types, type inference.
+- [x] Static type checking.
+- [x] Functions, conditionals, loops, structures.
+- [x] Scope management, modules.
 
-**Milestone:** RCA supports a meaningful subset of its own language.
-
+**Milestone:** RCA supports a meaningful subset of its own language. ✅ **Complete.**
 ### Phase 3 — IR and Execution
 
 - HIR.
