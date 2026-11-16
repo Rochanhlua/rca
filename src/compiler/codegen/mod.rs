@@ -3268,7 +3268,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 Instruction::TimeSleep => {
-                    let _ = type_stack.pop();
+                    let ty = type_stack.pop().unwrap_or(StackType::Int);
                     let sp = builder.use_var(sp_var);
                     let sp_off = builder.ins().imul_imm(sp, 8);
                     let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
@@ -3277,8 +3277,10 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                     let call = builder.ins().call(time_sleep_ref, &[val]);
                     let _ = builder.inst_results(call)[0];
-                    let new_sp = builder.ins().iadd_imm(sp, -1);
-                    builder.def_var(sp_var, new_sp);
+                    // sleep returns unit (None); keep the slot, store 0 — IR emits Pop after.
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, src, 0);
+                    type_stack.push(ty);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
                 other => {
