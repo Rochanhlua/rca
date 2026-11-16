@@ -333,7 +333,13 @@ impl Parser {
                 span,
             });
         }
-        let (name, span) = self.expect_ident("a type name")?;
+        let (mut name, span) = self.expect_ident("a type name")?;
+        // Module-qualified type: `pt.Point`
+        while self.eat(&TokenKind::Dot) {
+            let (part, _) = self.expect_ident("a type name after '.'")?;
+            name.push('.');
+            name.push_str(&part);
+        }
         if self.eat(&TokenKind::LBracket) {
             match name.as_str() {
                 // Array[T, N] — fixed-size, integer length
