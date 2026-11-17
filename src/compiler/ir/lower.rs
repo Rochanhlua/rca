@@ -362,6 +362,26 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-7: if / else, same jumps as compile_stmt.
+            crate::compiler::hir::HStmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                self.compile_hexpr(condition)?;
+                let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), &h.span);
+                self.compile_hblock(then_block)?;
+                match else_block {
+                    Some(block) => {
+                        let jump_end = self.emit_jump(Instruction::Jump(0), &h.span);
+                        self.patch(jump_false);
+                        self.compile_hblock(block)?;
+                        self.patch(jump_end);
+                    }
+                    None => self.patch(jump_false),
+                }
+                return Ok(());
+            }
             // Step 4b-5: plain `x = value`. Index/Field targets and the
             // `m = map_set(m, ..)` pattern keep using the AST shim.
             crate::compiler::hir::HStmtKind::Assign { target, value }
@@ -385,6 +405,19 @@ impl Compiler {
         }
         let stmt = crate::compiler::hir::lower_hstmt_to_ast(h);
         self.compile_stmt(&stmt)
+    }
+
+    fn compile_hblock(&mut self, stmts: &[crate::compiler::hir::HStmt]) -> Result<(), Diagnostic> {
+        self.begin_scope();
+        let mut result = Ok(());
+        for st in stmts {
+            result = self.compile_hstmt(st);
+            if result.is_err() {
+                break;
+            }
+        }
+        self.end_scope();
+        result
     }
 
     /// Step 4b-2: literals and identifiers are handled natively from HIR;
