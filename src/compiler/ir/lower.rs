@@ -362,6 +362,26 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-8: while loop, same jumps and LoopCtx as compile_stmt.
+            crate::compiler::hir::HStmtKind::While { condition, body } => {
+                let start = self.here();
+                self.compile_hexpr(condition)?;
+                let exit = self.emit_jump(Instruction::JumpIfFalse(0), &h.span);
+                self.state.loops.push(LoopCtx {
+                    start,
+                    break_jumps: Vec::new(),
+                    try_depth: self.state.try_depth,
+                });
+                let result = self.compile_hblock(body);
+                let ctx = self.state.loops.pop().unwrap();
+                result?;
+                self.emit(Instruction::Jump(start), &h.span);
+                self.patch(exit);
+                for j in ctx.break_jumps {
+                    self.patch(j);
+                }
+                return Ok(());
+            }
             // Step 4b-7: if / else, same jumps as compile_stmt.
             crate::compiler::hir::HStmtKind::If {
                 condition,
