@@ -26,13 +26,15 @@ fn native_tcp_echo() {
     let b = Command::new(rcac).arg("build").arg(&src).output().unwrap();
     assert!(b.status.success(), "{}", String::from_utf8_lossy(&b.stderr));
 
-    let out = Command::new(dir.join(if cfg!(windows) {
-        "t_echo.exe"
-    } else {
-        "t_echo"
-    }))
-    .output()
-    .unwrap();
+    let exe = dir.join("t_echo");
+    eprintln!(
+        "DIR: {:?}",
+        std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect::<Vec<_>>()
+    );
+    let out = Command::new(&exe).output().unwrap();
     assert!(out.status.success());
     assert_eq!(String::from_utf8_lossy(&out.stdout), "4\npong\n");
     server.join().unwrap();
