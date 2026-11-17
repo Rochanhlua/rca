@@ -362,6 +362,42 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-10: break, continue and throw, same code as compile_stmt.
+            crate::compiler::hir::HStmtKind::Break => {
+                let pops = match self.state.loops.last() {
+                    Some(ctx) => self.state.try_depth - ctx.try_depth,
+                    None => 0,
+                };
+                for _ in 0..pops {
+                    self.emit(Instruction::PopHandler, &h.span);
+                }
+                let jump = self.emit_jump(Instruction::Jump(0), &h.span);
+                match self.state.loops.last_mut() {
+                    Some(ctx) => ctx.break_jumps.push(jump),
+                    None => return Err(err("'break' outside of a loop", &h.span)),
+                }
+                return Ok(());
+            }
+            crate::compiler::hir::HStmtKind::Continue => {
+                let pops = match self.state.loops.last() {
+                    Some(ctx) => self.state.try_depth - ctx.try_depth,
+                    None => 0,
+                };
+                for _ in 0..pops {
+                    self.emit(Instruction::PopHandler, &h.span);
+                }
+                let start = match self.state.loops.last() {
+                    Some(ctx) => ctx.start,
+                    None => return Err(err("'continue' outside of a loop", &h.span)),
+                };
+                self.emit(Instruction::Jump(start), &h.span);
+                return Ok(());
+            }
+            crate::compiler::hir::HStmtKind::Throw(e) => {
+                self.compile_hexpr(e)?;
+                self.emit(Instruction::Throw, &h.span);
+                return Ok(());
+            }
             // Step 4b-9: for loop, same hidden locals and ForNext as compile_stmt.
             crate::compiler::hir::HStmtKind::For { var, iter, body } => {
                 self.compile_hexpr(iter)?;
