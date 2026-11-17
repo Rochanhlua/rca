@@ -362,6 +362,35 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-12: try / catch, same bytecode as compile_stmt.
+            crate::compiler::hir::HStmtKind::Try {
+                body,
+                catch_var,
+                catch_block,
+            } => {
+                let handler = self.emit_jump(Instruction::PushHandler(0), &h.span);
+                self.state.try_depth += 1;
+                let body_result = self.compile_hblock(body);
+                self.state.try_depth -= 1;
+                body_result?;
+                self.emit(Instruction::PopHandler, &h.span);
+                let jump_end = self.emit_jump(Instruction::Jump(0), &h.span);
+                self.patch(handler);
+                self.begin_scope();
+                let var = self.declare_var(catch_var);
+                self.emit_store(var, &h.span);
+                let mut result = Ok(());
+                for st in catch_block {
+                    result = self.compile_hstmt(st);
+                    if result.is_err() {
+                        break;
+                    }
+                }
+                self.end_scope();
+                result?;
+                self.patch(jump_end);
+                return Ok(());
+            }
             // Step 4b-10: break, continue and throw, same code as compile_stmt.
             crate::compiler::hir::HStmtKind::Break => {
                 let pops = match self.state.loops.last() {
