@@ -566,6 +566,23 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_tensor_softmax", Linkage::Import, &softmax_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut sgd_sig = module.make_signature();
+    sgd_sig.params.push(AbiParam::new(types::I64));
+    sgd_sig.params.push(AbiParam::new(types::I64));
+    sgd_sig.params.push(AbiParam::new(types::I64));
+    sgd_sig.returns.push(AbiParam::new(types::I64));
+    let sgd_func = module
+        .declare_function("rca_tensor_sgd", Linkage::Import, &sgd_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut reshape_sig = module.make_signature();
+    reshape_sig.params.push(AbiParam::new(types::I64));
+    reshape_sig.params.push(AbiParam::new(types::I64));
+    reshape_sig.returns.push(AbiParam::new(types::I64));
+    let reshape_func = module
+        .declare_function("rca_tensor_reshape", Linkage::Import, &reshape_sig)
+        .map_err(|e| e.to_string())?;
+
     let mut sum_sig = module.make_signature();
     sum_sig.params.push(AbiParam::new(types::I64));
     sum_sig.returns.push(AbiParam::new(types::I64));
@@ -1012,6 +1029,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          mse_ref: FuncRef,
                          transpose_ref: FuncRef,
                          softmax_ref: FuncRef,
+                         sgd_ref: FuncRef,
+                         reshape_ref: FuncRef,
                          sum_ref: FuncRef,
                          mean_ref: FuncRef,
                          max_ref: FuncRef,
@@ -3937,6 +3956,34 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         blocks[ip + 1],
                     );
                 }
+                Instruction::TensorSgd => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        sgd_ref,
+                        exit_ref,
+                        3,
+                        StackType::Tensor,
+                        true,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorReshape => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        reshape_ref,
+                        exit_ref,
+                        2,
+                        StackType::Tensor,
+                        true,
+                        blocks[ip + 1],
+                    );
+                }
                 Instruction::TensorSum => {
                     emit_tensor_call(
                         &mut *builder,
@@ -4182,6 +4229,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let mse_ref = module.declare_func_in_func(mse_func, builder.func);
         let transpose_ref = module.declare_func_in_func(transpose_func, builder.func);
         let softmax_ref = module.declare_func_in_func(softmax_func, builder.func);
+        let sgd_ref = module.declare_func_in_func(sgd_func, builder.func);
+        let reshape_ref = module.declare_func_in_func(reshape_func, builder.func);
         let sum_ref = module.declare_func_in_func(sum_func, builder.func);
         let mean_ref = module.declare_func_in_func(mean_func, builder.func);
         let max_ref = module.declare_func_in_func(max_func, builder.func);
@@ -4285,6 +4334,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             mse_ref,
             transpose_ref,
             softmax_ref,
+            sgd_ref,
+            reshape_ref,
             sum_ref,
             mean_ref,
             max_ref,
@@ -4437,6 +4488,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let mse_ref = module.declare_func_in_func(mse_func, builder.func);
             let transpose_ref = module.declare_func_in_func(transpose_func, builder.func);
             let softmax_ref = module.declare_func_in_func(softmax_func, builder.func);
+            let sgd_ref = module.declare_func_in_func(sgd_func, builder.func);
+            let reshape_ref = module.declare_func_in_func(reshape_func, builder.func);
             let sum_ref = module.declare_func_in_func(sum_func, builder.func);
             let mean_ref = module.declare_func_in_func(mean_func, builder.func);
             let max_ref = module.declare_func_in_func(max_func, builder.func);
@@ -4549,6 +4602,8 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 mse_ref,
                 transpose_ref,
                 softmax_ref,
+                sgd_ref,
+                reshape_ref,
                 sum_ref,
                 mean_ref,
                 max_ref,
