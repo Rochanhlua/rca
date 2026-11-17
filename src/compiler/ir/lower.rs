@@ -355,6 +355,13 @@ impl Compiler {
                     return Ok(());
                 }
             }
+            crate::compiler::hir::HStmtKind::Let { name, value, .. } => {
+                self.map_key_types.retain(|(v, _), _| v != name);
+                self.compile_hexpr(value)?;
+                let var = self.declare_var(name);
+                self.emit_store(var, &h.span);
+                return Ok(());
+            }
             _ => {}
         }
         let stmt = crate::compiler::hir::lower_hstmt_to_ast(h);
