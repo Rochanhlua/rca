@@ -362,6 +362,43 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-9: for loop, same hidden locals and ForNext as compile_stmt.
+            crate::compiler::hir::HStmtKind::For { var, iter, body } => {
+                self.compile_hexpr(iter)?;
+                self.begin_scope();
+                let iter_slot = self.declare_local("$iter");
+                self.emit(Instruction::StoreLocal(iter_slot), &h.span);
+                self.emit(Instruction::PushInt(0), &h.span);
+                let idx_slot = self.declare_local("$idx");
+                self.emit(Instruction::StoreLocal(idx_slot), &h.span);
+                let var_slot = self.declare_local(var);
+
+                let start = self.here();
+                let next = self.emit_jump(
+                    Instruction::ForNext {
+                        iter: iter_slot,
+                        idx: idx_slot,
+                        var: var_slot,
+                        exit: 0,
+                    },
+                    &h.span,
+                );
+                self.state.loops.push(LoopCtx {
+                    start,
+                    break_jumps: Vec::new(),
+                    try_depth: self.state.try_depth,
+                });
+                let result = self.compile_hblock(body);
+                let ctx = self.state.loops.pop().unwrap();
+                result?;
+                self.emit(Instruction::Jump(start), &h.span);
+                self.patch(next);
+                for j in ctx.break_jumps {
+                    self.patch(j);
+                }
+                self.end_scope();
+                return Ok(());
+            }
             // Step 4b-8: while loop, same jumps and LoopCtx as compile_stmt.
             crate::compiler::hir::HStmtKind::While { condition, body } => {
                 let start = self.here();
