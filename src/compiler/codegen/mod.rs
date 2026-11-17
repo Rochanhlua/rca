@@ -36,6 +36,59 @@ enum StackType {
     Char,
 }
 
+#[allow(clippy::too_many_arguments)]
+fn emit_tensor_call(
+    builder: &mut FunctionBuilder,
+    sp_var: cranelift::prelude::Variable,
+    stack_slot: StackSlot,
+    type_stack: &mut Vec<StackType>,
+    fref: FuncRef,
+    exit_ref: FuncRef,
+    nargs: usize,
+    out: StackType,
+    null_is_error: bool,
+    next: cranelift::prelude::Block,
+) {
+    for _ in 0..nargs {
+        let _ = type_stack.pop();
+    }
+    let sp = builder.use_var(sp_var);
+    let base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+    let mut args = Vec::with_capacity(nargs);
+    for k in 1..=nargs {
+        let pos = builder.ins().iadd_imm(sp, -(k as i64));
+        let off = builder.ins().imul_imm(pos, 8);
+        let addr = builder.ins().iadd(base, off);
+        args.push(builder.ins().load(types::I64, MemFlags::new(), addr, 0));
+    }
+    args.reverse();
+    let call = builder.ins().call(fref, &args);
+    let result = builder.inst_results(call)[0];
+    if null_is_error {
+        let zero = builder.ins().iconst(types::I64, 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+        let err_blk = builder.create_block();
+        let ok_blk = builder.create_block();
+        builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+        builder.switch_to_block(err_blk);
+        builder.seal_block(err_blk);
+        let one = builder.ins().iconst(types::I32, 1);
+        builder.ins().call(exit_ref, &[one]);
+        let z = builder.ins().iconst(types::I32, 0);
+        builder.ins().return_(&[z]);
+        builder.switch_to_block(ok_blk);
+        builder.seal_block(ok_blk);
+    }
+    let dest_pos = builder.ins().iadd_imm(sp, -(nargs as i64));
+    let dest_off = builder.ins().imul_imm(dest_pos, 8);
+    let dest = builder.ins().iadd(base, dest_off);
+    builder.ins().store(MemFlags::new(), result, dest, 0);
+    let new_sp = builder.ins().iadd_imm(sp, -((nargs as i64) - 1));
+    builder.def_var(sp_var, new_sp);
+    type_stack.push(out);
+    builder.ins().jump(next, &[]);
+}
+
 fn emit_incref(builder: &mut FunctionBuilder, ptr: Value) {
     let zero = builder.ins().iconst(types::I64, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, ptr, zero);
@@ -483,6 +536,63 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let hmac_sha256_func = module
         .declare_function("rca_hmac_sha256", Linkage::Import, &hmac_sha256_sig)
         .map_err(|e| e.to_string())?;
+    let mut matmul_sig = module.make_signature();
+    matmul_sig.params.push(AbiParam::new(types::I64));
+    matmul_sig.params.push(AbiParam::new(types::I64));
+    matmul_sig.returns.push(AbiParam::new(types::I64));
+    let matmul_func = module
+        .declare_function("rca_matmul", Linkage::Import, &matmul_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut mse_sig = module.make_signature();
+    mse_sig.params.push(AbiParam::new(types::I64));
+    mse_sig.params.push(AbiParam::new(types::I64));
+    mse_sig.returns.push(AbiParam::new(types::I64));
+    let mse_func = module
+        .declare_function("rca_tensor_mse", Linkage::Import, &mse_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut transpose_sig = module.make_signature();
+    transpose_sig.params.push(AbiParam::new(types::I64));
+    transpose_sig.returns.push(AbiParam::new(types::I64));
+    let transpose_func = module
+        .declare_function("rca_tensor_transpose", Linkage::Import, &transpose_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut softmax_sig = module.make_signature();
+    softmax_sig.params.push(AbiParam::new(types::I64));
+    softmax_sig.returns.push(AbiParam::new(types::I64));
+    let softmax_func = module
+        .declare_function("rca_tensor_softmax", Linkage::Import, &softmax_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut sum_sig = module.make_signature();
+    sum_sig.params.push(AbiParam::new(types::I64));
+    sum_sig.returns.push(AbiParam::new(types::I64));
+    let sum_func = module
+        .declare_function("rca_tensor_sum", Linkage::Import, &sum_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut mean_sig = module.make_signature();
+    mean_sig.params.push(AbiParam::new(types::I64));
+    mean_sig.returns.push(AbiParam::new(types::I64));
+    let mean_func = module
+        .declare_function("rca_tensor_mean", Linkage::Import, &mean_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut max_sig = module.make_signature();
+    max_sig.params.push(AbiParam::new(types::I64));
+    max_sig.returns.push(AbiParam::new(types::I64));
+    let max_func = module
+        .declare_function("rca_tensor_max", Linkage::Import, &max_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut min_sig = module.make_signature();
+    min_sig.params.push(AbiParam::new(types::I64));
+    min_sig.returns.push(AbiParam::new(types::I64));
+    let min_func = module
+        .declare_function("rca_tensor_min", Linkage::Import, &min_sig)
+        .map_err(|e| e.to_string())?;
 
     // Format strings
     let mut fmt_int_data = DataDescription::new();
@@ -898,6 +1008,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          sha256_ref: FuncRef,
                          sha512_ref: FuncRef,
                          hmac_sha256_ref: FuncRef,
+                         matmul_ref: FuncRef,
+                         mse_ref: FuncRef,
+                         transpose_ref: FuncRef,
+                         softmax_ref: FuncRef,
+                         sum_ref: FuncRef,
+                         mean_ref: FuncRef,
+                         max_ref: FuncRef,
+                         min_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3777,6 +3895,118 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::MatMul => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        matmul_ref,
+                        exit_ref,
+                        2,
+                        StackType::Tensor,
+                        true,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorTranspose => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        transpose_ref,
+                        exit_ref,
+                        1,
+                        StackType::Tensor,
+                        true,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorSoftmax => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        softmax_ref,
+                        exit_ref,
+                        1,
+                        StackType::Tensor,
+                        true,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorSum => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        sum_ref,
+                        exit_ref,
+                        1,
+                        StackType::Float,
+                        false,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorMean => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        mean_ref,
+                        exit_ref,
+                        1,
+                        StackType::Float,
+                        false,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorMax => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        max_ref,
+                        exit_ref,
+                        1,
+                        StackType::Float,
+                        false,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorMin => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        min_ref,
+                        exit_ref,
+                        1,
+                        StackType::Float,
+                        false,
+                        blocks[ip + 1],
+                    );
+                }
+                Instruction::TensorMse => {
+                    emit_tensor_call(
+                        &mut *builder,
+                        sp_var,
+                        stack_slot,
+                        &mut type_stack,
+                        mse_ref,
+                        exit_ref,
+                        2,
+                        StackType::Float,
+                        false,
+                        blocks[ip + 1],
+                    );
+                }
                 Instruction::Sha256 | Instruction::Sha512 => {
                     let _ = type_stack.pop();
                     let sp = builder.use_var(sp_var);
@@ -3948,6 +4178,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
         let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
         let sha256_ref = module.declare_func_in_func(sha256_func, builder.func);
+        let matmul_ref = module.declare_func_in_func(matmul_func, builder.func);
+        let mse_ref = module.declare_func_in_func(mse_func, builder.func);
+        let transpose_ref = module.declare_func_in_func(transpose_func, builder.func);
+        let softmax_ref = module.declare_func_in_func(softmax_func, builder.func);
+        let sum_ref = module.declare_func_in_func(sum_func, builder.func);
+        let mean_ref = module.declare_func_in_func(mean_func, builder.func);
+        let max_ref = module.declare_func_in_func(max_func, builder.func);
+        let min_ref = module.declare_func_in_func(min_func, builder.func);
         let sha512_ref = module.declare_func_in_func(sha512_func, builder.func);
         let hmac_sha256_ref = module.declare_func_in_func(hmac_sha256_func, builder.func);
         #[allow(unused_variables)]
@@ -4043,6 +4281,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             sha256_ref,
             sha512_ref,
             hmac_sha256_ref,
+            matmul_ref,
+            mse_ref,
+            transpose_ref,
+            softmax_ref,
+            sum_ref,
+            mean_ref,
+            max_ref,
+            min_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -4187,6 +4433,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
             let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
             let sha256_ref = module.declare_func_in_func(sha256_func, builder.func);
+            let matmul_ref = module.declare_func_in_func(matmul_func, builder.func);
+            let mse_ref = module.declare_func_in_func(mse_func, builder.func);
+            let transpose_ref = module.declare_func_in_func(transpose_func, builder.func);
+            let softmax_ref = module.declare_func_in_func(softmax_func, builder.func);
+            let sum_ref = module.declare_func_in_func(sum_func, builder.func);
+            let mean_ref = module.declare_func_in_func(mean_func, builder.func);
+            let max_ref = module.declare_func_in_func(max_func, builder.func);
+            let min_ref = module.declare_func_in_func(min_func, builder.func);
             let sha512_ref = module.declare_func_in_func(sha512_func, builder.func);
             let hmac_sha256_ref = module.declare_func_in_func(hmac_sha256_func, builder.func);
             #[allow(unused_variables)]
@@ -4291,6 +4545,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 sha256_ref,
                 sha512_ref,
                 hmac_sha256_ref,
+                matmul_ref,
+                mse_ref,
+                transpose_ref,
+                softmax_ref,
+                sum_ref,
+                mean_ref,
+                max_ref,
+                min_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,
