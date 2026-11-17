@@ -13,14 +13,22 @@ fn native_udp_loopback() {
     let rcac = env!("CARGO_BIN_EXE_rcac");
     let b = Command::new(rcac).arg("build").arg(&src).output().unwrap();
     assert!(b.status.success(), "{}", String::from_utf8_lossy(&b.stderr));
-    let out = Command::new(dir.join("t_udp")).output().unwrap();
+
+    // On Windows, clang writes `t_udp` without `.exe`; copy so Command can run it.
+    let mut exe = dir.join("t_udp");
+    if cfg!(windows) {
+        let with_ext = dir.join("t_udp.exe");
+        std::fs::copy(&exe, &with_ext).unwrap();
+        exe = with_ext;
+    }
+    let out = Command::new(&exe).output().unwrap();
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n"),
         "4\nping\n127.0.0.1\n38091\n"
     );
 }

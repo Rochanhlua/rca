@@ -36,6 +36,9 @@ fn native_tcp_echo() {
     }
     let out = Command::new(&exe).output().unwrap();
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "4\npong\n");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n"),
+        "4\npong\n"
+    );
     server.join().unwrap();
 }
