@@ -399,6 +399,54 @@ impl Compiler {
             HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            // Step 4b-6: unary and binary operators, same bytecode as compile_expr.
+            HExprKind::Unary { op, operand } => {
+                self.compile_hexpr(operand)?;
+                match op {
+                    UnaryOp::Neg => self.emit(Instruction::Neg, span),
+                    UnaryOp::Not => self.emit(Instruction::Not, span),
+                }
+            }
+            HExprKind::Binary { op, left, right } => match op {
+                BinaryOp::And => {
+                    self.compile_hexpr(left)?;
+                    let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                    self.compile_hexpr(right)?;
+                    let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                    self.patch(jump_false);
+                    self.emit(Instruction::PushBool(false), span);
+                    self.patch(jump_end);
+                }
+                BinaryOp::Or => {
+                    self.compile_hexpr(left)?;
+                    let jump_false = self.emit_jump(Instruction::JumpIfFalse(0), span);
+                    self.emit(Instruction::PushBool(true), span);
+                    let jump_end = self.emit_jump(Instruction::Jump(0), span);
+                    self.patch(jump_false);
+                    self.compile_hexpr(right)?;
+                    self.patch(jump_end);
+                }
+                _ => {
+                    self.compile_hexpr(left)?;
+                    self.compile_hexpr(right)?;
+                    let ins = match op {
+                        BinaryOp::Add => Instruction::Add,
+                        BinaryOp::Sub => Instruction::Sub,
+                        BinaryOp::Mul => Instruction::Mul,
+                        BinaryOp::Div => Instruction::Div,
+                        BinaryOp::Mod => Instruction::Mod,
+                        BinaryOp::Eq => Instruction::Eq,
+                        BinaryOp::NotEq => Instruction::NotEq,
+                        BinaryOp::Lt => Instruction::Lt,
+                        BinaryOp::LtEq => Instruction::LtEq,
+                        BinaryOp::Gt => Instruction::Gt,
+                        BinaryOp::GtEq => Instruction::GtEq,
+                        BinaryOp::Range => Instruction::MakeRange,
+                        BinaryOp::And | BinaryOp::Or => unreachable!(),
+                    };
+                    self.emit(ins, span);
+                }
+            },
             HExprKind::Ident(name) => match self.resolve(name) {
                 Some(VarRef::Local(s)) => self.emit(Instruction::LoadLocal(s), span),
                 Some(VarRef::Global(s)) => self.emit(Instruction::LoadGlobal(s), span),
