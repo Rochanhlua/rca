@@ -554,6 +554,16 @@ impl Compiler {
             HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            // Step 4b-13: indexing, same bytecode as compile_expr.
+            HExprKind::Index { object, index } => {
+                self.compile_hexpr(object)?;
+                if let HExprKind::Int(n) = &index.kind {
+                    self.emit(Instruction::IndexAt(*n), span);
+                } else {
+                    self.compile_hexpr(index)?;
+                    self.emit(Instruction::Index, span);
+                }
+            }
             // Step 4b-11: list and tuple literals, same bytecode as compile_expr.
             HExprKind::Tuple(items) => {
                 for item in items {
