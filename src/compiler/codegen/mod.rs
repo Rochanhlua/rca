@@ -462,6 +462,28 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_udp_close", Linkage::Import, &udp_close_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut sha256_sig = module.make_signature();
+    sha256_sig.params.push(AbiParam::new(types::I64));
+    sha256_sig.returns.push(AbiParam::new(types::I64));
+    let sha256_func = module
+        .declare_function("rca_sha256", Linkage::Import, &sha256_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut sha512_sig = module.make_signature();
+    sha512_sig.params.push(AbiParam::new(types::I64));
+    sha512_sig.returns.push(AbiParam::new(types::I64));
+    let sha512_func = module
+        .declare_function("rca_sha512", Linkage::Import, &sha512_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut hmac_sha256_sig = module.make_signature();
+    hmac_sha256_sig.params.push(AbiParam::new(types::I64));
+    hmac_sha256_sig.params.push(AbiParam::new(types::I64));
+    hmac_sha256_sig.returns.push(AbiParam::new(types::I64));
+    let hmac_sha256_func = module
+        .declare_function("rca_hmac_sha256", Linkage::Import, &hmac_sha256_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -873,6 +895,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          udp_send_ref: FuncRef,
                          udp_recv_ref: FuncRef,
                          udp_close_ref: FuncRef,
+                         sha256_ref: FuncRef,
+                         sha512_ref: FuncRef,
+                         hmac_sha256_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3752,6 +3777,71 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Int);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::Sha256 | Instruction::Sha512 => {
+                    let _ = type_stack.pop();
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let pos = builder.ins().iadd_imm(sp, -1);
+                    let off = builder.ins().imul_imm(pos, 8);
+                    let addr = builder.ins().iadd(stack_base, off);
+                    let s = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                    let fref = if matches!(ins, Instruction::Sha256) {
+                        sha256_ref
+                    } else {
+                        sha512_ref
+                    };
+                    let call = builder.ins().call(fref, &[s]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, addr, 0);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::HmacSha256 => {
+                    let _ = (type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let m_pos = builder.ins().iadd_imm(sp, -1);
+                    let m_off = builder.ins().imul_imm(m_pos, 8);
+                    let m_addr = builder.ins().iadd(stack_base, m_off);
+                    let m = builder.ins().load(types::I64, MemFlags::new(), m_addr, 0);
+                    let k_pos = builder.ins().iadd_imm(sp, -2);
+                    let k_off = builder.ins().imul_imm(k_pos, 8);
+                    let k_addr = builder.ins().iadd(stack_base, k_off);
+                    let k = builder.ins().load(types::I64, MemFlags::new(), k_addr, 0);
+                    let call = builder.ins().call(hmac_sha256_ref, &[k, m]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_null = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_null, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, k_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Str);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -3857,6 +3947,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let udp_send_ref = module.declare_func_in_func(udp_send_func, builder.func);
         let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
         let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
+        let sha256_ref = module.declare_func_in_func(sha256_func, builder.func);
+        let sha512_ref = module.declare_func_in_func(sha512_func, builder.func);
+        let hmac_sha256_ref = module.declare_func_in_func(hmac_sha256_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3947,6 +4040,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             udp_send_ref,
             udp_recv_ref,
             udp_close_ref,
+            sha256_ref,
+            sha512_ref,
+            hmac_sha256_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -4090,6 +4186,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let udp_send_ref = module.declare_func_in_func(udp_send_func, builder.func);
             let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
             let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
+            let sha256_ref = module.declare_func_in_func(sha256_func, builder.func);
+            let sha512_ref = module.declare_func_in_func(sha512_func, builder.func);
+            let hmac_sha256_ref = module.declare_func_in_func(hmac_sha256_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -4189,6 +4288,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 udp_send_ref,
                 udp_recv_ref,
                 udp_close_ref,
+                sha256_ref,
+                sha512_ref,
+                hmac_sha256_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,

@@ -38,8 +38,7 @@ known-answer values; the tests in `tests/crypto*.rs` pin them.)
 - **No MD5** — legacy only, deliberately not added.
 - **No streaming API** — arguments are complete strings, not chunks.
 - **No `pub const`-friendly form** — call as a function.
-- **No native codegen** — runs on the VM (Cranelift backend falls through
-  to "not yet implemented"; use `rcac run`).
+- **Native codegen** — `sha256`, `sha512` and `hmac_sha256` work in native builds via FFI (`rca_sha256`, `rca_sha512`, `rca_hmac_sha256`); output matches the VM.
 
 ## 4. Cryptographic correctness policy
 Per blueprint §9: algorithms and implementations must be audited, not
