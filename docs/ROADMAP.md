@@ -495,6 +495,7 @@ Core:
 - File system.
 - Networking (TCP, UDP).
 - HTTP/HTTPS (GET, POST; HTTPS via rustls — recommended).
+- HTTP/HTTPS client polish (chunked transfer decoding, timeouts, redirects, custom headers — see docs/net.md).
 - JSON.
 - Cryptography (SHA-256, SHA-512, HMAC-SHA256).
 - Package manager (init, add, install, package-aware module loader).
