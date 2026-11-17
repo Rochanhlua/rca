@@ -481,3 +481,218 @@ pub unsafe extern "C" fn rca_str_split(s_ptr: *const c_char, sep_ptr: *const c_c
     }
     base
 }
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+static TCP_SOCKETS: Mutex<Option<HashMap<i64, std::net::TcpStream>>> = Mutex::new(None);
+static UDP_SOCKETS: Mutex<Option<HashMap<i64, std::net::UdpSocket>>> = Mutex::new(None);
+static NEXT_FD: AtomicI64 = AtomicI64::new(1);
+
+fn next_fd() -> i64 {
+    NEXT_FD.fetch_add(1, Ordering::SeqCst)
+}
+
+fn tcp_registry() -> std::sync::MutexGuard<'static, Option<HashMap<i64, std::net::TcpStream>>> {
+    TCP_SOCKETS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn udp_registry() -> std::sync::MutexGuard<'static, Option<HashMap<i64, std::net::UdpSocket>>> {
+    UDP_SOCKETS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Connect to `host:port` over TCP. Returns a positive fd handle on success, 0 on error.
+///
+/// # Safety
+///
+/// `host_ptr` must be a valid, non-null, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tcp_connect(host_ptr: *const c_char, port: i64) -> i64 {
+    if host_ptr.is_null() {
+        eprintln!("rca_tcp_connect: null host");
+        return 0;
+    }
+    let host = match unsafe { CStr::from_ptr(host_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    let addr = format!("{}:{}", host, port);
+    match std::net::TcpStream::connect(&addr) {
+        Ok(stream) => {
+            let fd = next_fd();
+            let mut reg = tcp_registry();
+            reg.get_or_insert_with(HashMap::new).insert(fd, stream);
+            fd
+        }
+        Err(e) => {
+            eprintln!("rca_tcp_connect: {}", e);
+            0
+        }
+    }
+}
+
+/// Send `data_ptr` bytes over TCP socket `fd`. Returns bytes sent, or -1 on error.
+///
+/// # Safety
+///
+/// `data_ptr` must be a valid, non-null, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tcp_send(fd: i64, data_ptr: *const c_char) -> i64 {
+    if data_ptr.is_null() {
+        return -1;
+    }
+    let data = match unsafe { CStr::from_ptr(data_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let mut reg = tcp_registry();
+    let stream = match reg.as_mut().and_then(|m| m.get_mut(&fd)) {
+        Some(s) => s,
+        None => return -1,
+    };
+    use std::io::Write;
+    match stream.write(data.as_bytes()) {
+        Ok(n) => n as i64,
+        Err(_) => -1,
+    }
+}
+
+/// Receive up to `max_bytes` from TCP socket `fd`. Returns a null-terminated
+/// C string; caller owns it (free with `rca_free`). Returns NULL on error.
+///
+/// # Safety
+///
+/// Returned pointer must be freed with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tcp_recv(fd: i64, max_bytes: i64) -> *mut c_char {
+    if max_bytes <= 0 {
+        return std::ptr::null_mut();
+    }
+    let mut reg = tcp_registry();
+    let stream = match reg.as_mut().and_then(|m| m.get_mut(&fd)) {
+        Some(s) => s,
+        None => return std::ptr::null_mut(),
+    };
+    use std::io::Read;
+    let mut buf = vec![0u8; max_bytes as usize];
+    match stream.read(&mut buf) {
+        Ok(n) => {
+            let s = String::from_utf8_lossy(&buf[..n]).to_string();
+            alloc_c_string(&s)
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Close TCP socket `fd`. Returns 0 (always succeeds).
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_tcp_close(fd: i64) -> i64 {
+    let mut reg = tcp_registry();
+    if let Some(m) = reg.as_mut() {
+        m.remove(&fd);
+    }
+    0
+}
+
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut std::ffi::c_void;
+}
+
+/// # Safety
+/// `host_ptr` must be a valid null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_udp_bind(host_ptr: *const c_char, port: i64) -> i64 {
+    if host_ptr.is_null() {
+        return 0;
+    }
+    let host = match unsafe { CStr::from_ptr(host_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    match std::net::UdpSocket::bind(format!("{}:{}", host, port)) {
+        Ok(sock) => {
+            let fd = next_fd();
+            udp_registry()
+                .get_or_insert_with(HashMap::new)
+                .insert(fd, sock);
+            fd
+        }
+        Err(e) => {
+            eprintln!("rca_udp_bind: {}", e);
+            0
+        }
+    }
+}
+
+/// # Safety
+/// `host_ptr` and `data_ptr` must be valid null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_udp_send(
+    fd: i64,
+    host_ptr: *const c_char,
+    port: i64,
+    data_ptr: *const c_char,
+) -> i64 {
+    if host_ptr.is_null() || data_ptr.is_null() {
+        return -1;
+    }
+    let host = match unsafe { CStr::from_ptr(host_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let data = unsafe { CStr::from_ptr(data_ptr) }.to_bytes();
+    let sock = {
+        let reg = udp_registry();
+        match reg.as_ref().and_then(|m| m.get(&fd)).map(|s| s.try_clone()) {
+            Some(Ok(s)) => s,
+            _ => return -1,
+        }
+    };
+    match sock.send_to(data, format!("{}:{}", host, port)) {
+        Ok(n) => n as i64,
+        Err(_) => -1,
+    }
+}
+
+/// Returns tuple block `[1][3][data][src_host][src_port]` or NULL on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_udp_recv(fd: i64, max_bytes: i64) -> *mut i64 {
+    if max_bytes <= 0 {
+        return std::ptr::null_mut();
+    }
+    let sock = {
+        let reg = udp_registry();
+        match reg.as_ref().and_then(|m| m.get(&fd)).map(|s| s.try_clone()) {
+            Some(Ok(s)) => s,
+            _ => return std::ptr::null_mut(),
+        }
+    };
+    let mut buf = vec![0u8; max_bytes as usize];
+    let (n, src) = match sock.recv_from(&mut buf) {
+        Ok(v) => v,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let data = alloc_c_string(&String::from_utf8_lossy(&buf[..n]));
+    let host = alloc_c_string(&src.ip().to_string());
+    let block = unsafe { malloc(5 * 8) } as *mut i64;
+    if block.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        *block.add(0) = 1;
+        *block.add(1) = 3;
+        *block.add(2) = data as i64;
+        *block.add(3) = host as i64;
+        *block.add(4) = src.port() as i64;
+    }
+    block
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_udp_close(fd: i64) -> i64 {
+    if let Some(m) = udp_registry().as_mut() {
+        m.remove(&fd);
+    }
+    0
+}

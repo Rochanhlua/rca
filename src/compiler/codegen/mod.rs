@@ -398,6 +398,70 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .declare_function("rca_str_split", Linkage::Import, &str_split_sig)
         .map_err(|e| e.to_string())?;
 
+    let mut tcp_connect_sig = module.make_signature();
+    tcp_connect_sig.params.push(AbiParam::new(types::I64));
+    tcp_connect_sig.params.push(AbiParam::new(types::I64));
+    tcp_connect_sig.returns.push(AbiParam::new(types::I64));
+    let tcp_connect_func = module
+        .declare_function("rca_tcp_connect", Linkage::Import, &tcp_connect_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut tcp_send_sig = module.make_signature();
+    tcp_send_sig.params.push(AbiParam::new(types::I64));
+    tcp_send_sig.params.push(AbiParam::new(types::I64));
+    tcp_send_sig.returns.push(AbiParam::new(types::I64));
+    let tcp_send_func = module
+        .declare_function("rca_tcp_send", Linkage::Import, &tcp_send_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut tcp_recv_sig = module.make_signature();
+    tcp_recv_sig.params.push(AbiParam::new(types::I64));
+    tcp_recv_sig.params.push(AbiParam::new(types::I64));
+    tcp_recv_sig.returns.push(AbiParam::new(types::I64));
+    let tcp_recv_func = module
+        .declare_function("rca_tcp_recv", Linkage::Import, &tcp_recv_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut tcp_close_sig = module.make_signature();
+    tcp_close_sig.params.push(AbiParam::new(types::I64));
+    tcp_close_sig.returns.push(AbiParam::new(types::I64));
+    let tcp_close_func = module
+        .declare_function("rca_tcp_close", Linkage::Import, &tcp_close_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut udp_bind_sig = module.make_signature();
+    udp_bind_sig.params.push(AbiParam::new(types::I64));
+    udp_bind_sig.params.push(AbiParam::new(types::I64));
+    udp_bind_sig.returns.push(AbiParam::new(types::I64));
+    let udp_bind_func = module
+        .declare_function("rca_udp_bind", Linkage::Import, &udp_bind_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut udp_send_sig = module.make_signature();
+    udp_send_sig.params.push(AbiParam::new(types::I64));
+    udp_send_sig.params.push(AbiParam::new(types::I64));
+    udp_send_sig.params.push(AbiParam::new(types::I64));
+    udp_send_sig.params.push(AbiParam::new(types::I64));
+    udp_send_sig.returns.push(AbiParam::new(types::I64));
+    let udp_send_func = module
+        .declare_function("rca_udp_send", Linkage::Import, &udp_send_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut udp_recv_sig = module.make_signature();
+    udp_recv_sig.params.push(AbiParam::new(types::I64));
+    udp_recv_sig.params.push(AbiParam::new(types::I64));
+    udp_recv_sig.returns.push(AbiParam::new(types::I64));
+    let udp_recv_func = module
+        .declare_function("rca_udp_recv", Linkage::Import, &udp_recv_sig)
+        .map_err(|e| e.to_string())?;
+
+    let mut udp_close_sig = module.make_signature();
+    udp_close_sig.params.push(AbiParam::new(types::I64));
+    udp_close_sig.returns.push(AbiParam::new(types::I64));
+    let udp_close_func = module
+        .declare_function("rca_udp_close", Linkage::Import, &udp_close_sig)
+        .map_err(|e| e.to_string())?;
+
     // Format strings
     let mut fmt_int_data = DataDescription::new();
     fmt_int_data.define(b"%lld\n\0".to_vec().into_boxed_slice());
@@ -801,6 +865,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          str_trim_ref: FuncRef,
                          str_replace_ref: FuncRef,
                          str_split_ref: FuncRef,
+                         tcp_connect_ref: FuncRef,
+                         tcp_send_ref: FuncRef,
+                         tcp_recv_ref: FuncRef,
+                         tcp_close_ref: FuncRef,
+                         udp_bind_ref: FuncRef,
+                         udp_send_ref: FuncRef,
+                         udp_recv_ref: FuncRef,
+                         udp_close_ref: FuncRef,
                          free_ref: FuncRef,
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
@@ -3526,6 +3598,160 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     type_stack.push(StackType::Str);
                     builder.ins().jump(blocks[ip + 1], &[]);
                 }
+                Instruction::TcpConnect | Instruction::TcpSend | Instruction::TcpRecv => {
+                    let _ = (type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let b_pos = builder.ins().iadd_imm(sp, -1);
+                    let b_off = builder.ins().imul_imm(b_pos, 8);
+                    let b_addr = builder.ins().iadd(stack_base, b_off);
+                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let a_pos = builder.ins().iadd_imm(sp, -2);
+                    let a_off = builder.ins().imul_imm(a_pos, 8);
+                    let a_addr = builder.ins().iadd(stack_base, a_off);
+                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let (fref, out_ty) = match ins {
+                        Instruction::TcpConnect => (tcp_connect_ref, StackType::Int),
+                        Instruction::TcpSend => (tcp_send_ref, StackType::Int),
+                        _ => (tcp_recv_ref, StackType::Str),
+                    };
+                    let call = builder.ins().call(fref, &[a, b]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_err = if matches!(ins, Instruction::TcpSend) {
+                        builder.ins().icmp(IntCC::SignedLessThan, result, zero)
+                    } else {
+                        builder.ins().icmp(IntCC::Equal, result, zero)
+                    };
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_err, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, a_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(out_ty);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::TcpClose => {
+                    let _ = type_stack.pop();
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let pos = builder.ins().iadd_imm(sp, -1);
+                    let off = builder.ins().imul_imm(pos, 8);
+                    let addr = builder.ins().iadd(stack_base, off);
+                    let fd = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                    builder.ins().call(tcp_close_ref, &[fd]);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, addr, 0);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::UdpBind | Instruction::UdpRecv => {
+                    let _ = (type_stack.pop(), type_stack.pop());
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let b_pos = builder.ins().iadd_imm(sp, -1);
+                    let b_off = builder.ins().imul_imm(b_pos, 8);
+                    let b_addr = builder.ins().iadd(stack_base, b_off);
+                    let b = builder.ins().load(types::I64, MemFlags::new(), b_addr, 0);
+                    let a_pos = builder.ins().iadd_imm(sp, -2);
+                    let a_off = builder.ins().imul_imm(a_pos, 8);
+                    let a_addr = builder.ins().iadd(stack_base, a_off);
+                    let a = builder.ins().load(types::I64, MemFlags::new(), a_addr, 0);
+                    let is_bind = matches!(ins, Instruction::UdpBind);
+                    let fref = if is_bind { udp_bind_ref } else { udp_recv_ref };
+                    let call = builder.ins().call(fref, &[a, b]);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_err = builder.ins().icmp(IntCC::Equal, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_err, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, a_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -1);
+                    builder.def_var(sp_var, new_sp);
+                    if is_bind {
+                        type_stack.push(StackType::Int);
+                    } else {
+                        let tuple_id = {
+                            let mut reg = tuple_types_registry.borrow_mut();
+                            let id = reg.len() as u32;
+                            reg.push(vec![ElemType::Str, ElemType::Str, ElemType::Int]);
+                            id
+                        };
+                        type_stack.push(StackType::Tuple(tuple_id));
+                    }
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::UdpSend => {
+                    for _ in 0..4 {
+                        let _ = type_stack.pop();
+                    }
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let mut args = Vec::new();
+                    let mut first_addr = None;
+                    for k in (1..=4).rev() {
+                        let pos = builder.ins().iadd_imm(sp, -k);
+                        let off = builder.ins().imul_imm(pos, 8);
+                        let addr = builder.ins().iadd(stack_base, off);
+                        if first_addr.is_none() {
+                            first_addr = Some(addr);
+                        }
+                        args.push(builder.ins().load(types::I64, MemFlags::new(), addr, 0));
+                    }
+                    let res_addr = first_addr.unwrap();
+                    let call = builder.ins().call(udp_send_ref, &args);
+                    let result = builder.inst_results(call)[0];
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let is_err = builder.ins().icmp(IntCC::SignedLessThan, result, zero);
+                    let err_blk = builder.create_block();
+                    let ok_blk = builder.create_block();
+                    builder.ins().brif(is_err, err_blk, &[], ok_blk, &[]);
+                    builder.switch_to_block(err_blk);
+                    builder.seal_block(err_blk);
+                    let one = builder.ins().iconst(types::I32, 1);
+                    builder.ins().call(exit_ref, &[one]);
+                    let zero_i32 = builder.ins().iconst(types::I32, 0);
+                    builder.ins().return_(&[zero_i32]);
+                    builder.switch_to_block(ok_blk);
+                    builder.seal_block(ok_blk);
+                    builder.ins().store(MemFlags::new(), result, res_addr, 0);
+                    let new_sp = builder.ins().iadd_imm(sp, -3);
+                    builder.def_var(sp_var, new_sp);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
+                Instruction::UdpClose => {
+                    let _ = type_stack.pop();
+                    let sp = builder.use_var(sp_var);
+                    let stack_base = builder.ins().stack_addr(types::I64, stack_slot, 0);
+                    let pos = builder.ins().iadd_imm(sp, -1);
+                    let off = builder.ins().imul_imm(pos, 8);
+                    let addr = builder.ins().iadd(stack_base, off);
+                    let fd = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                    builder.ins().call(udp_close_ref, &[fd]);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, addr, 0);
+                    type_stack.push(StackType::Int);
+                    builder.ins().jump(blocks[ip + 1], &[]);
+                }
                 other => {
                     return Err(format!(
                         "native codegen: {:?} not yet implemented (use `rca run` for VM)",
@@ -3623,6 +3849,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
         let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
         let str_split_ref = module.declare_func_in_func(str_split_func, builder.func);
+        let tcp_connect_ref = module.declare_func_in_func(tcp_connect_func, builder.func);
+        let tcp_send_ref = module.declare_func_in_func(tcp_send_func, builder.func);
+        let tcp_recv_ref = module.declare_func_in_func(tcp_recv_func, builder.func);
+        let tcp_close_ref = module.declare_func_in_func(tcp_close_func, builder.func);
+        let udp_bind_ref = module.declare_func_in_func(udp_bind_func, builder.func);
+        let udp_send_ref = module.declare_func_in_func(udp_send_func, builder.func);
+        let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
+        let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
         #[allow(unused_variables)]
         let free_ref = module.declare_func_in_func(free_func, builder.func);
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
@@ -3705,6 +3939,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             str_trim_ref,
             str_replace_ref,
             str_split_ref,
+            tcp_connect_ref,
+            tcp_send_ref,
+            tcp_recv_ref,
+            tcp_close_ref,
+            udp_bind_ref,
+            udp_send_ref,
+            udp_recv_ref,
+            udp_close_ref,
             free_ref,
             int_to_str_ref,
             float_to_str_ref,
@@ -3840,6 +4082,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let str_trim_ref = module.declare_func_in_func(str_trim_func, builder.func);
             let str_replace_ref = module.declare_func_in_func(str_replace_func, builder.func);
             let str_split_ref = module.declare_func_in_func(str_split_func, builder.func);
+            let tcp_connect_ref = module.declare_func_in_func(tcp_connect_func, builder.func);
+            let tcp_send_ref = module.declare_func_in_func(tcp_send_func, builder.func);
+            let tcp_recv_ref = module.declare_func_in_func(tcp_recv_func, builder.func);
+            let tcp_close_ref = module.declare_func_in_func(tcp_close_func, builder.func);
+            let udp_bind_ref = module.declare_func_in_func(udp_bind_func, builder.func);
+            let udp_send_ref = module.declare_func_in_func(udp_send_func, builder.func);
+            let udp_recv_ref = module.declare_func_in_func(udp_recv_func, builder.func);
+            let udp_close_ref = module.declare_func_in_func(udp_close_func, builder.func);
             #[allow(unused_variables)]
             let free_ref = module.declare_func_in_func(free_func, builder.func);
             let free_ref = module.declare_func_in_func(free_func, builder.func);
@@ -3931,6 +4181,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 str_trim_ref,
                 str_replace_ref,
                 str_split_ref,
+                tcp_connect_ref,
+                tcp_send_ref,
+                tcp_recv_ref,
+                tcp_close_ref,
+                udp_bind_ref,
+                udp_send_ref,
+                udp_recv_ref,
+                udp_close_ref,
                 free_ref,
                 int_to_str_ref,
                 float_to_str_ref,

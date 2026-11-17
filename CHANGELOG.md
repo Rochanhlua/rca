@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Implemented:** §5/Phase 3 native codegen — TCP and UDP via FFI. New `rca_tcp_connect/send/recv/close` and `rca_udp_bind/send/recv/close` in `src/runtime/ffi.rs`; codegen lowers `Tcp*`/`Udp*` instructions to Cranelift calls. `udp_recv` returns a native tuple `(data, src_host, src_port)`. Native sockets are integer fd handles. New `tests/native_tcp.rs` and `tests/native_udp.rs` (loopback).
 - **Fixed:** Phase 3 native codegen — `librca.lib` (Windows MSVC staticlib) is now looked up first, falling back to `librca.a` (Linux/macOS). `rcac build` links correctly on all three CI platforms.
 - **Fixed:** Phase 3 native codegen — `librca.a` lookup now falls back to the parent directory of the `rcac` binary, so `rcac build` works from `target/debug/deps/` (test binaries). CI workflow gains a `cargo build` step before `cargo test` so the staticlib is present for native linking tests.
 - **Implemented:** §5/Phase 3 native codegen — `str()`, `int(str)`, `float(str)` now work in native. New FFI helpers `rca_int_to_str`, `rca_float_to_str`, `rca_bool_to_str`, `rca_str_to_int`, `rca_str_to_float` in `src/runtime/ffi.rs`; codegen declares and calls them via Cranelift. Native results match the VM. New `tests/native_conversions.rs` (5 tests).

@@ -76,7 +76,7 @@ HTTP:
 - **No chunked transfer encoding** handling in HTTP; a chunked response
   is returned verbatim in the body.
 - **No redirects, headers, cookies** — plain request/response body only.
-- **No native codegen** for network ops; use `rcac run`.
+- TCP and UDP work in native builds via FFI. Native sockets are integer fd handles, so `print(sock)` prints a number rather than `<socket>`. HTTP/HTTPS native support is separate (see CHANGELOG).
 
 ## 6. TLS (HTTPS)
 `https://` URLs work via `rustls 0.23` with the `aws-lc-rs` backend and
