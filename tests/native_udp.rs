@@ -13,7 +13,9 @@ fn native_udp_loopback() {
     let rcac = env!("CARGO_BIN_EXE_rcac");
     let b = Command::new(rcac).arg("build").arg(&src).output().unwrap();
     assert!(b.status.success(), "{}", String::from_utf8_lossy(&b.stderr));
-    let out = Command::new(dir.join("t_udp")).output().unwrap();
+    let out = Command::new(dir.join(if cfg!(windows) { "t_udp.exe" } else { "t_udp" }))
+        .output()
+        .unwrap();
     assert!(
         out.status.success(),
         "{}",
