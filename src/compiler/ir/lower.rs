@@ -525,6 +525,19 @@ impl Compiler {
             HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            // Step 4b-11: list and tuple literals, same bytecode as compile_expr.
+            HExprKind::Tuple(items) => {
+                for item in items {
+                    self.compile_hexpr(item)?;
+                }
+                self.emit(Instruction::MakeTuple(items.len()), span);
+            }
+            HExprKind::List(items) => {
+                for item in items {
+                    self.compile_hexpr(item)?;
+                }
+                self.emit(Instruction::MakeList(items.len()), span);
+            }
             // Step 4b-6: unary and binary operators, same bytecode as compile_expr.
             HExprKind::Unary { op, operand } => {
                 self.compile_hexpr(operand)?;
