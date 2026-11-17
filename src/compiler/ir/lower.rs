@@ -65,6 +65,25 @@ struct Compiler {
     map_key_types: HashMap<(String, String), Type>,
 }
 
+/// Builtins that compile to their arguments followed by one instruction.
+fn simple_builtin(name: &str) -> Option<(usize, Instruction)> {
+    Some(match name {
+        "matmul" => (2, Instruction::MatMul),
+        "conv2d" => (2, Instruction::Conv2d),
+        "mse" => (2, Instruction::TensorMse),
+        "sgd" => (3, Instruction::TensorSgd),
+        "track" => (1, Instruction::Track),
+        "grad" => (2, Instruction::Grad),
+        "reshape" => (2, Instruction::TensorReshape),
+        "softmax" => (1, Instruction::TensorSoftmax),
+        "len" => (1, Instruction::Len),
+        "json_parse" => (1, Instruction::JsonParse),
+        "json_stringify" => (1, Instruction::JsonStringify),
+        "udp_bind" => (2, Instruction::UdpBind),
+        _ => return None,
+    })
+}
+
 fn err(message: impl Into<String>, span: &Span) -> Diagnostic {
     Diagnostic::new(message, span.clone())
 }
@@ -577,6 +596,34 @@ impl Compiler {
             HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            // Step 4b-16: simple builtins (fixed arity, one instruction).
+            HExprKind::Call { callee, args }
+                if matches!(&callee.kind,
+                    HExprKind::Ident(n) if n == "print" || simple_builtin(n).is_some()) =>
+            {
+                let name = match &callee.kind {
+                    HExprKind::Ident(n) => n.as_str(),
+                    _ => unreachable!(),
+                };
+                if name == "print" {
+                    for a in args {
+                        self.compile_hexpr(&a.value)?;
+                    }
+                    self.emit(Instruction::Print(args.len()), span);
+                } else if let Some((arity, ins)) = simple_builtin(name) {
+                    if args.len() != arity {
+                        let plural = if arity == 1 { "argument" } else { "arguments" };
+                        return Err(err(
+                            format!("{}() takes exactly {} {}", name, arity, plural),
+                            span,
+                        ));
+                    }
+                    for a in args {
+                        self.compile_hexpr(&a.value)?;
+                    }
+                    self.emit(ins, span);
+                }
+            }
             // Step 4b-14: field read, enum variant and module-qualified global,
             // same bytecode as compile_expr.
             HExprKind::Field { object, name } => {

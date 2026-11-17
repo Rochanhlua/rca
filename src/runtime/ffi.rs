@@ -752,3 +752,285 @@ pub unsafe extern "C" fn rca_hmac_sha256(
     };
     alloc_c_string(&crate::runtime::crypto::hmac_sha256(key, msg))
 }
+
+// ================= PHASE3_TENSOR_SHIMS =================
+
+/// # Safety
+/// Caller must ensure pointer is valid tensor layout or null.
+#[inline]
+unsafe fn t_rank(p: *const u8) -> i64 {
+    unsafe { *(p.add(8) as *const i64) }
+}
+
+/// # Safety
+/// Caller must ensure pointer is valid tensor layout or null.
+#[inline]
+unsafe fn t_dim(p: *const u8, i: usize) -> i64 {
+    unsafe { *(p.add(16 + i * 8) as *const i64) }
+}
+
+/// # Safety
+/// Caller must ensure pointer is valid tensor layout or null.
+#[inline]
+unsafe fn t_len(p: *const u8) -> i64 {
+    unsafe { *(p.add(16 + t_rank(p) as usize * 8) as *const i64) }
+}
+
+/// # Safety
+/// Caller must ensure pointer is valid tensor layout or null.
+#[inline]
+unsafe fn t_data(p: *const u8) -> *const f64 {
+    unsafe { p.add(24 + t_rank(p) as usize * 8) as *const f64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rca_t_malloc(n: usize) -> *mut u8 {
+    if n == 0 {
+        return std::ptr::null_mut();
+    }
+    let layout = std::alloc::Layout::from_size_align(n, 8).unwrap();
+    unsafe { std::alloc::alloc(layout) }
+}
+
+/// # Safety
+/// Caller must ensure shape elements are non-negative.
+unsafe fn t_alloc(shape: &[i64]) -> *mut u8 {
+    unsafe {
+        let rank = shape.len();
+        let total: i64 = shape.iter().product();
+        if total < 0 {
+            return core::ptr::null_mut();
+        }
+        let bytes = 24 + rank * 8 + (total as usize) * 8;
+        let p = rca_t_malloc(bytes);
+        if p.is_null() {
+            return p;
+        }
+        *(p as *mut i64) = 1;
+        *(p.add(8) as *mut i64) = rank as i64;
+        for (i, d) in shape.iter().enumerate() {
+            *(p.add(16 + i * 8) as *mut i64) = *d;
+        }
+        *(p.add(16 + rank * 8) as *mut i64) = total;
+        p
+    }
+}
+
+/// # Safety
+/// Pointers must be valid 2D tensors with compatible dimensions or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_matmul(a: *const u8, b: *const u8) -> *mut u8 {
+    unsafe {
+        if a.is_null() || b.is_null() {
+            return core::ptr::null_mut();
+        }
+        if t_rank(a) != 2 || t_rank(b) != 2 {
+            return core::ptr::null_mut();
+        }
+        let m = t_dim(a, 0);
+        let k = t_dim(a, 1);
+        let k2 = t_dim(b, 0);
+        let n = t_dim(b, 1);
+        if k != k2 || m <= 0 || n <= 0 || k <= 0 {
+            return core::ptr::null_mut();
+        }
+        let out = t_alloc(&[m, n]);
+        if out.is_null() {
+            return out;
+        }
+        let ad = t_data(a);
+        let bd = t_data(b);
+        let od = t_data(out) as *mut f64;
+        for i in 0..m as usize {
+            for j in 0..n as usize {
+                let mut acc = 0.0f64;
+                for x in 0..k as usize {
+                    acc += *ad.add(i * k as usize + x) * *bd.add(x * n as usize + j);
+                }
+                *od.add(i * n as usize + j) = acc;
+            }
+        }
+        out
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid 2D tensor or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_transpose(a: *const u8) -> *mut u8 {
+    unsafe {
+        if a.is_null() || t_rank(a) != 2 {
+            return core::ptr::null_mut();
+        }
+        let r = t_dim(a, 0);
+        let c = t_dim(a, 1);
+        let out = t_alloc(&[c, r]);
+        if out.is_null() {
+            return out;
+        }
+        let ad = t_data(a);
+        let od = t_data(out) as *mut f64;
+        for i in 0..r as usize {
+            for j in 0..c as usize {
+                *od.add(j * r as usize + i) = *ad.add(i * c as usize + j);
+            }
+        }
+        out
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid tensor with last dim > 0 or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_softmax(a: *const u8) -> *mut u8 {
+    unsafe {
+        if a.is_null() {
+            return core::ptr::null_mut();
+        }
+        let rank = t_rank(a);
+        if rank < 1 {
+            return core::ptr::null_mut();
+        }
+        let mut shape = Vec::with_capacity(rank as usize);
+        for i in 0..rank as usize {
+            shape.push(t_dim(a, i));
+        }
+        let last = *shape.last().unwrap();
+        if last <= 0 {
+            return core::ptr::null_mut();
+        }
+        let total = t_len(a);
+        let out = t_alloc(&shape);
+        if out.is_null() {
+            return out;
+        }
+        let ad = t_data(a);
+        let od = t_data(out) as *mut f64;
+        let w = last as usize;
+        let rows = (total / last) as usize;
+        for r in 0..rows {
+            let base = r * w;
+            let mut mx = f64::NEG_INFINITY;
+            for j in 0..w {
+                mx = mx.max(*ad.add(base + j));
+            }
+            let mut sum = 0.0f64;
+            for j in 0..w {
+                let e = (*ad.add(base + j) - mx).exp();
+                *od.add(base + j) = e;
+                sum += e;
+            }
+            if sum == 0.0 {
+                return core::ptr::null_mut();
+            }
+            for j in 0..w {
+                *od.add(base + j) /= sum;
+            }
+        }
+        out
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid tensor or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_sum(a: *const u8) -> i64 {
+    unsafe {
+        if a.is_null() {
+            return 0;
+        }
+        let d = t_data(a);
+        let n = t_len(a) as usize;
+        let mut s = 0.0f64;
+        for i in 0..n {
+            s += *d.add(i);
+        }
+        s.to_bits() as i64
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid tensor or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_mean(a: *const u8) -> i64 {
+    unsafe {
+        if a.is_null() {
+            return 0;
+        }
+        let d = t_data(a);
+        let n = t_len(a) as usize;
+        if n == 0 {
+            return 0.0f64.to_bits() as i64;
+        }
+        let mut s = 0.0f64;
+        for i in 0..n {
+            s += *d.add(i);
+        }
+        (s / n as f64).to_bits() as i64
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid tensor or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_max(a: *const u8) -> i64 {
+    unsafe {
+        if a.is_null() {
+            return 0;
+        }
+        let d = t_data(a);
+        let n = t_len(a) as usize;
+        if n == 0 {
+            return 0.0f64.to_bits() as i64;
+        }
+        let mut m = *d;
+        for i in 1..n {
+            m = m.max(*d.add(i));
+        }
+        m.to_bits() as i64
+    }
+}
+
+/// # Safety
+/// Pointer must be a valid tensor or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_min(a: *const u8) -> i64 {
+    unsafe {
+        if a.is_null() {
+            return 0;
+        }
+        let d = t_data(a);
+        let n = t_len(a) as usize;
+        if n == 0 {
+            return 0.0f64.to_bits() as i64;
+        }
+        let mut m = *d;
+        for i in 1..n {
+            m = m.min(*d.add(i));
+        }
+        m.to_bits() as i64
+    }
+}
+
+/// # Safety
+/// Both pointers must be valid tensors of equal length or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_mse(a: *const u8, b: *const u8) -> i64 {
+    unsafe {
+        if a.is_null() || b.is_null() {
+            return 0;
+        }
+        let n = t_len(a);
+        if n != t_len(b) || n == 0 {
+            return 0.0f64.to_bits() as i64;
+        }
+        let ad = t_data(a);
+        let bd = t_data(b);
+        let mut s = 0.0f64;
+        for i in 0..n as usize {
+            let d = *ad.add(i) - *bd.add(i);
+            s += d * d;
+        }
+        (s / n as f64).to_bits() as i64
+    }
+}
