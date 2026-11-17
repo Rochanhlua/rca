@@ -554,6 +554,29 @@ impl Compiler {
             HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
             HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
             HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            // Step 4b-14: field read, enum variant and module-qualified global,
+            // same bytecode as compile_expr.
+            HExprKind::Field { object, name } => {
+                if let HExprKind::Ident(en) = &object.kind
+                    && self.resolve(en).is_none()
+                    && !self.module_aliases.contains_key(en)
+                {
+                    self.emit(Instruction::PushEnum(en.clone(), name.clone()), span);
+                    return Ok(());
+                }
+                if let HExprKind::Ident(m) = &object.kind
+                    && self.resolve(m).is_none()
+                    && let Some(module) = self.module_aliases.get(m).cloned()
+                {
+                    let qualified = format!("{}::{}", module, name);
+                    if let Some(&slot) = self.globals.get(&qualified) {
+                        self.emit(Instruction::LoadGlobal(slot), span);
+                        return Ok(());
+                    }
+                }
+                self.compile_hexpr(object)?;
+                self.emit(Instruction::GetField(name.clone()), span);
+            }
             // Step 4b-13: indexing, same bytecode as compile_expr.
             HExprKind::Index { object, index } => {
                 self.compile_hexpr(object)?;
