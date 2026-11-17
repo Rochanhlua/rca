@@ -363,7 +363,6 @@ impl Compiler {
 
     /// Step 4b-2: literals and identifiers are handled natively from HIR;
     /// every other variant still goes through the AST shim.
-
     pub fn compile_hexpr(&mut self, h: &crate::compiler::hir::HExpr) -> Result<(), Diagnostic> {
         use crate::compiler::hir::HExprKind;
         let span = &h.span;
