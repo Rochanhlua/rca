@@ -696,3 +696,59 @@ pub extern "C" fn rca_udp_close(fd: i64) -> i64 {
     }
     0
 }
+
+/// SHA-256 hex digest of a C string. Caller frees with `rca_free`.
+///
+/// # Safety
+///
+/// `s_ptr` must be a valid, non-null, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_sha256(s_ptr: *const c_char) -> *mut c_char {
+    if s_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    match unsafe { CStr::from_ptr(s_ptr) }.to_str() {
+        Ok(s) => alloc_c_string(&crate::runtime::crypto::sha256(s)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// SHA-512 hex digest of a C string. Caller frees with `rca_free`.
+///
+/// # Safety
+///
+/// `s_ptr` must be a valid, non-null, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_sha512(s_ptr: *const c_char) -> *mut c_char {
+    if s_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    match unsafe { CStr::from_ptr(s_ptr) }.to_str() {
+        Ok(s) => alloc_c_string(&crate::runtime::crypto::sha512(s)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// HMAC-SHA256 hex digest. Caller frees with `rca_free`.
+///
+/// # Safety
+///
+/// `key_ptr` and `msg_ptr` must be valid, non-null, null-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_hmac_sha256(
+    key_ptr: *const c_char,
+    msg_ptr: *const c_char,
+) -> *mut c_char {
+    if key_ptr.is_null() || msg_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let key = match unsafe { CStr::from_ptr(key_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let msg = match unsafe { CStr::from_ptr(msg_ptr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    alloc_c_string(&crate::runtime::crypto::hmac_sha256(key, msg))
+}
