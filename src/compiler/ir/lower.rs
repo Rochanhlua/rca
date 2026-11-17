@@ -362,6 +362,25 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-5: plain `x = value`. Index/Field targets and the
+            // `m = map_set(m, ..)` pattern keep using the AST shim.
+            crate::compiler::hir::HStmtKind::Assign { target, value }
+                if matches!(&target.kind, crate::compiler::hir::HExprKind::Ident(_))
+                    && !matches!(&value.kind,
+                        crate::compiler::hir::HExprKind::Call { callee, .. }
+                            if matches!(&callee.kind,
+                                crate::compiler::hir::HExprKind::Ident(f) if f == "map_set")) =>
+            {
+                if let crate::compiler::hir::HExprKind::Ident(name) = &target.kind {
+                    self.map_key_types.retain(|(v, _), _| v != name);
+                    self.compile_hexpr(value)?;
+                    let var = self.resolve(name).ok_or_else(|| {
+                        err(format!("undefined variable '{}'", name), &target.span)
+                    })?;
+                    self.emit_store(var, &target.span);
+                }
+                return Ok(());
+            }
             _ => {}
         }
         let stmt = crate::compiler::hir::lower_hstmt_to_ast(h);
