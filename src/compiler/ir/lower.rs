@@ -330,15 +330,61 @@ impl Compiler {
                 return self.compile_function(f, &h.span);
             }
         }
+        // Step 4b-3: Return and plain expression statements are compiled
+        // natively from HIR. `x.push(..)` keeps going through the shim
+        // because compile_stmt special-cases it.
+        match &h.kind {
+            crate::compiler::hir::HStmtKind::Return(value) => {
+                match value {
+                    Some(e) => self.compile_hexpr(e)?,
+                    None => self.emit(Instruction::PushNone, &h.span),
+                }
+                self.emit(Instruction::Return, &h.span);
+                return Ok(());
+            }
+            crate::compiler::hir::HStmtKind::Expr(e) => {
+                let is_push = matches!(
+                    &e.kind,
+                    crate::compiler::hir::HExprKind::Call { callee, .. }
+                        if matches!(&callee.kind,
+                            crate::compiler::hir::HExprKind::Field { name, .. } if name == "push")
+                );
+                if !is_push {
+                    self.compile_hexpr(e)?;
+                    self.emit(Instruction::Pop, &h.span);
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
         let stmt = crate::compiler::hir::lower_hstmt_to_ast(h);
         self.compile_stmt(&stmt)
     }
 
-    /// Step 4b-1: HIR expression -> AST (temporary shim) -> existing compile path.
-    #[allow(dead_code)] // used in step 4b-2+
+    /// Step 4b-2: literals and identifiers are handled natively from HIR;
+    /// every other variant still goes through the AST shim.
+
     pub fn compile_hexpr(&mut self, h: &crate::compiler::hir::HExpr) -> Result<(), Diagnostic> {
-        let expr = crate::compiler::hir::lower_hexpr_to_aexpr(h);
-        self.compile_expr(&expr)
+        use crate::compiler::hir::HExprKind;
+        let span = &h.span;
+        match &h.kind {
+            HExprKind::Int(n) => self.emit(Instruction::PushInt(*n), span),
+            HExprKind::Float(x) => self.emit(Instruction::PushFloat(*x), span),
+            HExprKind::Char(c) => self.emit(Instruction::PushChar(*c), span),
+            HExprKind::Str(s) => self.emit(Instruction::PushStr(s.clone()), span),
+            HExprKind::Bool(b) => self.emit(Instruction::PushBool(*b), span),
+            HExprKind::NoneLit => self.emit(Instruction::PushNone, span),
+            HExprKind::Ident(name) => match self.resolve(name) {
+                Some(VarRef::Local(s)) => self.emit(Instruction::LoadLocal(s), span),
+                Some(VarRef::Global(s)) => self.emit(Instruction::LoadGlobal(s), span),
+                None => return Err(err(format!("undefined variable '{}'", name), span)),
+            },
+            _ => {
+                let expr = crate::compiler::hir::lower_hexpr_to_aexpr(h);
+                return self.compile_expr(&expr);
+            }
+        }
+        Ok(())
     }
 
     fn compile_function(&mut self, f: &FunctionDecl, span: &Span) -> Result<(), Diagnostic> {
