@@ -1124,3 +1124,107 @@ pub unsafe extern "C" fn rca_tensor_sgd(w: *const u8, g: *const u8, lr_bits: i64
         p
     }
 }
+
+static TRACKED_REGISTRY: Mutex<
+    Option<HashMap<i64, std::sync::Arc<crate::runtime::autodiff::Tracked>>>,
+> = Mutex::new(None);
+
+fn tracked_registry() -> std::sync::MutexGuard<
+    'static,
+    Option<HashMap<i64, std::sync::Arc<crate::runtime::autodiff::Tracked>>>,
+> {
+    TRACKED_REGISTRY.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Wrap a native tensor as a tracked autodiff leaf. Returns a positive handle on success, 0 on error.
+///
+/// # Safety
+///
+/// `t` must be a valid native tensor pointer or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_track(t: *const u8) -> i64 {
+    unsafe {
+        if t.is_null() {
+            return 0;
+        }
+        let rank = t_rank(t);
+        if rank <= 0 {
+            return 0;
+        }
+        let mut shape: Vec<usize> = Vec::with_capacity(rank as usize);
+        for i in 0..rank as usize {
+            let d = *(t.add(16 + i * 8) as *const i64);
+            if d <= 0 {
+                return 0;
+            }
+            shape.push(d as usize);
+        }
+        let n = t_len(t);
+        if n <= 0 {
+            return 0;
+        }
+        let src = t_data(t);
+        let mut data: Vec<f64> = Vec::with_capacity(n as usize);
+        for i in 0..n as usize {
+            data.push(*src.add(i));
+        }
+        let tracked = crate::runtime::autodiff::leaf(shape, std::sync::Arc::new(data));
+        let handle = next_fd();
+        tracked_registry()
+            .get_or_insert_with(HashMap::new)
+            .insert(handle, std::sync::Arc::new(tracked));
+        handle
+    }
+}
+
+/// Compute the gradient of `y` with respect to `x` (both tracked handles).
+/// Returns a new native tensor (dY/dX), or null on error.
+///
+/// # Safety
+///
+/// Handles must come from `rca_tensor_track`. Returned pointer is caller-owned.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_grad(y: i64, x: i64) -> *mut u8 {
+    unsafe {
+        let reg = tracked_registry();
+        let map = match reg.as_ref() {
+            Some(m) => m,
+            None => return std::ptr::null_mut(),
+        };
+        let yt = match map.get(&y) {
+            Some(t) => t.clone(),
+            None => return std::ptr::null_mut(),
+        };
+        let xt = match map.get(&x) {
+            Some(t) => t.clone(),
+            None => return std::ptr::null_mut(),
+        };
+        drop(reg);
+        let (shape, data) = match crate::runtime::autodiff::grad(&yt, &xt) {
+            Ok(v) => v,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let rank = shape.len() as i64;
+        let total = data.len() as i64;
+        if total == 0 {
+            return std::ptr::null_mut();
+        }
+        let bytes = 24 + rank as usize * 8 + total as usize * 8;
+        let layout = std::alloc::Layout::from_size_align(bytes, 8).unwrap();
+        let p = std::alloc::alloc(layout);
+        if p.is_null() {
+            return p;
+        }
+        *(p as *mut i64) = 1;
+        *(p.add(8) as *mut i64) = rank;
+        for (i, d) in shape.iter().enumerate() {
+            *(p.add(16 + i * 8) as *mut i64) = *d as i64;
+        }
+        *(p.add(16 + rank as usize * 8) as *mut i64) = total;
+        let dst = p.add(24 + rank as usize * 8) as *mut f64;
+        for (i, v) in data.iter().enumerate() {
+            *dst.add(i) = *v;
+        }
+        p
+    }
+}
