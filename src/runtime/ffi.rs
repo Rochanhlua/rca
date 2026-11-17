@@ -1034,3 +1034,93 @@ pub unsafe extern "C" fn rca_tensor_mse(a: *const u8, b: *const u8) -> i64 {
         (s / n as f64).to_bits() as i64
     }
 }
+
+/// Reshape tensor `t` to the shape given by native list `shape`.
+/// Shape list layout: `[refcount, len, dim0, dim1, ...]`.
+/// Returns new tensor pointer, or null on error.
+///
+/// # Safety
+///
+/// `t` and `shape` must be valid native tensor/list pointers or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_reshape(t: *const u8, shape: *const i64) -> *mut u8 {
+    unsafe {
+        if t.is_null() || shape.is_null() {
+            return std::ptr::null_mut();
+        }
+        let old_len = t_len(t);
+        let shape_rank = *shape.add(1) as usize;
+        let mut new_dims: Vec<i64> = Vec::with_capacity(shape_rank);
+        let mut new_total: i64 = 1;
+        for i in 0..shape_rank {
+            let d = *shape.add(2 + i);
+            if d < 0 {
+                return std::ptr::null_mut();
+            }
+            new_dims.push(d);
+            new_total = new_total.saturating_mul(d);
+        }
+        if new_total != old_len {
+            return std::ptr::null_mut();
+        }
+        let new_rank = new_dims.len() as i64;
+        let bytes = 24 + new_rank as usize * 8 + new_total as usize * 8;
+        let layout = std::alloc::Layout::from_size_align(bytes, 8).unwrap();
+        let p = std::alloc::alloc(layout);
+        if p.is_null() {
+            return p;
+        }
+        *(p as *mut i64) = 1;
+        *(p.add(8) as *mut i64) = new_rank;
+        for (i, d) in new_dims.iter().enumerate() {
+            *(p.add(16 + i * 8) as *mut i64) = *d;
+        }
+        *(p.add(16 + new_rank as usize * 8) as *mut i64) = new_total;
+        let src = t_data(t);
+        let dst = p.add(24 + new_rank as usize * 8) as *mut f64;
+        for i in 0..new_total as usize {
+            *dst.add(i) = *src.add(i);
+        }
+        p
+    }
+}
+
+/// SGD update: `w - lr * g` element-wise, returns new tensor.
+/// `lr_bits` is the f64 learning rate passed as bit-pattern.
+///
+/// # Safety
+///
+/// `w` and `g` must be valid native tensor pointers or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_sgd(w: *const u8, g: *const u8, lr_bits: i64) -> *mut u8 {
+    unsafe {
+        if w.is_null() || g.is_null() {
+            return std::ptr::null_mut();
+        }
+        let n = t_len(w);
+        if n != t_len(g) || n == 0 {
+            return std::ptr::null_mut();
+        }
+        let lr = f64::from_bits(lr_bits as u64);
+        let rank = t_rank(w);
+        let bytes = 24 + rank as usize * 8 + n as usize * 8;
+        let layout = std::alloc::Layout::from_size_align(bytes, 8).unwrap();
+        let p = std::alloc::alloc(layout);
+        if p.is_null() {
+            return p;
+        }
+        *(p as *mut i64) = 1;
+        *(p.add(8) as *mut i64) = rank;
+        for i in 0..rank as usize {
+            *(p.add(16 + i * 8) as *mut i64) = *(w.add(16 + i * 8) as *const i64);
+        }
+        *(p.add(16 + rank as usize * 8) as *mut i64) = n;
+        let wd = t_data(w);
+        let gd = t_data(g);
+        let dst = p.add(24 + rank as usize * 8) as *mut f64;
+        for i in 0..n as usize {
+            *dst.add(i) = *wd.add(i) - lr * *gd.add(i);
+        }
+        p
+    }
+}
