@@ -362,6 +362,29 @@ impl Compiler {
                 self.emit_store(var, &h.span);
                 return Ok(());
             }
+            // Step 4b-15: tuple destructuring, same code as desugar_let_tuple:
+            // a hidden `$tuple_<line>_<col>` local, then `name = hidden[i]`.
+            crate::compiler::hir::HStmtKind::LetTuple { names, value, .. } => {
+                let hidden = format!("$tuple_{}_{}", h.span.line, h.span.column);
+                self.map_key_types.retain(|(v, _), _| v != &hidden);
+                self.compile_hexpr(value)?;
+                let var = self.declare_var(&hidden);
+                self.emit_store(var, &h.span);
+                for (i, n) in names.iter().enumerate() {
+                    self.map_key_types.retain(|(v, _), _| v != n);
+                    let hv = self
+                        .resolve(&hidden)
+                        .ok_or_else(|| err("internal: missing tuple temporary", &h.span))?;
+                    match hv {
+                        VarRef::Local(sl) => self.emit(Instruction::LoadLocal(sl), &h.span),
+                        VarRef::Global(sl) => self.emit(Instruction::LoadGlobal(sl), &h.span),
+                    }
+                    self.emit(Instruction::IndexAt(i as i64), &h.span);
+                    let nv = self.declare_var(n);
+                    self.emit_store(nv, &h.span);
+                }
+                return Ok(());
+            }
             // Step 4b-12: try / catch, same bytecode as compile_stmt.
             crate::compiler::hir::HStmtKind::Try {
                 body,
