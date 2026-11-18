@@ -545,6 +545,17 @@ impl Parser {
     fn parse_function(&mut self) -> Result<FunctionDecl, Diagnostic> {
         self.advance(); // fn
         let (name, _) = self.expect_ident("a function name")?;
+        let mut type_params: Vec<String> = Vec::new();
+        if self.eat(&TokenKind::LBracket) {
+            loop {
+                let (tp, _) = self.expect_ident("a type parameter name")?;
+                type_params.push(tp);
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(&TokenKind::RBracket, "']' after type parameters")?;
+        }
         self.expect(&TokenKind::LParen, "'('")?;
         let mut params = Vec::new();
         if !self.check(&TokenKind::RParen) {
@@ -581,6 +592,7 @@ impl Parser {
             name,
             params,
             return_type,
+            type_params,
             body,
             public: false,
         })

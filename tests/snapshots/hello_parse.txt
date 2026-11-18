@@ -111,6 +111,7 @@ Program {
         Stmt {
             kind: Function(
                 FunctionDecl {
+                    type_params: [],
                     name: "add",
                     params: [
                         Param {

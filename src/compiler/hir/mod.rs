@@ -188,6 +188,7 @@ pub enum HStmtKind {
 
 #[derive(Debug, Clone)]
 pub struct HFunction {
+    pub type_params: Vec<String>,
     pub name: String,
     pub params: Vec<HParam>,
     pub return_type: Option<TypeExpr>,
@@ -264,6 +265,7 @@ fn lower_block(stmts: &[Stmt], types: &HashMap<(usize, usize), Type>) -> Vec<HSt
 
 fn lower_fn_decl(f: &FunctionDecl, types: &HashMap<(usize, usize), Type>) -> HFunction {
     HFunction {
+        type_params: f.type_params.clone(),
         name: f.name.clone(),
         params: f
             .params
@@ -520,6 +522,7 @@ pub fn lower_hstmt_to_ast(h: &HStmt) -> Stmt {
             body: lower_block_to_ast(body),
         },
         HStmtKind::Function(f) => StmtKind::Function(FunctionDecl {
+            type_params: f.type_params.clone(),
             name: f.name.clone(),
             params: f
                 .params

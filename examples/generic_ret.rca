@@ -1,0 +1,7 @@
+fn pick[T](a: T, b: T) -> T:
+    return a
+
+let n: Int = pick(1, 2)
+let s: String = pick("a", "b")
+print(n)
+print(s)
