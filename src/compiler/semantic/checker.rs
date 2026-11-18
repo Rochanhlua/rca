@@ -259,7 +259,14 @@ impl Checker {
                         name: p.name.clone(),
                         ty,
                         has_default: p.default.is_some(),
-                        generic: if p.ty.elements.is_empty() && p.ty.length.is_none() && f.type_params.contains(&p.ty.name) { Some(p.ty.name.clone()) } else { None },
+                        generic: if p.ty.elements.is_empty()
+                            && p.ty.length.is_none()
+                            && f.type_params.contains(&p.ty.name)
+                        {
+                            Some(p.ty.name.clone())
+                        } else {
+                            None
+                        },
                     });
                 }
                 let ret = match &f.return_type {
@@ -268,8 +275,14 @@ impl Checker {
                 };
                 self.functions
                     .insert(f.name.clone(), FuncSig { params, ret });
-                if let Some(rt) = &f.return_type && rt.elements.is_empty() && rt.length.is_none() && f.type_params.contains(&rt.name) { self.generic_ret.insert(f.name.clone(), rt.name.clone()); }
-                    self.type_params.clear();
+                if let Some(rt) = &f.return_type
+                    && rt.elements.is_empty()
+                    && rt.length.is_none()
+                    && f.type_params.contains(&rt.name)
+                {
+                    self.generic_ret.insert(f.name.clone(), rt.name.clone());
+                }
+                self.type_params.clear();
             }
         }
     }
@@ -1868,23 +1881,23 @@ impl Checker {
                 continue;
             }
             provided[index] = true;
-                if let Some(g) = sig.params[index].generic.clone() {
-                    if arg_ty != Type::Unknown {
-                        match bindings.get(&g) {
-                            Some(bound) if !Type::compatible(bound, &arg_ty) => {
-                                self.error(
-                                    format!("generic '{}' was {}, found {}", g, bound, arg_ty),
-                                    &arg.value.span,
-                                );
-                            }
-                            Some(_) => {}
-                            None => {
-                                bindings.insert(g, arg_ty.clone());
-                            }
+            if let Some(g) = sig.params[index].generic.clone() {
+                if arg_ty != Type::Unknown {
+                    match bindings.get(&g) {
+                        Some(bound) if !Type::compatible(bound, &arg_ty) => {
+                            self.error(
+                                format!("generic '{}' was {}, found {}", g, bound, arg_ty),
+                                &arg.value.span,
+                            );
+                        }
+                        Some(_) => {}
+                        None => {
+                            bindings.insert(g, arg_ty.clone());
                         }
                     }
-                    continue;
                 }
+                continue;
+            }
 
             let expected = &sig.params[index].ty;
             if !Type::compatible(expected, &arg_ty) {
@@ -1907,7 +1920,9 @@ impl Checker {
             }
         }
 
-        if let Some(g) = self.generic_ret.get(name) && let Some(t) = bindings.get(g) {
+        if let Some(g) = self.generic_ret.get(name)
+            && let Some(t) = bindings.get(g)
+        {
             return t.clone();
         }
         sig.ret.clone()
