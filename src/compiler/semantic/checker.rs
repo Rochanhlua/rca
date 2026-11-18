@@ -31,6 +31,7 @@ pub struct Checker {
     block_depth: usize,
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
+    type_params: Vec<String>,
     imports: HashMap<String, ModuleExports>,
     module_aliases: HashMap<String, String>,
     /// Span -> inferred type for every checked expression (used by HIR lowering).
@@ -49,6 +50,7 @@ impl Checker {
             block_depth: 0,
             functions: HashMap::new(),
             current_return: None,
+            type_params: Vec::new(),
             imports: HashMap::new(),
             module_aliases: HashMap::new(),
             expr_types: HashMap::new(),
@@ -116,6 +118,9 @@ impl Checker {
     // ---------- declarations (structs and functions) ----------
 
     fn resolve_type(&mut self, t: &TypeExpr, report: bool) -> Type {
+        if t.elements.is_empty() && t.length.is_none() && self.type_params.contains(&t.name) {
+            return Type::Unknown;
+        }
         if t.name == "List" && t.elements.len() == 1 && t.length.is_none() {
             let elem = self.resolve_type(&t.elements[0], report);
             return Type::List(Box::new(elem));
@@ -243,6 +248,7 @@ impl Checker {
                     self.error(format!("'{}' is already defined", f.name), &stmt.span);
                     continue;
                 }
+                self.type_params = f.type_params.clone();
                 let mut params = Vec::new();
                 for p in &f.params {
                     let ty = self.resolve_type(&p.ty, true);
@@ -258,6 +264,7 @@ impl Checker {
                 };
                 self.functions
                     .insert(f.name.clone(), FuncSig { params, ret });
+                    self.type_params.clear();
             }
         }
     }
@@ -276,6 +283,7 @@ impl Checker {
     }
 
     fn check_function(&mut self, f: &FunctionDecl, span: &Span) {
+        self.type_params = f.type_params.clone();
         let ret = match &f.return_type {
             Some(t) => self.resolve_type(t, false),
             None => Type::None,
@@ -305,6 +313,7 @@ impl Checker {
         }
         self.loop_depth = saved_loop;
         self.current_return = saved_return;
+        self.type_params.clear();
         if ret != Type::None && ret != Type::Unknown && !Self::always_returns(&f.body) {
             self.error(
                 format!(

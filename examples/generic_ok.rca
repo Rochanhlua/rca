@@ -1,0 +1,7 @@
+fn pick[T](a: T, b: T) -> T:
+    return a
+
+let n = pick(10, 20)
+let s = pick("rca", "lang")
+print(n)
+print(s)

@@ -89,6 +89,7 @@ pub struct Param {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
+    pub type_params: Vec<String>,
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
