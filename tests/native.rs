@@ -57,7 +57,7 @@ fn test_native_float_formatting() {
     );
 
     let run = Command::new(&exe).output().unwrap();
-    let stdout = String::from_utf8_lossy(&run.stdout);
+    let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
     assert_eq!(stdout, "42.0\n3.14\n3.375\n");
 
     std::fs::remove_file(&temp).ok();
