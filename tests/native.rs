@@ -37,3 +37,29 @@ fn test_native_build() {
     std::fs::remove_file(&temp).ok();
     std::fs::remove_file(&exe).ok();
 }
+
+#[test]
+fn test_native_float_formatting() {
+    let temp = std::env::temp_dir().join("native_float_fmt_test.rca");
+    std::fs::write(&temp, "print(42.0)\nprint(3.14)\nprint(3.375)\n").unwrap();
+
+    let exe = temp.with_extension("");
+    let obj = std::env::temp_dir().join("native_float_fmt_test.rca.o");
+    let build = Command::new(env!("CARGO_BIN_EXE_rcac"))
+        .args(["build", temp.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "Build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let run = Command::new(&exe).output().unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert_eq!(stdout, "42.0\n3.14\n3.375\n");
+
+    std::fs::remove_file(&temp).ok();
+    std::fs::remove_file(&exe).ok();
+    std::fs::remove_file(&obj).ok();
+}
