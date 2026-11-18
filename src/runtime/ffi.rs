@@ -1375,7 +1375,5 @@ unsafe fn struct_to_str(p: *const i64, layout: *const c_char) -> *mut c_char {
         }
     }
     out.push(')');
-    let r = cstring_from(out.clone());
-    eprintln!("DBG out={:?} ret={:?}", out, r);
-    r
+    cstring_from(out)
 }
