@@ -895,6 +895,30 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     module
         .define_data(fmt_lparen_id, &fmt_lparen_data)
         .map_err(|e| e.to_string())?;
+    let mut struct_layout_ids = Vec::new();
+    for (si, sinfo) in program.structs.iter().enumerate() {
+        let mut layout = sinfo.name.clone();
+        for (fname, fty) in sinfo.fields.iter().zip(sinfo.field_types.iter()) {
+            let k = match fty {
+                Type::Float => 'F',
+                Type::String => 'S',
+                Type::Bool => 'B',
+                _ => 'I',
+            };
+            layout.push('|');
+            layout.push_str(fname);
+            layout.push(':');
+            layout.push(k);
+        }
+        layout.push('\0');
+        let mut d = DataDescription::new();
+        d.define(layout.into_bytes().into_boxed_slice());
+        let id = module
+            .declare_data(&format!("struct_layout_{si}"), Linkage::Local, false, false)
+            .map_err(|e| e.to_string())?;
+        module.define_data(id, &d).map_err(|e| e.to_string())?;
+        struct_layout_ids.push(id);
+    }
 
     let mut fmt_rparen_data = DataDescription::new();
     fmt_rparen_data.define(b")\n\0".to_vec().into_boxed_slice());
@@ -1110,6 +1134,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          fmt_map_err_msg_ptr: Value,
                          param_types: &[Type],
                          struct_fields: &[StructInfo],
+                         struct_layouts: &[Value],
                          is_main: bool|
      -> Result<(), String> {
         let mut type_stack: Vec<StackType> = Vec::new();
@@ -1324,8 +1349,22 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 let r = builder.inst_results(call)[0];
                                 (r, StackType::Str)
                             }
-                            StackType::Struct(_) => {
-                                return Err("struct -> str not supported in native".to_string());
+                            StackType::Struct(sid) => {
+                                if struct_fields[sid].field_types.iter().any(|t| {
+                                    !matches!(
+                                        t,
+                                        Type::Int | Type::Float | Type::Bool | Type::String
+                                    )
+                                }) {
+                                    return Err("str(struct): unsupported field type".to_string());
+                                }
+                                let two = builder.ins().iconst(types::I64, 2);
+                                let call = builder
+                                    .ins()
+                                    .call(seq_to_str_ref, &[val, struct_layouts[sid], two]);
+                                let r = builder.inst_results(call)[0];
+                                emit_decref(builder, val, free_ref);
+                                (r, StackType::Str)
                             }
                             StackType::List(et) => {
                                 let k: i64 = match et {
@@ -2064,8 +2103,26 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                         let src = builder.ins().iadd(stack_addr, pos_off);
                         let val = builder.ins().load(types::I64, MemFlags::new(), src, 0);
                         match ty {
-                            StackType::Struct(_) => {
-                                return Err("struct display not supported".to_string());
+                            StackType::Struct(sid) => {
+                                if struct_fields[sid].field_types.iter().any(|t| {
+                                    !matches!(
+                                        t,
+                                        Type::Int | Type::Float | Type::Bool | Type::String
+                                    )
+                                }) {
+                                    return Err(
+                                        "struct display: unsupported field type".to_string()
+                                    );
+                                }
+                                let two = builder.ins().iconst(types::I64, 2);
+                                let call = builder
+                                    .ins()
+                                    .call(seq_to_str_ref, &[val, struct_layouts[sid], two]);
+                                let str_ptr = builder.inst_results(call)[0];
+                                let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
+                                builder.ins().call(printf_ref, &[fmt, str_ptr]);
+                                builder.ins().call(free_ref, &[str_ptr]);
+                                emit_decref(builder, val, free_ref);
                             }
                             StackType::Tensor => {
                                 let call = builder.ins().call(tensor_to_str_ref, &[val]);
@@ -4369,6 +4426,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
         let fmt_lparen_gv = module.declare_data_in_func(fmt_lparen_id, builder.func);
         let fmt_lparen_ptr = builder.ins().global_value(types::I64, fmt_lparen_gv);
+        let mut struct_layout_ptrs: Vec<Value> = Vec::new();
+        for lid in struct_layout_ids.iter() {
+            let lgv = module.declare_data_in_func(*lid, builder.func);
+            struct_layout_ptrs.push(builder.ins().global_value(types::I64, lgv));
+        }
         let fmt_rparen_gv = module.declare_data_in_func(fmt_rparen_id, builder.func);
         let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
         let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
@@ -4482,6 +4544,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             fmt_map_err_msg_ptr,
             &[],
             &program.structs,
+            &struct_layout_ptrs,
             true,
         )?;
         builder.finalize();
@@ -4630,6 +4693,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let fmt_oob_ptr = builder.ins().global_value(types::I64, fmt_oob_gv);
             let fmt_lparen_gv = module.declare_data_in_func(fmt_lparen_id, builder.func);
             let fmt_lparen_ptr = builder.ins().global_value(types::I64, fmt_lparen_gv);
+            let mut struct_layout_ptrs: Vec<Value> = Vec::new();
+            for lid in struct_layout_ids.iter() {
+                let lgv = module.declare_data_in_func(*lid, builder.func);
+                struct_layout_ptrs.push(builder.ins().global_value(types::I64, lgv));
+            }
             let fmt_rparen_gv = module.declare_data_in_func(fmt_rparen_id, builder.func);
             let fmt_rparen_ptr = builder.ins().global_value(types::I64, fmt_rparen_gv);
             let fmt_rparen_sp_gv = module.declare_data_in_func(fmt_rparen_sp_id, builder.func);
@@ -4758,6 +4826,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 fmt_map_err_msg_ptr,
                 &f.param_types,
                 &program.structs,
+                &struct_layout_ptrs,
                 false,
             )?;
             builder.finalize();
