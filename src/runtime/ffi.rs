@@ -1296,7 +1296,6 @@ pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
 /// `p` must be null or a valid list/tuple pointer; free the result with `rca_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rca_seq_to_str(p: *const i64, kinds: i64, is_tuple: i64) -> *mut c_char {
-    eprintln!("DBG seq p={:?} tup={}", p, is_tuple);
     if is_tuple == 2 {
         return unsafe { struct_to_str(p, kinds as *const c_char) };
     }

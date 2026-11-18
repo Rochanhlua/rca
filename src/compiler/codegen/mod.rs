@@ -2122,7 +2122,6 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
                                 builder.ins().call(printf_ref, &[fmt, str_ptr]);
                                 builder.ins().call(free_ref, &[str_ptr]);
-                                emit_decref(builder, val, free_ref);
                             }
                             StackType::Tensor => {
                                 let call = builder.ins().call(tensor_to_str_ref, &[val]);
