@@ -25,3 +25,9 @@ All three checks must pass before a pull request is merged. CI runs the same com
 - No performance or security claims without evidence.
 - Do not commit secrets, tokens or personal files.
 - By contributing you agree your work is released under the MIT license.
+
+## Branch rule
+- Never edit `master` directly.
+- Every feature or fix goes on its own branch (`git checkout -b feature-name`).
+- Merge into `master` only after `cargo test` passes and the owner approves.
+- If tests fail, switch back with `git checkout master`; nothing is lost.
