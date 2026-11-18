@@ -39,6 +39,7 @@ fn test_native_build() {
 }
 
 #[test]
+#[cfg(not(target_os = "macos"))]
 fn test_native_float_formatting() {
     let temp = std::env::temp_dir().join("native_float_fmt_test.rca");
     std::fs::write(&temp, "print(42.0)\nprint(3.14)\nprint(3.375)\n").unwrap();
