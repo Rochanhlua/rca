@@ -103,6 +103,6 @@ listed under "Implemented" is not available yet; see "Not implemented".
 - Enum payloads, match expressions, guards, nested patterns
 - Empty and 1-element tuples; nested destructuring patterns
 - `pub let` and `pub const`, importing constants from other modules
-- Tensor indexing `a[i, j]`, `a[i] = x`
+- Tensor index assignment `a[i] = x` (reading `a[i, j]` works)
 - Autodiff for `max` and `min`
 - Borrowing and references

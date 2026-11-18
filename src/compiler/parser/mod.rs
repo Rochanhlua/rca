@@ -856,7 +856,20 @@ impl Parser {
                     span,
                 };
             } else if self.eat(&TokenKind::LBracket) {
-                let index = self.parse_expr()?;
+                let mut indices = vec![self.parse_expr()?];
+                while self.eat(&TokenKind::Comma) {
+                    indices.push(self.parse_expr()?);
+                }
+                let index = indices.pop().unwrap();
+                for i in indices {
+                    expr = Expr {
+                        kind: ExprKind::Index {
+                            object: Box::new(expr),
+                            index: Box::new(i),
+                        },
+                        span: span.clone(),
+                    };
+                }
                 self.expect(&TokenKind::RBracket, "']'")?;
                 expr = Expr {
                     kind: ExprKind::Index {
