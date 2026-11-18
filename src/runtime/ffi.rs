@@ -1258,7 +1258,9 @@ pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
 
     let mut out = String::from("Tensor(shape=[");
     for (i, d) in shape.iter().enumerate() {
-        if i > 0 { out.push_str(", "); }
+        if i > 0 {
+            out.push_str(", ");
+        }
         out.push_str(&d.to_string());
     }
     out.push_str("], ");
@@ -1272,7 +1274,9 @@ pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
         out.push('[');
         let dim = shape[0] as usize;
         for i in 0..dim {
-            if i > 0 { out.push_str(", "); }
+            if i > 0 {
+                out.push_str(", ");
+            }
             fmt_helper(out, &shape[1..], data, offset);
         }
         out.push(']');
