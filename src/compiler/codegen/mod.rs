@@ -362,6 +362,13 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let seq_to_str_func = module
         .declare_function("rca_seq_to_str", Linkage::Import, &seq_to_str_sig)
         .map_err(|e| e.to_string())?;
+    let mut print_struct_sig = module.make_signature();
+    for _ in 0..3 {
+        print_struct_sig.params.push(AbiParam::new(types::I64));
+    }
+    let print_struct_func = module
+        .declare_function("rca_print_struct", Linkage::Import, &print_struct_sig)
+        .map_err(|e| e.to_string())?;
 
     let mut str_to_int_sig = module.make_signature();
     str_to_int_sig.params.push(AbiParam::new(types::I64));
@@ -1096,6 +1103,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          bool_to_str_ref: FuncRef,
                          tensor_to_str_ref: FuncRef,
                          seq_to_str_ref: FuncRef,
+                         print_struct_ref: FuncRef,
                          str_to_int_ref: FuncRef,
                          str_to_float_ref: FuncRef,
                          fmt_int_ptr: Value,
@@ -2114,14 +2122,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                         "struct display: unsupported field type".to_string()
                                     );
                                 }
-                                let two = builder.ins().iconst(types::I64, 2);
-                                let call = builder
+                                let nl = builder
                                     .ins()
-                                    .call(seq_to_str_ref, &[val, struct_layouts[sid], two]);
-                                let str_ptr = builder.inst_results(call)[0];
-                                let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
-                                builder.ins().call(printf_ref, &[fmt, str_ptr]);
-                                builder.ins().call(free_ref, &[str_ptr]);
+                                    .iconst(types::I64, if is_last { 1 } else { 0 });
+                                builder
+                                    .ins()
+                                    .call(print_struct_ref, &[val, struct_layouts[sid], nl]);
                             }
                             StackType::Tensor => {
                                 let call = builder.ins().call(tensor_to_str_ref, &[val]);
@@ -4394,6 +4400,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
         let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
         let seq_to_str_ref = module.declare_func_in_func(seq_to_str_func, builder.func);
+        let print_struct_ref = module.declare_func_in_func(print_struct_func, builder.func);
         let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
         let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
@@ -4505,6 +4512,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             bool_to_str_ref,
             tensor_to_str_ref,
             seq_to_str_ref,
+            print_struct_ref,
             str_to_int_ref,
             str_to_float_ref,
             fmt_int_ptr,
@@ -4720,6 +4728,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
             let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
             let seq_to_str_ref = module.declare_func_in_func(seq_to_str_func, builder.func);
+            let print_struct_ref = module.declare_func_in_func(print_struct_func, builder.func);
             let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
             let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -4787,6 +4796,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 bool_to_str_ref,
                 tensor_to_str_ref,
                 seq_to_str_ref,
+                print_struct_ref,
                 str_to_int_ref,
                 str_to_float_ref,
                 fmt_int_ptr,

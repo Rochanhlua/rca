@@ -1377,3 +1377,20 @@ unsafe fn struct_to_str(p: *const i64, layout: *const c_char) -> *mut c_char {
     out.push(')');
     cstring_from(out)
 }
+
+unsafe extern "C" {
+    fn printf(fmt: *const c_char, ...) -> i32;
+}
+
+/// Print a struct via C stdio (non-variadic entry point for generated code).
+///
+/// # Safety
+/// `p` must be null or a valid struct pointer; `layout` must be a valid
+/// null-terminated layout string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_print_struct(p: *const i64, layout: *const c_char, newline: i64) {
+    let s = unsafe { struct_to_str(p, layout) };
+    let fmt: &[u8] = if newline != 0 { b"%s\n\0" } else { b"%s \0" };
+    unsafe { printf(fmt.as_ptr().cast::<c_char>(), s) };
+    unsafe { rca_free(s) };
+}
