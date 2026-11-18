@@ -43,7 +43,7 @@ fn test_native_float_formatting() {
     let temp = std::env::temp_dir().join("native_float_fmt_test.rca");
     std::fs::write(&temp, "print(42.0)\nprint(3.14)\nprint(3.375)\n").unwrap();
 
-    let exe = temp.with_extension(std::env::consts::EXE_EXTENSION);
+    let exe = temp.with_extension("");
     let obj = std::env::temp_dir().join("native_float_fmt_test.rca.o");
     let build = Command::new(env!("CARGO_BIN_EXE_rcac"))
         .args(["build", temp.to_str().unwrap()])
