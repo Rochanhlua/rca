@@ -1320,7 +1320,9 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             }
                             StackType::Str => (val, StackType::Str),
                             StackType::Tensor => {
-                                return Err("Tensor -> str not supported in native".to_string());
+                                let call = builder.ins().call(tensor_to_str_ref, &[val]);
+                                let r = builder.inst_results(call)[0];
+                                (r, StackType::Str)
                             }
                             StackType::Struct(_) => {
                                 return Err("struct -> str not supported in native".to_string());
