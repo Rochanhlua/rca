@@ -609,7 +609,8 @@ impl Interpreter {
                 if let ExprKind::Ident(m) = &object.kind {
                     if self.lookup(m).is_none() {
                         if let Some(module) = self.module_aliases.get(m).cloned() {
-                            format!("{}::{}", module, name)
+                            crate::compiler::stdlib::builtin_name(&module, name)
+                                .unwrap_or_else(|| format!("{}::{}", module, name))
                         } else {
                             return Err(err("this value cannot be called", &callee.span));
                         }

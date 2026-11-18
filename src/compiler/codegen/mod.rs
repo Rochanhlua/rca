@@ -686,7 +686,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())?;
 
     let mut fmt_float_dec_data = DataDescription::new();
-    fmt_float_dec_data.define(b"%03lld\n\0".to_vec().into_boxed_slice());
+    fmt_float_dec_data.define(b"%lld\n\0%02lld\n\0%03lld\n\0".to_vec().into_boxed_slice());
     let fmt_float_dec_id = module
         .declare_data("fmt_float_dec", Linkage::Local, false, false)
         .map_err(|e| e.to_string())?;
@@ -713,7 +713,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())?;
 
     let mut fmt_float_dec_sp_data = DataDescription::new();
-    fmt_float_dec_sp_data.define(b"%03lld \0".to_vec().into_boxed_slice());
+    fmt_float_dec_sp_data.define(b"%lld \0%02lld \0%03lld \0".to_vec().into_boxed_slice());
     let fmt_float_dec_sp_id = module
         .declare_data("fmt_float_dec_sp", Linkage::Local, false, false)
         .map_err(|e| e.to_string())?;
@@ -2402,12 +2402,28 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 builder
                                     .ins()
                                     .call(printf_ref, &[fmt_float_int_ptr, int_part]);
-                                let dec_fmt = if is_last {
+                                let dec_base = if is_last {
                                     fmt_float_dec_ptr
                                 } else {
                                     fmt_float_dec_sp_ptr
                                 };
-                                builder.ins().call(printf_ref, &[dec_fmt, dec_part]);
+                                let c100 = builder.ins().iconst(types::I64, 100);
+                                let c10 = builder.ins().iconst(types::I64, 10);
+                                let r100 = builder.ins().srem(dec_part, c100);
+                                let r10 = builder.ins().srem(dec_part, c10);
+                                let is_one = builder.ins().icmp(IntCC::Equal, r100, zero);
+                                let is_two = builder.ins().icmp(IntCC::Equal, r10, zero);
+                                let d_by100 = builder.ins().sdiv(dec_part, c100);
+                                let d_by10 = builder.ins().sdiv(dec_part, c10);
+                                let v_mid = builder.ins().select(is_two, d_by10, dec_part);
+                                let dec_val = builder.ins().select(is_one, d_by100, v_mid);
+                                let off0 = builder.ins().iconst(types::I64, 0);
+                                let off6 = builder.ins().iconst(types::I64, 6);
+                                let off14 = builder.ins().iconst(types::I64, 14);
+                                let o_mid = builder.ins().select(is_two, off6, off14);
+                                let dec_off = builder.ins().select(is_one, off0, o_mid);
+                                let dec_fmt = builder.ins().iadd(dec_base, dec_off);
+                                builder.ins().call(printf_ref, &[dec_fmt, dec_val]);
                                 builder.ins().jump(after_block, &[]);
                                 builder.seal_block(after_block);
 
