@@ -1296,6 +1296,9 @@ pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
 /// `p` must be null or a valid list/tuple pointer; free the result with `rca_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rca_seq_to_str(p: *const i64, kinds: i64, is_tuple: i64) -> *mut c_char {
+    if is_tuple == 2 {
+        return unsafe { struct_to_str(p, kinds as *const c_char) };
+    }
     let (open, close) = if is_tuple != 0 {
         ('(', ')')
     } else {
@@ -1332,4 +1335,68 @@ pub unsafe extern "C" fn rca_seq_to_str(p: *const i64, kinds: i64, is_tuple: i64
     }
     out.push(close);
     cstring_from(out)
+}
+
+/// Struct display helper. `layout` is "Name|field:K|field:K" (K = I, F, S, B).
+/// Struct layout: [refcount, field0, field1, ...].
+unsafe fn struct_to_str(p: *const i64, layout: *const c_char) -> *mut c_char {
+    let spec = unsafe { std::ffi::CStr::from_ptr(layout) }
+        .to_string_lossy()
+        .into_owned();
+    let mut parts = spec.split('|');
+    let name = parts.next().unwrap_or("");
+    let mut out = format!("{name}(");
+    for (i, part) in parts.enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        let (fname, kind) = part.rsplit_once(':').unwrap_or((part, "I"));
+        let raw = if p.is_null() {
+            0
+        } else {
+            unsafe { *p.add(1 + i) }
+        };
+        out.push_str(fname);
+        out.push_str(" = ");
+        match kind {
+            "F" => out.push_str(
+                &crate::runtime::values::Value::Float(f64::from_bits(raw as u64)).to_string(),
+            ),
+            "S" => {
+                out.push('"');
+                if raw != 0 {
+                    let cs = unsafe { std::ffi::CStr::from_ptr(raw as *const c_char) };
+                    out.push_str(&cs.to_string_lossy());
+                }
+                out.push('"');
+            }
+            "B" => out.push_str(if raw != 0 { "true" } else { "false" }),
+            _ => out.push_str(&raw.to_string()),
+        }
+    }
+    out.push(')');
+    cstring_from(out)
+}
+
+unsafe extern "C" {
+    fn putchar(c: i32) -> i32;
+}
+
+/// Print a struct via C stdio (non-variadic entry point for generated code).
+///
+/// # Safety
+/// `p` must be null or a valid struct pointer; `layout` must be a valid
+/// null-terminated layout string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_print_struct(p: *const i64, layout: *const c_char, newline: i64) {
+    let s = unsafe { struct_to_str(p, layout) };
+    if s.is_null() {
+        return;
+    }
+    for &b in unsafe { std::ffi::CStr::from_ptr(s) }.to_bytes() {
+        unsafe { putchar(i32::from(b)) };
+    }
+    let end = if newline != 0 { b'\n' } else { b' ' };
+    unsafe { putchar(i32::from(end)) };
+    unsafe { rca_free(s) };
 }
