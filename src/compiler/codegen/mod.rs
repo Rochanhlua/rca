@@ -3164,16 +3164,17 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                     };
                     let old_len = builder.ins().load(types::I64, MemFlags::new(), list_ptr, 8);
                     let new_len = builder.ins().iadd_imm(old_len, 1);
-                    let trip_old = builder.ins().imul_imm(old_len, 3);
-                    let size_elems = builder.ins().iadd_imm(trip_old, 5);
-                    let size_bytes = builder.ins().imul_imm(size_elems, 8);
+                    let new_size_elems = builder.ins().iadd_imm(new_len, 2);
+
+                    let size_bytes = builder.ins().imul_imm(new_size_elems, 8);
                     let malloc_call = builder.ins().call(malloc_ref, &[size_bytes]);
                     let new_ptr = builder.inst_results(malloc_call)[0];
-                    let old_size_elems = builder.ins().iadd_imm(trip_old, 2);
+                    let old_size_elems = builder.ins().iadd_imm(old_len, 2);
                     let old_size_bytes = builder.ins().imul_imm(old_size_elems, 8);
                     builder
                         .ins()
                         .call(memcpy_ref, &[new_ptr, list_ptr, old_size_bytes]);
+                    emit_decref(builder, list_ptr, free_ref);
                     let one = builder.ins().iconst(types::I64, 1);
                     builder.ins().store(MemFlags::new(), one, new_ptr, 0);
                     builder.ins().store(MemFlags::new(), new_len, new_ptr, 8);
