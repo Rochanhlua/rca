@@ -11,7 +11,7 @@ fn main() {
         .and_then(|p| p.parent().map(|d| d.join("rcac")))
         .unwrap_or_else(|| "rcac".into());
     let status = Command::new(&rcac)
-        .arg("run")
+        .args(if matches!(args[1].as_str(), "--help" | "-h" | "help" | "--version" | "-V" | "version") { Vec::<String>::new() } else { vec!["run".to_string()] })
         .args(&args[1..])
         .status()
         .unwrap_or_else(|e| {
