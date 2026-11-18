@@ -1379,7 +1379,7 @@ unsafe fn struct_to_str(p: *const i64, layout: *const c_char) -> *mut c_char {
 }
 
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> i32;
+    fn putchar(c: i32) -> i32;
 }
 
 /// Print a struct via C stdio (non-variadic entry point for generated code).
@@ -1390,7 +1390,13 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rca_print_struct(p: *const i64, layout: *const c_char, newline: i64) {
     let s = unsafe { struct_to_str(p, layout) };
-    let fmt: &[u8] = if newline != 0 { b"%s\n\0" } else { b"%s \0" };
-    unsafe { printf(fmt.as_ptr().cast::<c_char>(), s) };
+    if s.is_null() {
+        return;
+    }
+    for &b in unsafe { std::ffi::CStr::from_ptr(s) }.to_bytes() {
+        unsafe { putchar(i32::from(b)) };
+    }
+    let end = if newline != 0 { b'\n' } else { b' ' };
+    unsafe { putchar(i32::from(end)) };
     unsafe { rca_free(s) };
 }
