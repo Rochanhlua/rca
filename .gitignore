@@ -2,3 +2,4 @@
 *.o
 tests/bug_hunt/
 /tmp/
+rca_nf_*.txt
