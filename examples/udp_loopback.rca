@@ -3,8 +3,8 @@
 
 import net
 
-let s = net.udp_bind("127.0.0.1", 0)
-let n = net.udp_send(s, "127.0.0.1", 0, "hello")
+let s = net.udp_bind("127.0.0.1", 34567)
+let n = net.udp_send(s, "127.0.0.1", 34567, "hello")
 print(n)
 let reply = net.udp_recv(s, 64)
 print(reply)
