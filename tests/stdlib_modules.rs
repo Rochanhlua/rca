@@ -67,3 +67,22 @@ fn import_unknown_module_still_errors() {
         "got: {out}"
     );
 }
+
+#[test]
+fn run_tree_stdlib_modules_resolve_builtins() {
+    let src = "import math\nimport crypto\nprint(math.abs(-5))\nprint(crypto.sha256(\"abc\"))\n";
+    let p = tmpfile("tree_std", src);
+    let out = Command::new(env!("CARGO_BIN_EXE_rcac"))
+        .args(["run-tree", p.to_str().unwrap()])
+        .output()
+        .expect("failed to spawn rcac");
+    let _ = std::fs::remove_file(&p);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stderr: {stderr}");
+    assert!(stdout.contains("5\n"), "got: {stdout}");
+    assert!(
+        stdout.contains("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        "got: {stdout}"
+    );
+}
