@@ -5,11 +5,16 @@ use crate::compiler::lexer::token::{Span, Token, TokenKind};
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    modules: std::collections::HashSet<String>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, pos: 0 }
+        Parser {
+            tokens,
+            pos: 0,
+            modules: Default::default(),
+        }
     }
 
     // ---------- helpers ----------
@@ -271,6 +276,8 @@ impl Parser {
             None
         };
         self.end_simple()?;
+        self.modules
+            .insert(alias.clone().unwrap_or_else(|| module.clone()));
         Ok(StmtKind::Import { module, alias })
     }
 
@@ -795,6 +802,43 @@ impl Parser {
             let span = expr.span.clone();
             if self.eat(&TokenKind::LParen) {
                 let args = self.parse_arguments()?;
+                if let ExprKind::Field { object, name } = &expr.kind
+                    && matches!(
+                        name.as_str(),
+                        "matmul"
+                            | "transpose"
+                            | "reshape"
+                            | "sum"
+                            | "mean"
+                            | "max"
+                            | "min"
+                            | "exp"
+                            | "log"
+                            | "sqrt"
+                            | "tanh"
+                            | "relu"
+                            | "sigmoid"
+                            | "softmax"
+                    )
+                    && !matches!(&object.kind, ExprKind::Ident(m) if self.modules.contains(m))
+                {
+                    let mut new_args = vec![Argument {
+                        name: None,
+                        value: (**object).clone(),
+                    }];
+                    new_args.extend(args);
+                    expr = Expr {
+                        kind: ExprKind::Call {
+                            callee: Box::new(Expr {
+                                kind: ExprKind::Ident(name.clone()),
+                                span: span.clone(),
+                            }),
+                            args: new_args,
+                        },
+                        span,
+                    };
+                    continue;
+                }
                 expr = Expr {
                     kind: ExprKind::Call {
                         callee: Box::new(expr),

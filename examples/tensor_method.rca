@@ -1,0 +1,7 @@
+import tensor
+let a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+let b = Tensor([[5.0, 6.0], [7.0, 8.0]])
+print(a.matmul(b))
+print(matmul(a, b))
+print(a.transpose())
+print(a.sum())
