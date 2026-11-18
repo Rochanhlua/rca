@@ -1228,3 +1228,58 @@ pub unsafe extern "C" fn rca_tensor_grad(y: i64, x: i64) -> *mut u8 {
         p
     }
 }
+
+/// Format a native tensor as a string. Caller frees with `rca_free`.
+///
+/// # Safety
+/// `t` must be a valid native tensor pointer or null.
+///
+/// # Safety
+/// `t` must be a valid native tensor pointer or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
+    if t.is_null() {
+        return alloc_c_string("Tensor(null)");
+    }
+    let (shape, data_vec) = unsafe {
+        let rank = t_rank(t) as usize;
+        let len = t_len(t) as usize;
+        let mut shape = Vec::with_capacity(rank);
+        for i in 0..rank {
+            shape.push(t_dim(t, i));
+        }
+        let data = t_data(t);
+        let mut data_vec = Vec::with_capacity(len);
+        for i in 0..len {
+            data_vec.push(*data.add(i));
+        }
+        (shape, data_vec)
+    };
+
+    let mut out = String::from("Tensor(shape=[");
+    for (i, d) in shape.iter().enumerate() {
+        if i > 0 { out.push_str(", "); }
+        out.push_str(&d.to_string());
+    }
+    out.push_str("], ");
+
+    fn fmt_helper(out: &mut String, shape: &[i64], data: &[f64], offset: &mut usize) {
+        if shape.is_empty() {
+            out.push_str(&format!("{:?}", data[*offset]));
+            *offset += 1;
+            return;
+        }
+        out.push('[');
+        let dim = shape[0] as usize;
+        for i in 0..dim {
+            if i > 0 { out.push_str(", "); }
+            fmt_helper(out, &shape[1..], data, offset);
+        }
+        out.push(']');
+    }
+    let mut offset = 0;
+    fmt_helper(&mut out, &shape, &data_vec, &mut offset);
+    out.push(')');
+
+    alloc_c_string(&out)
+}

@@ -343,11 +343,8 @@ impl Compiler {
     pub fn compile_hstmt(&mut self, h: &crate::compiler::hir::HStmt) -> Result<(), Diagnostic> {
         // Functions are compiled via `compile_function` in `compile()`,
         // not via `compile_stmt`. Mirror that here.
-        if matches!(&h.kind, crate::compiler::hir::HStmtKind::Function(_)) {
-            let ast = crate::compiler::hir::lower_hstmt_to_ast(h);
-            if let StmtKind::Function(f) = &ast.kind {
-                return self.compile_function(f, &h.span);
-            }
+        if let crate::compiler::hir::HStmtKind::Function(f) = &h.kind {
+            return self.compile_hfunction(f, &h.span);
         }
         // Step 4b-3: Return and plain expression statements are compiled
         // natively from HIR. `x.push(..)` keeps going through the shim
@@ -624,6 +621,20 @@ impl Compiler {
                     self.emit(ins, span);
                 }
             }
+            // Direct HIR lowering for user-defined function calls.
+            HExprKind::Call { callee, args } => {
+                if let HExprKind::Ident(name) = &callee.kind {
+                    let key = self.key(name);
+                    if let Some(&id) = self.func_ids.get(&key) {
+                        let sig = self.func_sigs[id].clone();
+                        self.emit_hbound_args(&sig.params, &sig.defaults, args, span)?;
+                        self.emit(Instruction::Call(id), span);
+                        return Ok(());
+                    }
+                }
+                let expr = crate::compiler::hir::lower_hexpr_to_aexpr(h);
+                return self.compile_expr(&expr);
+            }
             // Step 4b-14: field read, enum variant and module-qualified global,
             // same bytecode as compile_expr.
             HExprKind::Field { object, name } => {
@@ -723,11 +734,64 @@ impl Compiler {
                 Some(VarRef::Global(s)) => self.emit(Instruction::LoadGlobal(s), span),
                 None => return Err(err(format!("undefined variable '{}'", name), span)),
             },
-            _ => {
-                let expr = crate::compiler::hir::lower_hexpr_to_aexpr(h);
-                return self.compile_expr(&expr);
-            }
         }
+        Ok(())
+    }
+
+    fn compile_hstmts(&mut self, stmts: &[crate::compiler::hir::HStmt]) -> Result<(), Diagnostic> {
+        for stmt in stmts {
+            self.compile_hstmt(stmt)?;
+        }
+        Ok(())
+    }
+
+    fn compile_hfunction(
+        &mut self,
+        f: &crate::compiler::hir::HFunction,
+        span: &Span,
+    ) -> Result<(), Diagnostic> {
+        let fkey = self.key(&f.name);
+        let id = match self.func_ids.get(&fkey) {
+            Some(&id) => id,
+            None => return Err(err(format!("unknown function '{}'", f.name), span)),
+        };
+
+        let saved = std::mem::replace(&mut self.state, FnState::new());
+        for p in &f.params {
+            self.declare_local(&p.name);
+        }
+
+        let result = self.compile_hstmts(&f.body);
+        if result.is_ok() {
+            self.emit(Instruction::PushNone, span);
+            self.emit(Instruction::Return, span);
+        }
+
+        let state = std::mem::replace(&mut self.state, saved);
+        result?;
+
+        self.functions[id] = Function {
+            name: f.name.clone(),
+            arity: f.params.len(),
+            num_locals: state.next_slot,
+            param_types: f
+                .params
+                .iter()
+                .map(|p| {
+                    if !p.ty.elements.is_empty() {
+                        Type::Unknown
+                    } else {
+                        Type::from_name(&p.ty.name).unwrap_or(Type::Unknown)
+                    }
+                })
+                .collect(),
+            return_type: f
+                .return_type
+                .as_ref()
+                .map(|te| Type::from_name(&te.name).unwrap_or(Type::Unknown))
+                .unwrap_or(Type::None),
+            chunk: state.chunk,
+        };
         Ok(())
     }
 
@@ -1646,6 +1710,46 @@ impl Compiler {
 
     /// Emits arguments in parameter order: positional and named arguments
     /// are matched to parameters, missing ones use the default value.
+    fn emit_hbound_args(
+        &mut self,
+        names: &[String],
+        defaults: &[Option<Expr>],
+        args: &[crate::compiler::hir::HArgument],
+        span: &Span,
+    ) -> Result<(), Diagnostic> {
+        let mut slots: Vec<Option<&crate::compiler::hir::HArgument>> = vec![None; names.len()];
+
+        for (i, arg) in args.iter().enumerate() {
+            let idx = match &arg.name {
+                None => i,
+                Some(n) => names
+                    .iter()
+                    .position(|x| x == n)
+                    .ok_or_else(|| err(format!("no parameter named '{}'", n), span))?,
+            };
+            if idx >= slots.len() {
+                return Err(err("too many arguments", span));
+            }
+            slots[idx] = Some(arg);
+        }
+
+        for i in 0..names.len() {
+            match slots[i] {
+                Some(arg) => self.compile_hexpr(&arg.value)?,
+                None => match &defaults[i] {
+                    Some(default) => {
+                        let saved = std::mem::take(&mut self.state.locals);
+                        let result = self.compile_expr(default);
+                        self.state.locals = saved;
+                        result?;
+                    }
+                    None => return Err(err(format!("missing argument '{}'", names[i]), span)),
+                },
+            }
+        }
+        Ok(())
+    }
+
     fn emit_bound_args(
         &mut self,
         names: &[String],
