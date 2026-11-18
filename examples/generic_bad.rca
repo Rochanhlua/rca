@@ -1,0 +1,4 @@
+fn pick[T](a: T, b: T) -> T:
+    return a
+
+let x = pick(10, "x")

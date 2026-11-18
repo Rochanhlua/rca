@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 struct ParamSig {
+    generic: Option<String>,
     name: String,
     ty: Type,
     has_default: bool,
@@ -32,6 +33,7 @@ pub struct Checker {
     functions: HashMap<String, FuncSig>,
     current_return: Option<Type>,
     type_params: Vec<String>,
+    generic_ret: HashMap<String, String>,
     imports: HashMap<String, ModuleExports>,
     module_aliases: HashMap<String, String>,
     /// Span -> inferred type for every checked expression (used by HIR lowering).
@@ -51,6 +53,7 @@ impl Checker {
             functions: HashMap::new(),
             current_return: None,
             type_params: Vec::new(),
+            generic_ret: HashMap::new(),
             imports: HashMap::new(),
             module_aliases: HashMap::new(),
             expr_types: HashMap::new(),
@@ -256,6 +259,7 @@ impl Checker {
                         name: p.name.clone(),
                         ty,
                         has_default: p.default.is_some(),
+                        generic: if p.ty.elements.is_empty() && p.ty.length.is_none() && f.type_params.contains(&p.ty.name) { Some(p.ty.name.clone()) } else { None },
                     });
                 }
                 let ret = match &f.return_type {
@@ -264,6 +268,7 @@ impl Checker {
                 };
                 self.functions
                     .insert(f.name.clone(), FuncSig { params, ret });
+                if let Some(rt) = &f.return_type && rt.elements.is_empty() && rt.length.is_none() && f.type_params.contains(&rt.name) { self.generic_ret.insert(f.name.clone(), rt.name.clone()); }
                     self.type_params.clear();
             }
         }
@@ -1789,6 +1794,7 @@ impl Checker {
                         name: n,
                         ty: t,
                         has_default: false,
+                        generic: None,
                     })
                     .collect(),
                 ret: Type::Struct(name.clone()),
@@ -1809,6 +1815,7 @@ impl Checker {
         span: &Span,
     ) -> Type {
         let mut provided = vec![false; sig.params.len()];
+        let mut bindings: HashMap<String, Type> = HashMap::new();
         let mut seen_named = false;
 
         for (i, arg) in args.iter().enumerate() {
@@ -1861,6 +1868,23 @@ impl Checker {
                 continue;
             }
             provided[index] = true;
+                if let Some(g) = sig.params[index].generic.clone() {
+                    if arg_ty != Type::Unknown {
+                        match bindings.get(&g) {
+                            Some(bound) if !Type::compatible(bound, &arg_ty) => {
+                                self.error(
+                                    format!("generic '{}' was {}, found {}", g, bound, arg_ty),
+                                    &arg.value.span,
+                                );
+                            }
+                            Some(_) => {}
+                            None => {
+                                bindings.insert(g, arg_ty.clone());
+                            }
+                        }
+                    }
+                    continue;
+                }
 
             let expected = &sig.params[index].ty;
             if !Type::compatible(expected, &arg_ty) {
@@ -1883,6 +1907,9 @@ impl Checker {
             }
         }
 
+        if let Some(g) = self.generic_ret.get(name) && let Some(t) = bindings.get(g) {
+            return t.clone();
+        }
         sig.ret.clone()
     }
 
@@ -2585,6 +2612,7 @@ impl Checker {
                         name: n,
                         ty: t,
                         has_default: false,
+                        generic: None,
                     })
                     .collect(),
                 ret: Type::Struct(item.to_string()),
