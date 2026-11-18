@@ -15,6 +15,7 @@ Creator: TH Lalrochanhlua
 ## Build
 
     cargo build --release
+    cargo build
     cargo test
 
 This produces two binaries:
@@ -63,7 +64,7 @@ Tensor example:
 Training example (see `examples/mlp_train.rca` and `docs/nn.md`):
 `track`, `linear`, `mse`, `grad` and `sgd` compose into a training loop.
 
-More programs are in `examples/`.
+More programs are in `examples/`. Files named `*_bad` and a few others demonstrate compile or runtime errors and are expected to fail.
 
 ## What works today
 
