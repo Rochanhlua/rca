@@ -348,6 +348,12 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let bool_to_str_func = module
         .declare_function("rca_bool_to_str", Linkage::Import, &bool_to_str_sig)
         .map_err(|e| e.to_string())?;
+    let mut tensor_to_str_sig = module.make_signature();
+    tensor_to_str_sig.params.push(AbiParam::new(types::I64));
+    tensor_to_str_sig.returns.push(AbiParam::new(types::I64));
+    let tensor_to_str_func = module
+        .declare_function("rca_tensor_to_str", Linkage::Import, &tensor_to_str_sig)
+        .map_err(|e| e.to_string())?;
 
     let mut str_to_int_sig = module.make_signature();
     str_to_int_sig.params.push(AbiParam::new(types::I64));
@@ -1056,6 +1062,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          int_to_str_ref: FuncRef,
                          float_to_str_ref: FuncRef,
                          bool_to_str_ref: FuncRef,
+                         tensor_to_str_ref: FuncRef,
                          str_to_int_ref: FuncRef,
                          str_to_float_ref: FuncRef,
                          fmt_int_ptr: Value,
@@ -2022,10 +2029,11 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                                 return Err("struct display not supported".to_string());
                             }
                             StackType::Tensor => {
-                                return Err(
-                                    "Tensor display not supported in native (use `rcac run`)"
-                                        .to_string(),
-                                );
+                                let call = builder.ins().call(tensor_to_str_ref, &[val]);
+                                let str_ptr = builder.inst_results(call)[0];
+                                let fmt = if is_last { fmt_str_ptr } else { fmt_str_sp_ptr };
+                                builder.ins().call(printf_ref, &[fmt, str_ptr]);
+                                builder.ins().call(free_ref, &[str_ptr]);
                             }
                             StackType::Int => {
                                 let fmt = if is_last { fmt_int_ptr } else { fmt_int_sp_ptr };
@@ -4289,6 +4297,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
         let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
         let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
+        let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
         let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
         let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
@@ -4393,6 +4402,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             int_to_str_ref,
             float_to_str_ref,
             bool_to_str_ref,
+            tensor_to_str_ref,
             str_to_int_ref,
             str_to_float_ref,
             fmt_int_ptr,
@@ -4600,6 +4610,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let int_to_str_ref = module.declare_func_in_func(int_to_str_func, builder.func);
             let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
             let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
+            let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
             let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
             let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -4665,6 +4676,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 int_to_str_ref,
                 float_to_str_ref,
                 bool_to_str_ref,
+                tensor_to_str_ref,
                 str_to_int_ref,
                 str_to_float_ref,
                 fmt_int_ptr,
