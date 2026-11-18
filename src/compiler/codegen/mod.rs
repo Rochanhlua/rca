@@ -354,6 +354,14 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
     let tensor_to_str_func = module
         .declare_function("rca_tensor_to_str", Linkage::Import, &tensor_to_str_sig)
         .map_err(|e| e.to_string())?;
+    let mut seq_to_str_sig = module.make_signature();
+    seq_to_str_sig.params.push(AbiParam::new(types::I64));
+    seq_to_str_sig.params.push(AbiParam::new(types::I64));
+    seq_to_str_sig.params.push(AbiParam::new(types::I64));
+    seq_to_str_sig.returns.push(AbiParam::new(types::I64));
+    let seq_to_str_func = module
+        .declare_function("rca_seq_to_str", Linkage::Import, &seq_to_str_sig)
+        .map_err(|e| e.to_string())?;
 
     let mut str_to_int_sig = module.make_signature();
     str_to_int_sig.params.push(AbiParam::new(types::I64));
@@ -1063,6 +1071,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                          float_to_str_ref: FuncRef,
                          bool_to_str_ref: FuncRef,
                          tensor_to_str_ref: FuncRef,
+                         seq_to_str_ref: FuncRef,
                          str_to_int_ref: FuncRef,
                          str_to_float_ref: FuncRef,
                          fmt_int_ptr: Value,
@@ -1316,11 +1325,39 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                             StackType::Struct(_) => {
                                 return Err("struct -> str not supported in native".to_string());
                             }
-                            StackType::List(_) => {
-                                return Err("list -> str not supported in native".to_string());
+                            StackType::List(et) => {
+                                let k: i64 = match et {
+                                    ElemType::Int => 0,
+                                    ElemType::Float => 1,
+                                    ElemType::Str => 2,
+                                    ElemType::Bool => 3,
+                                };
+                                let kinds = builder.ins().iconst(types::I64, k);
+                                let tup = builder.ins().iconst(types::I64, 0);
+                                let call = builder.ins().call(seq_to_str_ref, &[val, kinds, tup]);
+                                let r = builder.inst_results(call)[0];
+                                emit_decref(builder, val, free_ref);
+                                (r, StackType::Str)
                             }
-                            StackType::Tuple(_) => {
-                                return Err("tuple -> str not supported in native".to_string());
+                            StackType::Tuple(tuple_id) => {
+                                let elem_types =
+                                    tuple_types_registry.borrow()[tuple_id as usize].clone();
+                                let mut packed: i64 = 0;
+                                for (i, et) in elem_types.iter().enumerate() {
+                                    let k: i64 = match et {
+                                        ElemType::Int => 0,
+                                        ElemType::Float => 1,
+                                        ElemType::Str => 2,
+                                        ElemType::Bool => 3,
+                                    };
+                                    packed |= k << (2 * i);
+                                }
+                                let kinds = builder.ins().iconst(types::I64, packed);
+                                let tup = builder.ins().iconst(types::I64, 1);
+                                let call = builder.ins().call(seq_to_str_ref, &[val, kinds, tup]);
+                                let r = builder.inst_results(call)[0];
+                                emit_decref(builder, val, free_ref);
+                                (r, StackType::Str)
                             }
                             StackType::Map => {
                                 return Err("map -> str not supported in native".to_string());
@@ -4298,6 +4335,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
         let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
         let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
         let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
+        let seq_to_str_ref = module.declare_func_in_func(seq_to_str_func, builder.func);
         let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
         let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
         let fmt_div0_gv = module.declare_data_in_func(str_div0_id, builder.func);
@@ -4403,6 +4441,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             float_to_str_ref,
             bool_to_str_ref,
             tensor_to_str_ref,
+            seq_to_str_ref,
             str_to_int_ref,
             str_to_float_ref,
             fmt_int_ptr,
@@ -4611,6 +4650,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
             let float_to_str_ref = module.declare_func_in_func(float_to_str_func, builder.func);
             let bool_to_str_ref = module.declare_func_in_func(bool_to_str_func, builder.func);
             let tensor_to_str_ref = module.declare_func_in_func(tensor_to_str_func, builder.func);
+            let seq_to_str_ref = module.declare_func_in_func(seq_to_str_func, builder.func);
             let str_to_int_ref = module.declare_func_in_func(str_to_int_func, builder.func);
             let str_to_float_ref = module.declare_func_in_func(str_to_float_func, builder.func);
             for (p_idx, p_val) in params.iter().enumerate() {
@@ -4677,6 +4717,7 @@ pub fn compile(program: &IrProgram) -> Result<Vec<u8>, String> {
                 float_to_str_ref,
                 bool_to_str_ref,
                 tensor_to_str_ref,
+                seq_to_str_ref,
                 str_to_int_ref,
                 str_to_float_ref,
                 fmt_int_ptr,

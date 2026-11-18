@@ -1287,3 +1287,49 @@ pub unsafe extern "C" fn rca_tensor_to_str(t: *const u8) -> *mut c_char {
 
     alloc_c_string(&out)
 }
+
+/// Format a list or tuple as a C string. Layout: [refcount, len, elems...].
+/// kinds: 2 bits per element (0=Int, 1=Float, 2=Str, 3=Bool).
+/// For lists only bits 0-1 are used (uniform element type).
+///
+/// # Safety
+/// `p` must be null or a valid list/tuple pointer; free the result with `rca_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rca_seq_to_str(p: *const i64, kinds: i64, is_tuple: i64) -> *mut c_char {
+    let (open, close) = if is_tuple != 0 {
+        ('(', ')')
+    } else {
+        ('[', ']')
+    };
+    let mut out = String::new();
+    out.push(open);
+    if !p.is_null() {
+        let len = unsafe { *p.add(1) } as usize;
+        for i in 0..len {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            let raw = unsafe { *p.add(2 + i) };
+            let kind = if is_tuple != 0 {
+                (kinds >> (2 * i)) & 3
+            } else {
+                kinds & 3
+            };
+            match kind {
+                1 => out.push_str(
+                    &crate::runtime::values::Value::Float(f64::from_bits(raw as u64)).to_string(),
+                ),
+                2 => {
+                    let s = unsafe { std::ffi::CStr::from_ptr(raw as *const c_char) };
+                    out.push('"');
+                    out.push_str(&s.to_string_lossy());
+                    out.push('"');
+                }
+                3 => out.push_str(if raw != 0 { "true" } else { "false" }),
+                _ => out.push_str(&raw.to_string()),
+            }
+        }
+    }
+    out.push(close);
+    cstring_from(out)
+}
