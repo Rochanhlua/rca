@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.0] - 2026-11-18
 - **Implemented:** §5/Phase 3 native codegen — `sha256`, `sha512`, `hmac_sha256` via FFI (`rca_sha256`, `rca_sha512`, `rca_hmac_sha256` in `src/runtime/ffi.rs`). Native output matches the VM. New `tests/native_crypto.rs`.
 - **Implemented:** §5/Phase 3 native codegen — TCP and UDP via FFI. New `rca_tcp_connect/send/recv/close` and `rca_udp_bind/send/recv/close` in `src/runtime/ffi.rs`; codegen lowers `Tcp*`/`Udp*` instructions to Cranelift calls. `udp_recv` returns a native tuple `(data, src_host, src_port)`. Native sockets are integer fd handles. New `tests/native_tcp.rs` and `tests/native_udp.rs` (loopback).
 - **Fixed:** Phase 3 native codegen — `librca.lib` (Windows MSVC staticlib) is now looked up first, falling back to `librca.a` (Linux/macOS). `rcac build` links correctly on all three CI platforms.
