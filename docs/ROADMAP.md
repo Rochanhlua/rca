@@ -11,7 +11,7 @@ Source Extension: .rca
 Compiler Implementation: Rust
 Development Environment: Termux (Android)
 Build System: Cargo
-Project Status: Early Development
+Project Status: Public Beta (v0.1.0-beta)
 
 ---
 
@@ -418,7 +418,7 @@ environments are available.
 
 ## 12. OFFICIAL DEVELOPMENT ROADMAP
 
-### Phase 1 — Language Specification and Compiler Foundation
+### Phase 1 — Language Specification and Compiler Foundation — complete
 
 - Finalize syntax specification.
 - Define token types.
@@ -440,7 +440,7 @@ syntax errors.
 - [x] Scope management, modules.
 
 **Milestone:** RCA supports a meaningful subset of its own language. ✅ **Complete.**
-### Phase 3 — IR and Execution
+### Phase 3 — IR and Execution — mostly implemented (HIR, IR, VM, Cranelift native)
 
 - HIR.
 - RCA IR.
@@ -452,7 +452,7 @@ syntax errors.
 
 **Milestone:** RCA programs execute independently of Python.
 
-### Phase 4 — Memory and Runtime
+### Phase 4 — Memory and Runtime — in progress
 
 - Memory management.
 - Resource ownership.
@@ -463,7 +463,7 @@ syntax errors.
 
 **Milestone:** A reliable, testable language runtime.
 
-### Phase 5 — AI Computing Foundation
+### Phase 5 — AI Computing Foundation — CPU tensors and autodiff implemented
 
 - Tensor data structures.
 - CPU tensor engine.
@@ -475,7 +475,7 @@ syntax errors.
 
 **Milestone:** RCA performs useful native CPU-based AI computations.
 
-### Phase 6 — Advanced AI and GPU
+### Phase 6 — Advanced AI and GPU — NN builtins implemented; GPU not started
 
 - Neural network engine.
 - Training operations.
@@ -488,7 +488,7 @@ syntax errors.
 
 **Milestone:** Working AI workloads on supported hardware.
 
-### Phase 7 — Standard Library and Ecosystem
+### Phase 7 — Standard Library and Ecosystem — implemented; polish ongoing
 
 Core:
 
@@ -519,7 +519,7 @@ Developer tooling (implementation order):
 **Milestone:** RCA becomes useful for general-purpose software
 development.
 
-### Phase 8 — Production Testing and Release
+### Phase 8 — Production Testing and Release — in progress
 
 - Unit testing.
 - Integration testing.
@@ -533,7 +533,7 @@ development.
 
 **Milestone:** A technically credible public beta release.
 
-### Phase 9 — Global Open-Source Adoption
+### Phase 9 — Global Open-Source Adoption — started
 
 - Public GitHub repository.
 - Official website.
