@@ -18,8 +18,8 @@ they are listed in section 7.
 ## 3. Visibility
 - Declarations are private by default.
 - `pub fn` and `pub struct` can be imported (see `enum.md` for `pub enum`).
-- `pub let` and `pub const` are part of the design but are not implemented
-  yet (`pub let` is a parse error).
+- `pub const` is implemented; `pub let` is part of the design but is not
+  implemented yet (`pub let` is a parse error).
 - Importing a private name is a compile-time error.
 
 ## 4. Rules

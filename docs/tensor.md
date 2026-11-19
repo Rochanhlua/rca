@@ -1,7 +1,7 @@
 # RCA Tensors
 
 Status: IMPLEMENTED (CPU, Float only). Milestones T1-T6 are done.
-Not implemented yet: automatic differentiation, method-call syntax, GPU, `a[i] = x`.
+Not implemented yet: GPU, `a[i] = x`.
 
 ## 1. Scope
 - One type: `Tensor`. Element type is Float (f64) only.

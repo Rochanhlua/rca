@@ -1,8 +1,8 @@
 # RCA Packages
 
 Status: implemented for `pkg init`, `pkg add`, and `pkg install` (local
-paths and `http://` URLs), plus package-aware module resolution. Git
-(`github:user/repo`) and HTTPS sources are not implemented yet (section 6).
+paths, `http://`, and `https://` URLs via rustls), plus package-aware module
+resolution. Git (`github:user/repo`) shorthand is not implemented yet (section 6).
 
 ## 1. Basics
 - A package manifest is `rca.json` in the project root.
