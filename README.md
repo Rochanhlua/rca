@@ -88,6 +88,8 @@ Language:
 - Lexer, parser, diagnostics with line and column
 - Static type checker with type inference
 - Variables (`let`, `mut`), `const` and `pub const` (top-level, constant values only)
+- Types: `Int`, `Float`, `Bool`, `String`, `Char`, fixed-size `Array[T, N]`
+- Visibility: `pub` and `private` on functions, types, `let` and `const`
 - Functions, generic functions (`fn name[T](...)`), structs, lists (`List[T]`), tuples (with destructuring), maps (`Map[K, V]`)
 - `if`/`else`, `while`, `for`, `break`, `continue`
 - `try` / `catch` / `throw`
@@ -131,7 +133,7 @@ Standard library (via `import <module>`; 14 modules):
 ## Not implemented yet
 
 - Borrowing and references (`&T`, `&mut T`)
-- Generic structs/enums, enum payloads, match expressions, `pub let`
+- Generic structs/enums, enum payloads, match expressions
 - Full native code generation coverage for remaining stdlib helpers and native refcount drop cleanup
 - Autodiff for `max` and `min`; GPU support
 
