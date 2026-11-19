@@ -8,7 +8,7 @@ tensors and automatic differentiation, and it can compile to native code.
 The long-term goal is an AI-native language with a native tensor engine.
 See `docs/` for design documents.
 
-**Status: early development. Not ready for production use.**
+**Status: v0.1.0 public beta (early development; not ready for production use).**
 
 Creator: TH Lalrochanhlua
 
@@ -38,10 +38,25 @@ This produces two binaries:
     rcac compile <file.rca>   compile to a native object file (<file>.rca.o)
     rcac build <file.rca>     compile and link a native executable (needs clang)
 
+Developer tools:
+
+    rcac lint <file.rca>      report warnings (unused vars, unreachable code)
+    rcac test [dir]           run all .rca test files (default: tests/rca/)
+    rcac fmt <file.rca>       print canonical formatting
+    rcac repl                 interactive read-eval-print loop
+    rcac lsp                  Language Server Protocol (JSON-RPC over stdio)
+    rcac doc <file.rca>       print Markdown API documentation
+    rcac bench <file.rca> [N] benchmark a file N times (default N=5)
+    rcac watch <file.rca>     re-run a file whenever it changes
+    rcac profile <file.rca>   run with instrumentation and print report
+    rcac coverage <file.rca>  report executed vs missed lines
+    rcac debugger <file.rca>  interactive step-through debugger
+    rcac completion <shell>   print shell completion (bash, zsh, fish)
+
 Package manager:
 
     rcac pkg init             create rca.json in the current directory
-    rcac pkg add <name> <src> add or update a dependency
+    rcac pkg add <name> <src> add or update a dependency (local, http://, https://)
     rcac pkg install          fetch dependencies to $HOME/.rca/packages/
 
 See `docs/packages.md`.
@@ -72,8 +87,8 @@ Language:
 
 - Lexer, parser, diagnostics with line and column
 - Static type checker with type inference
-- Variables (`let`, `mut`), `const` (top-level, constant values only)
-- Functions, structs, lists, tuples (with destructuring), maps
+- Variables (`let`, `mut`), `const` and `pub const` (top-level, constant values only)
+- Functions, generic functions (`fn name[T](...)`), structs, lists (`List[T]`), tuples (with destructuring), maps (`Map[K, V]`)
 - `if`/`else`, `while`, `for`, `break`, `continue`
 - `try` / `catch` / `throw`
 - `enum` and `match` statement (see `docs/enum.md`)
@@ -85,14 +100,15 @@ Execution:
 
 - Bytecode compiler, optimizer, validator and VM
 - Tree-walking interpreter
-- Native code generation (Cranelift) for a growing subset: arithmetic,
+- Native code generation (Cranelift) via HIR for most of the language: arithmetic,
   control flow, loops, functions, floats, strings, structs, lists, tuples,
-  enums and match, maps, math builtins, try/catch/throw, Tensor literals and shape(). Heap objects carry
-  a refcount header. Some allocation gaps remain; see `docs/memory-model.md`.
+  enums and match, maps, math builtins, try/catch/throw, Tensor ops (`matmul`, `mse`, `softmax`, `sgd`, `reshape`, `shape`),
+  reverse-mode autodiff (`track`, `grad`), and stdlib (`fs`, `time`, `string`, `crypto`, `net`, `http`).
+  Heap objects carry a refcount header. Some native allocation gaps remain; see `docs/memory-model.md`.
 
 Tensors and AI (CPU, Float only):
 
-- Tensors: construction, indexing, elementwise `+ - * /`, broadcasting,
+- Tensors: construction, indexing (`a[i]` and comma indexing `a[i, j]`), method syntax (`a.matmul(b)`), elementwise `+ - * /`, broadcasting,
   matmul (rank 2, parallel and blocked for large sizes), sum/mean/max/min,
   transpose, reshape. See `docs/tensor.md`.
 - Automatic differentiation (reverse-mode): `track(t)` and `grad(y, x)`.
@@ -114,11 +130,10 @@ Standard library (via `import <module>`; 14 modules):
 
 ## Not implemented yet
 
-- Borrowing and references
-- Generics, enum payloads, match expressions, `pub const`
-- Native code generation for the whole language (tensors, autodiff and
-  most of the stdlib run on the VM only)
-- Autodiff for `max` and `min`; tensor method syntax; GPU support
+- Borrowing and references (`&T`, `&mut T`)
+- Generic structs/enums, enum payloads, match expressions, `pub let`
+- Full native code generation coverage for remaining stdlib helpers and native refcount drop cleanup
+- Autodiff for `max` and `min`; GPU support
 
 ## Documentation
 
