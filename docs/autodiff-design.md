@@ -1,6 +1,6 @@
 # Automatic differentiation: design proposal
 
-Status: PROPOSAL (nothing in this document is implemented yet).
+Status: IMPLEMENTED for CPU reverse-mode (v0.1.0-beta). Some sections below keep the original proposal wording.
 Scope: Phase 5, CPU only, reverse-mode first.
 
 ## 1. Goal
